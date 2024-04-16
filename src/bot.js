@@ -48,7 +48,7 @@ export const createBot = () => {
           folders.map(folder => Markup.button.callback(folder, getCommandName(folder)))
             .concat(Markup.button.callback('❌', 'cancel'))
         ])
-        ctx.reply('📁 Choose folder', keyboardPanel)
+        ctx.reply('📁 Choose destination folder', keyboardPanel)
       })
 
       for (const folder of folders) {

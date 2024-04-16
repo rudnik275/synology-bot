@@ -12,7 +12,7 @@ import {formatSynologyTask} from './utils.js'
  */
 
 createBot()
-  .addCommand('status', 'Get status of downloads', async (reply) => {
+  .addCommand('status', 'Status', async (reply) => {
     const tasks = await getTasks()
     if (tasks.length === 0)
       return reply('Downloads is empty')
@@ -23,7 +23,7 @@ createBot()
       )
     }
   })
-  .addCommand('clean', 'Clean downloaded', async reply => {
+  .addCommand('clean', 'Clean completed', async reply => {
     await cleanTasks()
     reply('🧹')
   })

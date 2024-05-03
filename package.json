@@ -1,17 +1,16 @@
 {
-  "name": "nas-test",
-  "main": "src/index.js",
-  "license": "MIT",
-  "type": "module",
+  "name": "nas-torrent-bot",
   "dependencies": {
     "axios": "^1.6.8",
     "telegraf": "^4.16.3"
   },
-  "scripts": {
-    "start": "node src/index.js"
-  },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.1.0",
+    "@types/bun": "latest"
   },
-  "version": "1.0.2"
+  "version": "1.0.2",
+  "type": "module",
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
 }

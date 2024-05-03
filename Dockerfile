@@ -1,7 +1,8 @@
-FROM node:18-alpine
+FROM oven/bun
 WORKDIR /usr/src/app
-COPY package.json ./
-COPY yarn.lock ./
-RUN yarn install --frozen-lockfile
+
+COPY package.json bun.lockb ./
+RUN bun install --frozen-lockfile --production
 COPY . .
-CMD ["yarn", "start"]
+
+CMD [ "bun", "run", "src/index.js" ]

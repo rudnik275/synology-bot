@@ -1,6 +1,6 @@
 import {Markup, session, Telegraf} from 'telegraf'
 import {message} from 'telegraf/filters'
-import {getCommandName} from './utils.js'
+import {getCommandName} from './utils'
 
 export const createBot = () => {
   const bot = new Telegraf(process.env.BOT_TOKEN)

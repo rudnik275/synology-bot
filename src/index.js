@@ -1,6 +1,6 @@
-import {createBot} from './bot.js'
-import {cleanTasks, createDownloadTask, getFoldersList, getTasks} from './synology.js'
-import {formatSynologyTask} from './utils.js'
+import {createBot} from './bot'
+import {cleanTasks, createDownloadTask, getFoldersList, getTasks} from './synology'
+import {formatSynologyTask} from './utils'
 
 /**
  * process.env variables:

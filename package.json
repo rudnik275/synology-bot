@@ -1,5 +1,8 @@
 {
   "name": "nas-torrent-bot",
+  "scripts": {
+    "dev": "bun run --watch src/index.js"
+  },
   "dependencies": {
     "axios": "^1.6.8",
     "telegraf": "^4.16.3"

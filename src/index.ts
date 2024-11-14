@@ -27,7 +27,7 @@ bot
   })
   .addCommand('clean', 'Clean completed', async reply => {
     await cleanTasks()
-    reply('🧹')
+    await reply('🧹')
   })
   .onUploadFile(getFoldersList, createDownloadTask)
   .then(() => bot.launch())

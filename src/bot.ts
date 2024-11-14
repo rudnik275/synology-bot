@@ -70,7 +70,7 @@ export class Bot {
         folders.map(folder => Markup.button.callback(folder, getCommandName(folder)))
           .concat(Markup.button.callback('❌', 'cancel')),
       ])
-      ctx.reply('📁 Choose destination folder', keyboardPanel)
+      await ctx.reply('📁 Choose destination folder', keyboardPanel)
     })
 
     for (const folder of folders) {
@@ -81,9 +81,9 @@ export class Bot {
       this.bot.action(getCommandName(folder), this.ownerMiddleware, chooseModeMiddleware, async (ctx) => {
         const fileLink = await ctx.telegram.getFileLink(ctx.session.fileId as string)
         const isSuccess = await createDownloadTask(folder, fileLink.href)
-        ctx.editMessageReplyMarkup(undefined)
-        ctx.reply(isSuccess ? '👌' : '🚩')
         ctx.session.fileId = undefined
+        await ctx.editMessageReplyMarkup(undefined)
+        await ctx.reply(isSuccess ? '👌' : '🚩')
       })
     }
     this.bot.action('cancel', (ctx) => {

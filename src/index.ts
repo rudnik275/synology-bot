@@ -1,4 +1,4 @@
-import {createBot} from './bot'
+import {Bot} from './bot'
 import {cleanTasks, createDownloadTask, getFoldersList, getTasks} from './synology'
 import {formatSynologyTask} from './utils'
 
@@ -11,7 +11,9 @@ import {formatSynologyTask} from './utils'
  *  - SYNOLOGY_PASSWORD
  */
 
-createBot()
+const bot = new Bot()
+
+bot
   .addCommand('status', 'Status', async (reply) => {
     const tasks = await getTasks()
     if (tasks.length === 0)
@@ -19,7 +21,7 @@ createBot()
 
     for (const task of tasks) {
       await reply(
-        formatSynologyTask(task)
+        formatSynologyTask(task),
       )
     }
   })
@@ -28,5 +30,5 @@ createBot()
     reply('🧹')
   })
   .onUploadFile(getFoldersList, createDownloadTask)
-  .then(app => app.launch())
+  .then(() => bot.launch())
   .then(() => console.log('bot stopped'))

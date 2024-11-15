@@ -1,5 +1,5 @@
 import type {AxiosInstance} from 'axios'
-import axios from 'axios'
+import axios from 'axios' // TODO: rewrite to bun fetch
 import type {SynologyTask} from './types.ts'
 
 interface ApiInfo {

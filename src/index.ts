@@ -1,8 +1,9 @@
-import {Bot} from './bot'
-import {cleanTasks, createDownloadTask, getFoldersList, getTasks} from './synology'
-import {formatSynologyTask} from './utils'
-import {searchToloka} from './toloka.ts'
-import {gptGPTResponse} from './open-ai.ts'
+import {Bot, type CommandMiddleware, Context, InputFile, session} from 'grammy'
+import {type ConversationFlavor, conversations, createConversation, type Conversation} from '@grammyjs/conversations'
+import {cleanTasks, createDownloadTask, getFoldersList, getTasks} from './synology.ts'
+import {formatSynologyTask} from './utils.ts'
+import type {BotCommand} from 'grammy/types'
+import {downloadTorrent, searchToloka} from './toloka.ts'
 
 /**
  * process.env variables:
@@ -13,47 +14,132 @@ import {gptGPTResponse} from './open-ai.ts'
  *  - SYNOLOGY_PASSWORD
  */
 
-const bot = new Bot()
+type BotContext = Context & ConversationFlavor
 
-bot
-  .addCommand('status', 'Status', async (reply) => {
-    const tasks = await getTasks()
-    if (tasks.length === 0)
-      return reply('Downloads is empty')
+const bot = new Bot<BotContext>(process.env.BOT_TOKEN)
+process.once('SIGINT', bot.stop)
+process.once('SIGTERM', bot.stop)
+bot.use(session({initial: () => ({})}))
+bot.use(conversations())
 
-    for (const task of tasks) {
-      await reply(
-        formatSynologyTask(task),
+// is valid user
+bot.use((ctx, next) => {
+  if (ctx.chat?.type === 'private' && ctx.chat.username === process.env.OWNER_USERNAME) {
+    return next()
+  } else {
+    return ctx.reply('🚩 You dont have permission to use this command.')
+  }
+})
+
+const getFileUrl = (filePath: string) => `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`
+const chooseFolder = async (conversation: Conversation<BotContext>, ctx: BotContext): Promise<string> => {
+  const folders = await getFoldersList()
+  await ctx.reply('📁 Choose destination folder', {
+    reply_markup: {
+      inline_keyboard: [
+        folders.map(f => ({
+          text: f,
+          callback_data: f
+        }))
+      ]
+    }
+  })
+  const action = await conversation.waitFor('callback_query:data')
+
+  return action.callbackQuery.data as string
+}
+
+const commandsMenu: BotCommand[] = []
+const addCommand = (id: string, label: string, middleware: CommandMiddleware<BotContext>) => {
+  bot.command(id, middleware)
+  commandsMenu.push({
+    command: id,
+    description: label
+  })
+}
+
+addCommand('status', 'Status', async (ctx) => {
+  const tasks = await getTasks()
+  if (tasks.length === 0)
+    return ctx.reply('Downloads is empty')
+
+  for (const task of tasks) {
+    await ctx.reply(
+      formatSynologyTask(task),
+    )
+  }
+})
+
+addCommand('clean', 'Clean completed', async ({reply}) => {
+  await cleanTasks()
+  await reply('🧹')
+})
+
+bot.use(
+  createConversation<BotContext>(
+    async function tolokaSearch(conversation, ctx) {
+      await ctx.reply('Search query?')
+      const {message} = await conversation.wait()
+      if (!message?.text) return
+      const query = message.text
+      const results = await conversation.external(() => searchToloka(query))
+
+      await ctx.reply(
+        results
+          .map((i, index) => `*\[${index}\]* - ${i.title}`)
+          .join('\n\n'),
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              results.map((i, index) => ({
+                text: index.toString(),
+                callback_data: i.url
+              }))
+            ]
+          }
+        }
       )
-    }
-  })
-  .addCommand('clean', 'Clean completed', async reply => {
-    await cleanTasks()
-    await reply('🧹')
-  })
-  .addCommand('torrent', 'Search torrent', async reply => {
-    const query = await askUser('Search on torrent...')
-    const results = searchToloka(query)
-    await reply(results)
-  })
-  .addCommand('gpt', 'GPT Search torrent', async reply => {
-    const query = await askUser('Search on torrent with gpt...')
-    const suggestions = await gptGPTResponse(query)
-    if (suggestions.length === 0) {
-      await reply('Not found')
-    } else {
-      const suggestion = suggestions.length > 1 ? await askUser('GPT found few results: ', suggestions) : suggestions[0]
-      const results = await searchToloka(suggestion)
-      const filteredResults = await filterResultsByGpt(results)
-      const userChoise = await askUser('Download one', filteredResults)
-      const folder = await askUser('choose folder')
-      await createDownloadTask(folder, userChoise.url)
-      await reply(`Started download ${userChoise} to ${folder}`)
-    }
-  })
-  .onUploadFile(getFoldersList, createDownloadTask)
-  .then(() => bot.launch())
-  .then(() => console.log('bot stopped'))
 
+      const action = await conversation.waitFor('callback_query:data')
+      const downloadLink = action.callbackQuery.data
 
-searchToloka('from')
+      const folder = await chooseFolder(conversation, ctx)
+      const file = await downloadTorrent(downloadLink)
+
+      const fileId = (await ctx.replyWithDocument(
+        new InputFile(file as any, 'file.torrent')
+      )).document!.file_id
+      const filePath = (await ctx.api.getFile(fileId)).file_path!
+      await createDownloadTask(folder, getFileUrl(filePath))
+      await ctx.reply('👌')
+    },
+  )
+)
+
+addCommand('toloka', 'Search toloka', ({conversation}) => conversation.enter('tolokaSearch'))
+
+bot.use(
+  createConversation<BotContext>(
+    async function uploadFile(conversation, ctx) {
+      const folder = await chooseFolder(conversation, ctx)
+      const fileId = ctx.message!.document!.file_id
+      const filePath = (await ctx.api.getFile(fileId)).file_path!
+      await createDownloadTask(folder, getFileUrl(filePath))
+      await ctx.reply('👌')
+    }
+  )
+)
+
+bot.on('message:document', async (ctx) => {
+  if (ctx.message.document.mime_type !== 'application/x-bittorrent') {
+    return ctx.reply('🚩 Wrong file format, please load *.torrent')
+  }
+
+  await ctx.conversation.enter('uploadFile')
+})
+
+await bot.api.setMyCommands(commandsMenu)
+await bot.start()
+
+console.log('bot stopped')

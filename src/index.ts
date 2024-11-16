@@ -174,11 +174,11 @@ addCommand('status', 'Status', async (ctx) => {
     const keyboard = new InlineKeyboard()
 
     if (task.status === 1 || task.status === 2) {
-      keyboard.text('❚❚ Pause', `pause:${task.id}`)
+      keyboard.text('❚❚ Pause', `editTask:pause:${task.id}`)
     } else if (task.status === 3) {
-      keyboard.text('▶ Resume', `resume:${task.id}`)
+      keyboard.text('▶ Resume', `editTask:resume:${task.id}`)
     }
-    keyboard.text('🗑️ Delete', `delete:${task.id}`)
+    keyboard.text('🗑️ Delete', `editTask:delete:${task.id}`)
 
     await ctx.reply(formatSynologyTask(task), {
       reply_markup: keyboard,
@@ -186,8 +186,11 @@ addCommand('status', 'Status', async (ctx) => {
   }
 })
 
-bot.on('callback_query:data', async (ctx) => {
-  const [action, taskId] = ctx.callbackQuery.data.split(':')
+bot.on('callback_query:data', async (ctx, next) => {
+  const [route, action, taskId] = ctx.callbackQuery.data.split(':')
+  if (route !== 'editTask') {
+    return next()
+  }
 
   try {
     await editTask(taskId, action as EditTaskAction)

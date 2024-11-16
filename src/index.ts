@@ -1,9 +1,10 @@
-import {Bot, type CommandMiddleware, Context, InputFile, session} from 'grammy'
+import {Bot, type CommandMiddleware, Context, InputFile, session, InlineKeyboard} from 'grammy'
 import {type ConversationFlavor, conversations, createConversation, type Conversation} from '@grammyjs/conversations'
-import {cleanTasks, createDownloadTask, getFoldersList, getTasks} from './synology.ts'
+import {cleanTasks, createDownloadTask, editTask, getFoldersList, getTasks} from './synology.ts'
 import {formatSynologyTask} from './utils.ts'
-import type {BotCommand} from 'grammy/types'
+import type {BotCommand, InlineKeyboardButton} from 'grammy/types'
 import {downloadTorrent, searchToloka} from './toloka.ts'
+import type {EditTaskAction} from './types.ts'
 
 /**
  * process.env variables:
@@ -165,13 +166,33 @@ const chooseFolder = async (conversation: Conversation<BotContext>, ctx: BotCont
 
 addCommand('status', 'Status', async (ctx) => {
   const tasks = await getTasks()
-  if (tasks.length === 0)
+  if (tasks.length === 0) {
     return ctx.reply('Downloads is empty')
+  }
 
   for (const task of tasks) {
-    await ctx.reply(
-      formatSynologyTask(task),
-    )
+    const keyboard = new InlineKeyboard()
+
+    if (task.status === 1 || task.status === 2) {
+      keyboard.text('❚❚ Pause', `pause:${task.id}`)
+    } else if (task.status === 3) {
+      keyboard.text('▶ Resume', `resume:${task.id}`)
+    }
+    keyboard.text('🗑️ Delete', `delete:${task.id}`)
+
+    await ctx.reply(formatSynologyTask(task), {
+      reply_markup: keyboard,
+    })
+  }
+})
+
+bot.on('callback_query:data', async (ctx) => {
+  const [action, taskId] = ctx.callbackQuery.data.split(':')
+
+  try {
+    await editTask(taskId, action as EditTaskAction)
+  } catch (error) {
+    await ctx.answerCallbackQuery('Failed to process the task.')
   }
 })
 

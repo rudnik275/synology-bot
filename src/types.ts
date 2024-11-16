@@ -11,3 +11,5 @@ export interface SynologyTask {
     }
   }
 }
+
+export type EditTaskAction = 'resume' | 'pause' | 'delete'

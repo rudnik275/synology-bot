@@ -1,11 +1,6 @@
 import type {AxiosInstance} from 'axios'
 import axios from 'axios'
-import type {SynologyTask} from './types.ts'
-
-interface ApiInfo {
-  version: number
-  path: string
-}
+import type {EditTaskAction, SynologyTask} from './types.ts'
 
 interface ApiResponse<T> {
   data: T
@@ -42,7 +37,7 @@ const login = async (): Promise<void> => {
   token = data.sid
 }
 
-const getApiInfo = async (apiName: string): Promise<ApiInfo> => {
+const getApiInfo = async (apiName: string) => {
   const {data} = await api.get<{
     [key: string]: {
       maxVersion: number;
@@ -82,7 +77,7 @@ const makeRequest = async <T>(apiName: string, params: Record<string, any>): Pro
   }
 }
 
-export const getTasks = async (): Promise<SynologyTask[]> => {
+export const getTasks = async () => {
   const {task: tasks} = await makeRequest<{ task: SynologyTask[] }>('SYNO.DownloadStation2.Task', {
     method: 'list',
     additional: '["detail","transfer"]',
@@ -91,12 +86,12 @@ export const getTasks = async (): Promise<SynologyTask[]> => {
   return tasks
 }
 
-export const cleanTasks = (): Promise<any> => makeRequest('SYNO.DownloadStation2.Task', {
+export const cleanTasks = () => makeRequest('SYNO.DownloadStation2.Task', {
   method: 'delete_condition',
   status: 5,
 })
 
-export const getFoldersList = async (): Promise<string[]> => {
+export const getFoldersList = async () => {
   const {files: folders} = await makeRequest<{ files: Folder[] }>('SYNO.FileStation.List', {
     method: 'list',
     folder_path: '/video',
@@ -104,10 +99,18 @@ export const getFoldersList = async (): Promise<string[]> => {
   return folders.map(folder => folder.name)
 }
 
-export const createDownloadTask = (folder: string, fileUrl: string): Promise<any> => makeRequest('SYNO.DownloadStation2.Task', {
+export const createDownloadTask = (folder: string, fileUrl: string) => makeRequest('SYNO.DownloadStation2.Task', {
   method: 'create',
   create_list: false,
   destination: `video/${folder}`,
   type: 'url',
   url: fileUrl,
+})
+
+export const editTask = (
+  taskId: string,
+  action: EditTaskAction
+) => makeRequest('SYNO.DownloadStation2.Task', {
+  method: action,
+  id: taskId,
 })

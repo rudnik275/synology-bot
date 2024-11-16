@@ -32,7 +32,7 @@ bot.use((ctx, next) => {
 })
 
 const getFileUrl = (filePath: string) => `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`
-const chooseFolder = async (conversation: Conversation<BotContext>, ctx: BotContext): Promise<string> => {
+const chooseFolder = async (conversation: Conversation<BotContext>, ctx: BotContext): Promise<string | undefined> => {
   const folders = await getFoldersList()
   await ctx.reply('📁 Choose destination folder', {
     reply_markup: {
@@ -40,13 +40,25 @@ const chooseFolder = async (conversation: Conversation<BotContext>, ctx: BotCont
         folders.map(f => ({
           text: f,
           callback_data: f
-        }))
+        })),
+        [
+          {
+            text: '⬅️',
+            callback_data: '__back'
+          }
+        ]
       ]
     }
   })
-  const action = await conversation.waitFor('callback_query:data')
 
-  return action.callbackQuery.data as string
+  const action = await conversation.waitFor('callback_query:data')
+  const cbData = action.callbackQuery.data
+  if (cbData === '__back') {
+    await ctx.reply('Cancel')
+    return
+  }
+
+  return cbData
 }
 
 const commandsMenu: BotCommand[] = []
@@ -80,9 +92,16 @@ bot.use(
     async function tolokaSearch(conversation, ctx) {
       await ctx.reply('Search query?')
       const {message} = await conversation.wait()
-      if (!message?.text) return
+      if (!message?.text) {
+        await ctx.reply('Error: expect text here')
+        return
+      }
       const query = message.text
       const results = await conversation.external(() => searchToloka(query))
+      if (results.length === 0) {
+        await ctx.reply('Empty results')
+        return
+      }
 
       await ctx.reply(
         results
@@ -94,25 +113,38 @@ bot.use(
             inline_keyboard: [
               results.map((i, index) => ({
                 text: index.toString(),
-                callback_data: i.url
-              }))
+                callback_data: index.toString()
+              })),
+              [{
+                text: '⬅️',
+                callback_data: '__back'
+              }]
             ]
           }
         }
       )
 
-      const action = await conversation.waitFor('callback_query:data')
-      const downloadLink = action.callbackQuery.data
+      const selectedAction = (await conversation.waitFor('callback_query:data')).callbackQuery.data
+      if (selectedAction === '__back') {
+        await ctx.reply('Cancel')
+        return
+      }
+      const selectedIndex = +(await conversation.waitFor('callback_query:data')).callbackQuery.data
+      const resultItem = results[selectedIndex]!
+      await ctx.reply(`You choose, [${selectedIndex}], ${resultItem.title}`)
 
       const folder = await chooseFolder(conversation, ctx)
-      const file = await downloadTorrent(downloadLink)
+      if (!folder) {
+        return ctx.reply('Cancel')
+      }
+      const file = await downloadTorrent(resultItem.url)
 
       const fileId = (await ctx.replyWithDocument(
         new InputFile(file as any, 'file.torrent')
       )).document!.file_id
       const filePath = (await ctx.api.getFile(fileId)).file_path!
       await createDownloadTask(folder, getFileUrl(filePath))
-      await ctx.reply('👌')
+      await ctx.reply(`👌, Start download ${resultItem.title} into "${folder}"`)
     },
   )
 )
@@ -123,10 +155,13 @@ bot.use(
   createConversation<BotContext>(
     async function uploadFile(conversation, ctx) {
       const folder = await chooseFolder(conversation, ctx)
+      if (!folder) {
+        return ctx.reply('Cancel')
+      }
       const fileId = ctx.message!.document!.file_id
       const filePath = (await ctx.api.getFile(fileId)).file_path!
       await createDownloadTask(folder, getFileUrl(filePath))
-      await ctx.reply('👌')
+      await ctx.reply(`👌, Start download into "${folder}"`)
     }
   )
 )

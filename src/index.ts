@@ -53,10 +53,8 @@ const chooseFolder = async (conversation: Conversation<BotContext>, ctx: BotCont
 
   const action = await conversation.waitFor('callback_query:data')
   const cbData = action.callbackQuery.data
-  if (cbData === '__back') {
-    await ctx.reply('Cancel')
-    return
-  }
+
+  if (cbData === '__back') return
 
   return cbData
 }
@@ -82,9 +80,9 @@ addCommand('status', 'Status', async (ctx) => {
   }
 })
 
-addCommand('clean', 'Clean completed', async ({reply}) => {
+addCommand('clean', 'Clean completed', async (ctx) => {
   await cleanTasks()
-  await reply('🧹')
+  await ctx.reply('🧹')
 })
 
 bot.use(
@@ -123,13 +121,15 @@ bot.use(
           }
         }
       )
+      const searchSelectAction = await conversation.waitFor('callback_query:data')
+      const selectedAction = searchSelectAction.callbackQuery.data
 
-      const selectedAction = (await conversation.waitFor('callback_query:data')).callbackQuery.data
       if (selectedAction === '__back') {
         await ctx.reply('Cancel')
         return
       }
-      const selectedIndex = +(await conversation.waitFor('callback_query:data')).callbackQuery.data
+
+      const selectedIndex = +selectedAction
       const resultItem = results[selectedIndex]!
       await ctx.reply(`You choose, [${selectedIndex}], ${resultItem.title}`)
 
@@ -167,7 +167,7 @@ bot.use(
 )
 
 bot.on('message:document', async (ctx) => {
-  if (ctx.message.document.mime_type !== 'application/x-bittorrent') {
+  if (!ctx.message.document.file_name!.endsWith('.torrent')) {
     return ctx.reply('🚩 Wrong file format, please load *.torrent')
   }
 

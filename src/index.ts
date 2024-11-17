@@ -186,14 +186,12 @@ addCommand('status', 'Status', async (ctx) => {
   }
 })
 
-bot.on('callback_query:data', async (ctx, next) => {
-  const [route, action, taskId] = ctx.callbackQuery.data.split(':')
-  if (route !== 'editTask') {
-    return next()
-  }
+bot.callbackQuery(/^editTask:.*/, async (ctx) => {
+  const [_, action, taskId] = ctx.callbackQuery.data.split(':')
 
   try {
     await editTask(taskId, action as EditTaskAction)
+    await ctx.answerCallbackQuery(action)
   } catch (error) {
     await ctx.answerCallbackQuery('Failed to process the task.')
   }

@@ -19,8 +19,26 @@ export interface SynologyTask {
 export type EditTaskAction = 'resume' | 'pause' | 'delete'
 
 export type BotContext = Context & ConversationFlavor & SessionFlavor<{
+  subscription: {
+    isAwaitsSearchQuery: boolean
+    searchResults: Show[]
+    selectedItem?: Show
+  }
   selectedTask: SynologyTask
 }>
+
+export interface Show {
+  id: number
+  title: string
+  titleOriginal: string
+  description: string
+  totalSeasons: number
+  status: string
+  year: number
+  imdbRating: number
+  imdbVoted: number
+  image: string
+}
 
 export interface TolokaResultItem {
   title: string

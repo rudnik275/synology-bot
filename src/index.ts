@@ -1,13 +1,19 @@
 import {Bot, Keyboard, session,} from 'grammy'
 import {conversations} from '@grammyjs/conversations'
-import type {BotContext} from './types.ts'
+import type {BotContext, Show} from './types.ts'
 import {registerDownloadsMenu} from './modules/downloads.ts'
 import {registerSearchMenu} from './modules/search-toloka.ts'
 import {handleTorrentFile} from './modules/handle-torrent-file.ts'
 import {registerShowsSubscription} from './modules/shows-subscription.ts'
 
 const bot = new Bot<BotContext>(process.env.BOT_TOKEN)
-bot.use(session({initial: () => ({})}))
+bot.use(
+  session({
+    initial: () => ({
+      subscription: {}
+    })
+  })
+)
 bot.use(conversations())
 
 bot.use((ctx, next) => {

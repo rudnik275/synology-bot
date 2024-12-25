@@ -10,7 +10,7 @@ export function registerSearchMenu(bot: Bot<BotContext>) {
   bot.use(
     createConversation<BotContext>(
       async function searchTolokaConversation(conversation, ctx) {
-        await ctx.reply('Search query?', {
+        await ctx.reply('Enter search query', {
           reply_markup: {
             remove_keyboard: true
           }

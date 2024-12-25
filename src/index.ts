@@ -4,6 +4,7 @@ import type {BotContext} from './types.ts'
 import {registerDownloadsMenu} from './modules/downloads.ts'
 import {registerSearchMenu} from './modules/search-toloka.ts'
 import {handleTorrentFile} from './modules/handle-torrent-file.ts'
+import {registerShowsSubscription} from './modules/shows-subscription.ts'
 
 const bot = new Bot<BotContext>(process.env.BOT_TOKEN)
 bot.use(session({initial: () => ({})}))
@@ -17,11 +18,18 @@ bot.use((ctx, next) => {
   }
 })
 
+enum MenuItem {
+  Downloads = 'Downloads',
+  Search = 'Search',
+  Subscriptions = 'Subscriptions'
+}
+
 const keyboard = new Keyboard()
   .resized()
   .persistent()
-  .text('Downloads')
-  .text('Search')
+  .text(MenuItem.Search)
+  .text(MenuItem.Downloads)
+  .text(MenuItem.Subscriptions)
 
 bot.command('menu', async (ctx) => {
   await ctx.conversation.exit()
@@ -37,16 +45,20 @@ bot.api.setMyCommands([{
 
 const runDownloadsMenu = registerDownloadsMenu(bot)
 const runSearchMenu = registerSearchMenu(bot)
+const runShowsSubscription = registerShowsSubscription(bot)
 
 handleTorrentFile(bot)
 
 bot.on('message:text', async (ctx) => {
   switch (ctx.message.text) {
-    case 'Downloads':
+    case MenuItem.Downloads:
       await runDownloadsMenu(ctx)
       break
-    case 'Search':
+    case MenuItem.Search:
       await runSearchMenu(ctx)
+      break
+    case MenuItem.Subscriptions:
+      await runShowsSubscription(ctx)
       break
   }
 })

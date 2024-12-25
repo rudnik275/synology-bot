@@ -44,6 +44,31 @@ const updateSubscriptions = async (updatedData: Record<number, Show>) => {
 }
 
 export const registerShowsSubscription = (bot: Bot<BotContext>) => {
+  let chatId: number
+  const sendDailyUpdates = async () => {
+    if (!chatId) return
+
+    bot.api.sendMessage(
+      chatId,
+      await getFormattedSubscriptions(), // TODO: check each subscription and send correct updates. Only when have some news
+    )
+  }
+
+  const ONE_DAY = 24 * 60 * 60 * 1000
+  const now = new Date()
+  const delay =
+    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0).getTime() -
+    now.getTime()
+  setTimeout(() => {
+    sendDailyUpdates()
+    setInterval(sendDailyUpdates, ONE_DAY) // 24 часа
+  }, delay)
+
+  bot.on('message', (ctx, next) => {
+    chatId = ctx.chat.id
+    next()
+  })
+
   // This bot includes two similar menus. On select item in search and current subscriptions
   // It shows Add or remove Button
   const assignSelectedMenuItems = (menu: Menu<BotContext>) => {

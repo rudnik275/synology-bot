@@ -1,4 +1,4 @@
-import type {SynologyTask} from './types'
+import type {SynologyTask} from '../types.ts'
 
 /**
  * Format bytes as human-readable text.
@@ -13,34 +13,46 @@ function humanFileSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(thresh, index)).toFixed(2)) + ' ' + sizes[index]
 }
 
+export const getSynologyTaskStatusIcon = (statusCode: number) => {
+  switch (statusCode) {
+    case 5:
+    case 8:
+      return '🟢'
+
+    case 3:
+      return '⏸️'
+
+    default:
+      return '🌐'
+  }
+}
+
 /**
  * Format Synology task information as a readable string.
  * @param task - The Synology task to format.
  * @returns A formatted string representing the task status.
  */
 export const formatSynologyTask = (task: SynologyTask): string => {
-  const isLoaded = task.status === 5
+  const isLoaded = [5, 8].includes(task.status)
   const size = humanFileSize(task.size)
+  const sizeUploaded = humanFileSize(task.additional.transfer.size_uploaded)
+  const statusIcon = getSynologyTaskStatusIcon(task.status)
+
+  const itemRows = [
+    `${statusIcon} ${task.title}`,
+    `Size - ${size}`
+  ]
+
   if (isLoaded) {
-    return `🟢 Size - ${size} \n\n${task.title}`
+    itemRows.push(`Uploaded - ${sizeUploaded}`)
   } else {
     const percent = Math.round((task.additional.transfer.size_downloaded / task.size) * 100)
     const speed = humanFileSize(task.additional.transfer.speed_download)
-    return `🕛 \nSize - ${size} \nDownloaded - ${percent}% \nSpeed - ${speed} \n\n${task.title}`
+    itemRows.push(`Downloaded - ${percent}%`)
+    itemRows.push(`Speed - ${speed}`)
   }
+
+  return itemRows.join('\n')
 }
 
-let commandId = 0
-const folderMap = new Map<string, number>()
-
-/**
- * Generate a unique command name for a given folder.
- * @param folder - The folder to get the command name for.
- * @returns A unique command name for the folder.
- */
-export const getCommandName = (folder: string): string => {
-  if (!folderMap.has(folder)) {
-    folderMap.set(folder, commandId++)
-  }
-  return `choose_folder_${folderMap.get(folder)}`
-}
+export const getFileUrl = (filePath: string) => `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${filePath}`

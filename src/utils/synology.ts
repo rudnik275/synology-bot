@@ -1,6 +1,6 @@
 import type {AxiosInstance} from 'axios'
 import axios from 'axios'
-import type {EditTaskAction, SynologyTask} from './types.ts'
+import type {EditTaskAction, SynologyTask} from '../types.ts'
 
 interface ApiResponse<T> {
   data: T
@@ -86,10 +86,10 @@ export const getTasks = async () => {
   return tasks
 }
 
-export const cleanTasks = () => makeRequest('SYNO.DownloadStation2.Task', {
-  method: 'delete_condition',
-  status: 5,
-})
+// export const cleanTasks = () => makeRequest('SYNO.DownloadStation2.Task', {
+//   method: 'delete_condition',
+//   status: 5,
+// })
 
 export const getFoldersList = async () => {
   const {files: folders} = await makeRequest<{ files: Folder[] }>('SYNO.FileStation.List', {

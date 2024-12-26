@@ -1,33 +1,48 @@
-import type {BotContext} from '../types.ts'
+import type {BotContext, TvShowDetailed} from '../types.ts'
 import {Bot} from 'grammy'
-import {getSubscriptions} from '../utils/subscriptions-db.ts'
-import {findNextEpisode, formatTvShowShort} from '../utils/format-subscriptions.ts'
+import {getSubscriptions, updateSubscriptions} from '../utils/subscriptions-db.ts'
+import {findNextEpisode, isEpisodeToday} from '../utils/format-subscriptions.ts'
+import {loadTvShow} from '../utils/subscriptions-api.ts'
 
 export function registerSubscriptionsPolling(bot: Bot<BotContext>) {
-  const getFormattedSubscriptions = async () => Object.values(await getSubscriptions())
-    .map(formatTvShowShort)
-    .join(('\n\n')) || 'You have not any subscriptions'
-
-  let chatId: number
-  const sendDailyUpdates = async () => {
-    if (!chatId) return
-    // findNextEpisode()
-    bot.api.sendMessage(
-      chatId,
-      await getFormattedSubscriptions(), // TODO: check each subscription and send correct updates. Only when have some news
-    )
-  }
-
-  const ONE_DAY = 24 * 60 * 60 * 1000
   const now = new Date()
   const delay =
     new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0).getTime() -
     now.getTime()
-  setTimeout(() => {
-    sendDailyUpdates()
-    setInterval(sendDailyUpdates, ONE_DAY) // 24 часа
+
+  setTimeout(async () => {
+    await checkDailyUpdates()
+    setInterval(checkDailyUpdates, 24 * 60 * 60 * 1000) // 24 hours
   }, delay)
 
+  const checkDailyUpdates = async () => {
+    const showsWithNewEpisodes: TvShowDetailed[] = []
+    const subscriptions = Object.values(await getSubscriptions())
+    for (const subscription of subscriptions) {
+      const updatedSubscription = await loadTvShow(subscription.id)
+      subscriptions[subscription.id] = updatedSubscription
+      const nextEpisode = findNextEpisode(updatedSubscription)
+      if (nextEpisode && isEpisodeToday(nextEpisode.airDate)) {
+        showsWithNewEpisodes.push(updatedSubscription)
+      }
+    }
+    await sendUpdates(showsWithNewEpisodes)
+    await updateSubscriptions(subscriptions)
+  }
+
+  const sendUpdates = async (tvShows: TvShowDetailed[]) => {
+    if (!chatId) return
+    if (tvShows.length === 0) return
+
+    bot.api.sendMessage(
+      chatId,
+      tvShows.map(tvShow => `${tvShow.title} (${
+        findNextEpisode(tvShow)!.shortName
+      })`).join('\n\n')
+    )
+  }
+
+  let chatId: number
   bot.on('message', (ctx, next) => {
     chatId = ctx.chat.id
     next()

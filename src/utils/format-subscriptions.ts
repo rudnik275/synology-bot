@@ -17,6 +17,17 @@ function getEpisodeStatus(airDate: string): string {
   })
 }
 
+export function isEpisodeToday(airDate: string): boolean {
+  const today = new Date()
+  const episodeDate = new Date(airDate)
+
+  return (
+    today.getFullYear() === episodeDate.getFullYear() &&
+    today.getMonth() === episodeDate.getMonth() &&
+    today.getDate() === episodeDate.getDate()
+  )
+}
+
 export const findNextEpisode = (tvShowDetailed: TvShowDetailed) => {
   const currentDate = new Date()
 

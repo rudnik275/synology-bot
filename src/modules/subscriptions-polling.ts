@@ -6,9 +6,14 @@ import {loadTvShow} from '../utils/subscriptions-api.ts'
 
 export function registerSubscriptionsPolling(bot: Bot<BotContext>) {
   const now = new Date()
-  const delay =
+  let delay =
     new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0).getTime() -
     now.getTime()
+
+  if (delay < 0) {
+    // If the delay is negative (current time is past 9:00 AM), add 24 hours to schedule for the next day
+    delay += 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+  }
 
   setTimeout(async () => {
     await checkDailyUpdates()
@@ -17,8 +22,8 @@ export function registerSubscriptionsPolling(bot: Bot<BotContext>) {
 
   const checkDailyUpdates = async () => {
     const showsWithNewEpisodes: TvShowDetailed[] = []
-    const subscriptions = Object.values(await getSubscriptions())
-    for (const subscription of subscriptions) {
+    const subscriptions = await getSubscriptions()
+    for (const subscription of Object.values(subscriptions)) {
       const updatedSubscription = await loadTvShow(subscription.id)
       subscriptions[subscription.id] = updatedSubscription
       const nextEpisode = findNextEpisode(updatedSubscription)

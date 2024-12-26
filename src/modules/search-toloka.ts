@@ -1,9 +1,9 @@
 import type {BotContext} from '../types.ts'
 import {Bot, InputFile} from 'grammy'
 import {createConversation} from '@grammyjs/conversations'
-import {downloadTorrent, searchToloka} from '../utils/toloka.ts'
+import {downloadTorrent, searchToloka} from '../utils/toloka-api.ts'
 import {chooseFolder} from '../utils/choose-folder.ts'
-import {createDownloadTask} from '../utils/synology.ts'
+import {createDownloadTask} from '../utils/synology-api.ts'
 import {getFileUrl} from '../utils/utils.ts'
 
 export function registerSearchMenu(bot: Bot<BotContext>) {

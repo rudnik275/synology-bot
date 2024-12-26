@@ -1,5 +1,5 @@
 import type {BotContext} from '../types.ts'
-import {getFoldersList} from './synology.ts'
+import {getFoldersList} from './synology-api.ts'
 import {type Conversation} from '@grammyjs/conversations'
 
 export const chooseFolder = async (conversation: Conversation<BotContext>, ctx: BotContext) => {

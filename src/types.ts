@@ -21,13 +21,13 @@ export type EditTaskAction = 'resume' | 'pause' | 'delete'
 export type BotContext = Context & ConversationFlavor & SessionFlavor<{
   subscription: {
     isAwaitsSearchQuery: boolean
-    searchResults: Show[]
-    selectedItem?: Show
+    searchResults: TvShow[]
+    selectedItem?: TvShow
   }
   selectedTask: SynologyTask
 }>
 
-export interface Show {
+export interface TvShow {
   id: number
   title: string
   titleOriginal: string
@@ -38,6 +38,21 @@ export interface Show {
   imdbRating: number
   imdbVoted: number
   image: string
+}
+
+interface TvShowEpisode {
+  id: number
+  title: string
+  seasonNumber: number
+  episodeNumber: number
+  airDate: string
+  airDateUTC: string
+  shortName: string
+  isSpecial: boolean
+}
+
+export interface TvShowDetailed extends TvShow {
+  episodes: TvShowEpisode[]
 }
 
 export interface TolokaResultItem {

@@ -1,10 +1,11 @@
 import {Bot, Keyboard, session,} from 'grammy'
 import {conversations} from '@grammyjs/conversations'
-import type {BotContext, Show} from './types.ts'
+import type {BotContext, TvShow} from './types.ts'
 import {registerDownloadsMenu} from './modules/downloads.ts'
 import {registerSearchMenu} from './modules/search-toloka.ts'
 import {handleTorrentFile} from './modules/handle-torrent-file.ts'
 import {registerShowsSubscription} from './modules/shows-subscription.ts'
+import {registerSubscriptionsPolling} from './modules/subscriptions-polling.ts'
 
 const bot = new Bot<BotContext>(process.env.BOT_TOKEN)
 bot.use(
@@ -52,7 +53,7 @@ bot.api.setMyCommands([{
 const runDownloadsMenu = registerDownloadsMenu(bot)
 const runSearchMenu = registerSearchMenu(bot)
 const runShowsSubscription = registerShowsSubscription(bot)
-
+registerSubscriptionsPolling(bot)
 handleTorrentFile(bot)
 
 bot.on('message:text', async (ctx) => {

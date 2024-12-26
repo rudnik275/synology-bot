@@ -1,6 +1,6 @@
 import type {BotContext} from '../types.ts'
 import {chooseFolder} from '../utils/choose-folder.ts'
-import {createDownloadTask} from '../utils/synology.ts'
+import {createDownloadTask} from '../utils/synology-api.ts'
 import {createConversation} from '@grammyjs/conversations'
 import {Bot,} from 'grammy'
 import {getFileUrl} from '../utils/utils.ts'

@@ -1,74 +1,12 @@
 import {Bot} from 'grammy'
-import type {BotContext, Show} from '../types.ts'
-import axios, {type AxiosInstance} from 'axios'
+import type {BotContext, TvShowDetailed} from '../types.ts'
 import {Menu} from '@grammyjs/menu'
-import {mkdir} from 'node:fs/promises'
+import {loadTvShow, search} from '../utils/subscriptions-api.ts'
+import {formatSubscription, formatTvShowDetailed} from '../utils/format-subscriptions.ts'
+import {getSubscriptions, updateSubscriptions} from '../utils/subscriptions-db.ts'
 
-const API_URL = 'https://api.myshows.me/v2/rpc/'
-
-const api: AxiosInstance = axios.create({
-  baseURL: API_URL,
-})
-
-api.interceptors.request.use((request) => {
-  Object.assign(request.data, {
-    jsonrpc: '2.0',
-    id: 1
-  })
-  return request
-})
-api.interceptors.response.use((response) => response.data)
-
-export const search = (query: string) => api.post<{}, { result: Show[] }>('/', {
-  method: 'shows.Search',
-  params: {
-    query,
-  },
-}).then(r => r.result.slice(0, 10))
-
-const DB_FILE = 'db/data.json'
-await mkdir('db', {recursive: true})
-try {
-  await Bun.file(DB_FILE).text()
-} catch {
-  await Bun.write(DB_FILE, `{}`)
-}
-
-const getSubscriptions = async () => {
-  const raw = await Bun.file(DB_FILE).text()
-  return JSON.parse(raw) as Record<number, Show>
-}
-
-const updateSubscriptions = async (updatedData: Record<number, Show>) => {
-  await Bun.write(DB_FILE, JSON.stringify(updatedData))
-}
 
 export const registerShowsSubscription = (bot: Bot<BotContext>) => {
-  let chatId: number
-  const sendDailyUpdates = async () => {
-    if (!chatId) return
-
-    bot.api.sendMessage(
-      chatId,
-      await getFormattedSubscriptions(), // TODO: check each subscription and send correct updates. Only when have some news
-    )
-  }
-
-  const ONE_DAY = 24 * 60 * 60 * 1000
-  const now = new Date()
-  const delay =
-    new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0).getTime() -
-    now.getTime()
-  setTimeout(() => {
-    sendDailyUpdates()
-    setInterval(sendDailyUpdates, ONE_DAY) // 24 часа
-  }, delay)
-
-  bot.on('message', (ctx, next) => {
-    chatId = ctx.chat.id
-    next()
-  })
-
   // This bot includes two similar menus. On select item in search and current subscriptions
   // It shows Add or remove Button
   const assignSelectedMenuItems = (menu: Menu<BotContext>) => {
@@ -119,9 +57,10 @@ export const registerShowsSubscription = (bot: Bot<BotContext>) => {
     .dynamic(async (ctx, range) => {
       for (const subscription of Object.values(await getSubscriptions())) {
         range
-          .submenu(subscription.title, 'selectedActiveSubscriptionMenu', (ctx) => {
+          .submenu(formatSubscription(subscription), 'selectedActiveSubscriptionMenu', async (ctx) => {
             ctx.session.subscription.selectedItem = subscription
-            ctx.editMessageText(subscription.title)
+            const tvShow: TvShowDetailed = await loadTvShow(subscription.id)
+            ctx.editMessageText(formatTvShowDetailed(tvShow))
           })
           .row()
       }
@@ -136,9 +75,10 @@ export const registerShowsSubscription = (bot: Bot<BotContext>) => {
     .dynamic((ctx, range) => {
       for (const item of ctx.session.subscription.searchResults) {
         range
-          .submenu(item.title, 'subscriptionSearchSelectedItemMenu', async (ctx) => {
+          .submenu(formatSubscription(item), 'subscriptionSearchSelectedItemMenu', async (ctx) => {
             ctx.session.subscription.selectedItem = item
-            ctx.editMessageText(item.title)
+            const tvShow: TvShowDetailed = await loadTvShow(item.id)
+            ctx.editMessageText(formatTvShowDetailed(tvShow))
           })
           .row()
       }
@@ -171,7 +111,7 @@ export const registerShowsSubscription = (bot: Bot<BotContext>) => {
   })
 
   const getFormattedSubscriptions = async () => Object.values(await getSubscriptions())
-    .map(i => i.title)
+    .map(formatSubscription)
     .join(('\n\n')) || 'You have not any subscriptions'
 
   const showSubscriptions = async (ctx: BotContext) => {

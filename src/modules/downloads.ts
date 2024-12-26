@@ -1,7 +1,7 @@
 import type {BotContext, EditTaskAction} from '../types.ts'
 import {Bot} from 'grammy'
 import {Menu} from '@grammyjs/menu'
-import {editTask, getTasks} from '../utils/synology.ts'
+import {editTask, getTasks} from '../utils/synology-api.ts'
 import {formatSynologyTask, getSynologyTaskStatusIcon} from '../utils/utils.ts'
 
 export function registerDownloadsMenu(bot: Bot<BotContext>) {

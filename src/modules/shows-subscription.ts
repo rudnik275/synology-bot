@@ -2,7 +2,7 @@ import {Bot} from 'grammy'
 import type {BotContext, TvShowDetailed} from '../types.ts'
 import {Menu} from '@grammyjs/menu'
 import {loadTvShow, search} from '../utils/subscriptions-api.ts'
-import {formatSubscription, formatTvShowDetailed} from '../utils/format-subscriptions.ts'
+import {formatTvShowShort, formatTvShowDetailed, formatTvShow} from '../utils/format-subscriptions.ts'
 import {getSubscriptions, updateSubscriptions} from '../utils/subscriptions-db.ts'
 
 
@@ -24,7 +24,7 @@ export const registerShowsSubscription = (bot: Bot<BotContext>) => {
           })
         } else {
           range.text('Add', async (ctx) => {
-            subscriptions[item.id] = item
+            subscriptions[item.id] = await loadTvShow(item.id)
             await updateSubscriptions(subscriptions)
             ctx.menu.close()
             await ctx.reply('Added')
@@ -57,7 +57,7 @@ export const registerShowsSubscription = (bot: Bot<BotContext>) => {
     .dynamic(async (ctx, range) => {
       for (const subscription of Object.values(await getSubscriptions())) {
         range
-          .submenu(formatSubscription(subscription), 'selectedActiveSubscriptionMenu', async (ctx) => {
+          .submenu(formatTvShowShort(subscription), 'selectedActiveSubscriptionMenu', async (ctx) => {
             ctx.session.subscription.selectedItem = subscription
             const tvShow: TvShowDetailed = await loadTvShow(subscription.id)
             ctx.editMessageText(formatTvShowDetailed(tvShow))
@@ -75,7 +75,7 @@ export const registerShowsSubscription = (bot: Bot<BotContext>) => {
     .dynamic((ctx, range) => {
       for (const item of ctx.session.subscription.searchResults) {
         range
-          .submenu(formatSubscription(item), 'subscriptionSearchSelectedItemMenu', async (ctx) => {
+          .submenu(formatTvShowShort(item), 'subscriptionSearchSelectedItemMenu', async (ctx) => {
             ctx.session.subscription.selectedItem = item
             const tvShow: TvShowDetailed = await loadTvShow(item.id)
             ctx.editMessageText(formatTvShowDetailed(tvShow))
@@ -111,7 +111,7 @@ export const registerShowsSubscription = (bot: Bot<BotContext>) => {
   })
 
   const getFormattedSubscriptions = async () => Object.values(await getSubscriptions())
-    .map(formatSubscription)
+    .map(formatTvShow)
     .join(('\n\n')) || 'You have not any subscriptions'
 
   const showSubscriptions = async (ctx: BotContext) => {

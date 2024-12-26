@@ -1,17 +1,17 @@
 import type {BotContext} from '../types.ts'
 import {Bot} from 'grammy'
 import {getSubscriptions} from '../utils/subscriptions-db.ts'
-import {formatSubscription} from '../utils/format-subscriptions.ts'
+import {findNextEpisode, formatTvShowShort} from '../utils/format-subscriptions.ts'
 
 export function registerSubscriptionsPolling(bot: Bot<BotContext>) {
   const getFormattedSubscriptions = async () => Object.values(await getSubscriptions())
-    .map(formatSubscription)
+    .map(formatTvShowShort)
     .join(('\n\n')) || 'You have not any subscriptions'
 
   let chatId: number
   const sendDailyUpdates = async () => {
     if (!chatId) return
-
+    // findNextEpisode()
     bot.api.sendMessage(
       chatId,
       await getFormattedSubscriptions(), // TODO: check each subscription and send correct updates. Only when have some news

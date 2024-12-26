@@ -27,6 +27,13 @@ export const getSynologyTaskStatusIcon = (statusCode: number) => {
   }
 }
 
+function generateProgressBar(progress: number, length = 10) {
+  const filledLength = Math.round((progress / 100) * length)
+  const bar = '■'.repeat(filledLength) + '□'.repeat(length - filledLength)
+
+  return `[${bar}] ${progress}%`
+}
+
 /**
  * Format Synology task information as a readable string.
  * @param task - The Synology task to format.
@@ -48,7 +55,7 @@ export const formatSynologyTask = (task: SynologyTask): string => {
   } else {
     const percent = Math.round((task.additional.transfer.size_downloaded / task.size) * 100)
     const speed = humanFileSize(task.additional.transfer.speed_download)
-    itemRows.push(`Downloaded - ${percent}%`)
+    itemRows.push(generateProgressBar(percent))
     itemRows.push(`Speed - ${speed}`)
   }
 

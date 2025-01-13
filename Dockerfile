@@ -1,5 +1,5 @@
 # Stage 1: Build dependencies
-FROM oven/bun:edge AS builder
+FROM oven/bun AS builder
 WORKDIR /usr/src/app
 
 COPY package.json bun.lockb ./
@@ -7,7 +7,7 @@ RUN bun install --frozen-lockfile --production
 RUN bunx playwright install --with-deps
 
 # Stage 2: Build runtime image
-FROM oven/bun:edge AS runtime
+FROM oven/bun AS runtime
 WORKDIR /usr/src/app
 
 COPY --from=builder /usr/src/app/node_modules ./node_modules

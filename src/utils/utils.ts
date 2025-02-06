@@ -28,6 +28,8 @@ export const getSynologyTaskStatusIcon = (statusCode: number) => {
 }
 
 function generateProgressBar(progress: number, length = 10) {
+  if (progress === Infinity) return '[Processing] 0%'
+  
   const filledLength = Math.round((progress / 100) * length)
   const bar = '■'.repeat(filledLength) + '□'.repeat(length - filledLength)
 

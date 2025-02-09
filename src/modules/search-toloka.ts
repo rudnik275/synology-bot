@@ -78,6 +78,7 @@ export function registerSearchMenu(bot: Bot<BotContext>) {
           await ctx.reply(`👌 \n\nStart download (${resultItem.size}) ${resultItem.title}\n\n/${folder}`)
         } catch (err) {
           await ctx.reply('Error')
+          console.log(err)
         }
       }
     )

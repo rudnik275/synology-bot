@@ -50,6 +50,7 @@ export function registerSubscriptionsPolling(bot: Bot<BotContext>) {
   let chatId: number
   bot.on('message', (ctx, next) => {
     chatId = ctx.chat.id
+    console.log(`Chat id is: ${chatId}`)
     return next()
   })
 }

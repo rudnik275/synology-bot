@@ -25,6 +25,7 @@ export interface Config {
   dbPath: string
   nasReachabilityPollMs: number
   nasDownDebounceCount: number
+  dockerSocketPath: string
 }
 
 export function loadConfig(): Config {
@@ -43,5 +44,6 @@ export function loadConfig(): Config {
     dbPath: optional('DB_PATH', './data/bot.db'),
     nasReachabilityPollMs: parseInt(optional('NAS_REACHABILITY_POLL_MS', '60000'), 10),
     nasDownDebounceCount: parseInt(optional('NAS_DOWN_DEBOUNCE_COUNT', '3'), 10),
+    dockerSocketPath: optional('DOCKER_SOCKET_PATH', '/var/run/docker.sock'),
   }
 }

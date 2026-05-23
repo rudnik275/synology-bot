@@ -1,6 +1,7 @@
 import { loadConfig } from './config.ts'
 import { PersistentStore } from './infra/persistence/store.ts'
 import { SynologyClient } from './infra/synology/client.ts'
+import { DockerClient } from './infra/docker/client.ts'
 import { createBot } from './bot.ts'
 import { ReachabilityMonitor } from './domain/reachability-monitor.ts'
 
@@ -8,6 +9,7 @@ export async function startApp(): Promise<void> {
   const config = loadConfig()
   const store = new PersistentStore(config.dbPath)
   const synology = new SynologyClient(config.synology)
+  const docker = new DockerClient({ socketPath: config.dockerSocketPath })
 
   // Pre-login so the first /ping-nas is fast
   try {
@@ -16,12 +18,14 @@ export async function startApp(): Promise<void> {
     console.warn('Initial Synology login failed — will retry on demand:', err)
   }
 
-  const bot = createBot({ config, store, synology })
+  const bot = createBot({ config, store, synology, docker })
 
   // Register bot commands for Telegram UI
   await bot.api.setMyCommands([
     { command: 'start', description: 'Запустить бота' },
     { command: 'ping-nas', description: 'Проверить связь с NAS' },
+    { command: 'health', description: 'Состояние NAS (CPU, RAM, диск)' },
+    { command: 'deploy-status', description: 'Статус Watchtower / деплоя' },
   ])
 
   // Start NAS reachability watcher (background loop)

@@ -1,4 +1,4 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, SystemUtilization, StorageInfo, DiskInfo } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, SystemUtilization, StorageInfo, DiskInfo, SharedFolder, FolderEntry } from './types.ts'
 
 export class SynologyClient {
   private host: string
@@ -73,6 +73,33 @@ export class SynologyClient {
     }
 
     return { ok: true, data: json.data as T }
+  }
+
+  async createDownloadTask(
+    magnet: string,
+    destination: string
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'create', {
+      uri: magnet,
+      destination,
+    })
+    if (!result.ok) return result
+    return { ok: true }
+  }
+
+  async listSharedFolders(): Promise<{ ok: true; data: SharedFolder[] } | { ok: false; reason: string }> {
+    const result = await this.request<{ shares: SharedFolder[] }>('SYNO.FileStation.List', 2, 'list_share', {})
+    if (!result.ok) return result
+    return { ok: true, data: result.data.shares ?? [] }
+  }
+
+  async listFolders(folderPath: string): Promise<{ ok: true; data: FolderEntry[] } | { ok: false; reason: string }> {
+    const result = await this.request<{ files: FolderEntry[] }>('SYNO.FileStation.List', 2, 'list', {
+      folder_path: folderPath,
+      filetype: 'dir',
+    })
+    if (!result.ok) return result
+    return { ok: true, data: result.data.files ?? [] }
   }
 
   private async requestOnce<T>(

@@ -42,7 +42,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   registerHealthRoute(bot, deps.synology)
   registerDeployStatusRoute(bot, deps.docker)
   registerSubscriptionRoutes(bot, deps.store)
-  registerInputRouter(bot, deps.synology)
+  registerInputRouter(bot, deps.synology, toloka)
   registerSearchRoute(bot, toloka, deps.synology)
 
   return bot

@@ -8,6 +8,7 @@ import { registerStartRoute } from './handlers/routes/start.ts'
 import { registerPingNasRoute } from './handlers/routes/ping-nas.ts'
 import { registerHealthRoute } from './handlers/routes/health.ts'
 import { registerDeployStatusRoute } from './handlers/routes/deploy-status.ts'
+import { registerSubscriptionRoutes } from './handlers/routes/subscriptions.ts'
 
 export interface BotDeps {
   config: Config
@@ -27,6 +28,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   registerPingNasRoute(bot, deps.synology)
   registerHealthRoute(bot, deps.synology)
   registerDeployStatusRoute(bot, deps.docker)
+  registerSubscriptionRoutes(bot, deps.store)
 
   return bot
 }

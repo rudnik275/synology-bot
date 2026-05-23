@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { runMigrations } from './migrations.ts'
 import type { NasState } from '../../domain/reachability-monitor.ts'
+import type { Subscription } from '../../domain/subscription.ts'
 
 export class PersistentStore {
   private db: Database
@@ -84,6 +85,33 @@ export class PersistentStore {
       'SELECT task_id FROM notif_dedup WHERE task_id = ? AND event = ?'
     ).get(taskId, event)
     return row !== null
+  }
+
+  // --- Subscription helpers ---
+
+  listSubscriptions(): Subscription[] {
+    const rows = this.db.query<{ data: string }, []>(
+      'SELECT data FROM subscriptions'
+    ).all()
+    return rows.map((r) => JSON.parse(r.data) as Subscription)
+  }
+
+  addSubscription(s: Subscription): void {
+    this.db.run(
+      'INSERT OR REPLACE INTO subscriptions (id, data) VALUES (?, ?)',
+      [s.id, JSON.stringify(s)]
+    )
+  }
+
+  removeSubscription(id: string): void {
+    this.db.run('DELETE FROM subscriptions WHERE id = ?', [id])
+  }
+
+  getSubscription(id: string): Subscription | undefined {
+    const row = this.db.query<{ data: string }, [string]>(
+      'SELECT data FROM subscriptions WHERE id = ?'
+    ).get(id)
+    return row ? (JSON.parse(row.data) as Subscription) : undefined
   }
 
   close(): void {

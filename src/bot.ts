@@ -5,6 +5,7 @@ import type { Config } from './config.ts'
 import { createOwnerOnlyMiddleware } from './handlers/middleware/owner-only.ts'
 import { registerStartRoute } from './handlers/routes/start.ts'
 import { registerPingNasRoute } from './handlers/routes/ping-nas.ts'
+import { registerHealthRoute } from './handlers/routes/health.ts'
 
 export interface BotDeps {
   config: Config
@@ -21,6 +22,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   // Routes
   registerStartRoute(bot)
   registerPingNasRoute(bot, deps.synology)
+  registerHealthRoute(bot, deps.synology)
 
   return bot
 }

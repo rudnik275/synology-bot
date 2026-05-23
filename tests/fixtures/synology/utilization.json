@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "data": {
+    "cpu": {
+      "user_load": 14,
+      "system_load": 5,
+      "other_load": 1
+    },
+    "memory": {
+      "real_usage": 44,
+      "total_real": 16384000,
+      "available_real": 9175040,
+      "cached": 2048000,
+      "buffer": 512000
+    },
+    "network": [
+      { "device": "eth0", "rx": 1024, "tx": 2048 }
+    ]
+  }
+}

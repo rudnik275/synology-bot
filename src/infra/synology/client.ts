@@ -1,4 +1,4 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, SystemUtilization, StorageInfo, DiskInfo } from './types.ts'
 
 export class SynologyClient {
   private host: string
@@ -98,6 +98,18 @@ export class SynologyClient {
     }
 
     return { ok: true, data: json.data as T }
+  }
+
+  async getSystemUtilization(): Promise<{ ok: true; data: SystemUtilization } | { ok: false; reason: string }> {
+    return this.request<SystemUtilization>('SYNO.Core.System.Utilization', 1, 'get')
+  }
+
+  async getStorageInfo(): Promise<{ ok: true; data: StorageInfo } | { ok: false; reason: string }> {
+    return this.request<StorageInfo>('SYNO.Core.Storage.Volume', 1, 'list')
+  }
+
+  async getDiskInfo(): Promise<{ ok: true; data: DiskInfo } | { ok: false; reason: string }> {
+    return this.request<DiskInfo>('SYNO.Core.Storage.Disk', 1, 'list')
   }
 
   private buildUrl(path: string, params: Record<string, string>): string {

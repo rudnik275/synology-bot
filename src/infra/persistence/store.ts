@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { runMigrations } from './migrations.ts'
+import type { NasState } from '../../domain/reachability-monitor.ts'
 
 export class PersistentStore {
   private db: Database
@@ -34,6 +35,42 @@ export class PersistentStore {
   setKv(key: string, value: string): void {
     this.db.run('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', [key, value])
   }
+
+  // --- NAS reachability state ---
+
+  getNasState(): NasState {
+    const value = this.getKv('nas_state')
+    return value === 'unreachable' ? 'unreachable' : 'reachable'
+  }
+
+  setNasState(state: NasState): void {
+    this.setKv('nas_state', state)
+  }
+
+  // --- Health dedup ---
+
+  markHealthFired(event: string, resourceId: string): void {
+    this.db.run(
+      'INSERT OR REPLACE INTO health_dedup (event, resource_id, fired_at) VALUES (?, ?, ?)',
+      [event, resourceId, Date.now()]
+    )
+  }
+
+  clearHealthFired(event: string, resourceId: string): void {
+    this.db.run(
+      'DELETE FROM health_dedup WHERE event = ? AND resource_id = ?',
+      [event, resourceId]
+    )
+  }
+
+  wasHealthFired(event: string, resourceId: string): boolean {
+    const row = this.db.query<{ event: string }, [string, string]>(
+      'SELECT event FROM health_dedup WHERE event = ? AND resource_id = ?'
+    ).get(event, resourceId)
+    return row !== null
+  }
+
+  // --- Notification dedup ---
 
   markNotifFired(taskId: string, event: string): void {
     this.db.run(

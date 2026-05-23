@@ -97,12 +97,20 @@ export interface DashboardRender {
   keyboard: CallbackButton[][]
 }
 
-export function formatDashboard(tasks: Task[]): DashboardRender {
+export interface FormatDashboardOptions {
+  stopped?: boolean
+}
+
+const STOPPED_FOOTER = '\n\nобновление остановлено'
+const REFRESH_BUTTON: CallbackButton = { text: '🔄 Refresh', callback_data: 'dash_refresh' }
+
+export function formatDashboard(tasks: Task[], options: FormatDashboardOptions = {}): DashboardRender {
+  const { stopped = false } = options
+
   if (tasks.length === 0) {
-    return {
-      text: '📊 Нет активных задач',
-      keyboard: [],
-    }
+    const text = stopped ? `📊 Нет активных задач${STOPPED_FOOTER}` : '📊 Нет активных задач'
+    const keyboard: CallbackButton[][] = stopped ? [[REFRESH_BUTTON]] : []
+    return { text, keyboard }
   }
 
   const visible = tasks.slice(0, MAX_TASKS)
@@ -114,9 +122,12 @@ export function formatDashboard(tasks: Task[]): DashboardRender {
     ? [...rows, `...и ещё ${overflow}`]
     : rows
 
-  const text = [header, '', ...body].join('\n\n')
+  const baseText = [header, '', ...body].join('\n\n')
+  const text = stopped ? `${baseText}${STOPPED_FOOTER}` : baseText
 
-  const keyboard: CallbackButton[][] = visible.map(taskKeyboardRow)
+  const keyboard: CallbackButton[][] = stopped
+    ? [[REFRESH_BUTTON]]
+    : visible.map(taskKeyboardRow)
 
   return { text, keyboard }
 }

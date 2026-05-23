@@ -156,4 +156,54 @@ describe('formatDashboard', () => {
     // Should not throw, and should contain ellipsis since > 30 emoji
     expect(result.text).toContain('…')
   })
+
+  // ─── Stopped state ────────────────────────────────────────────────────────────
+
+  it('stopped=false (default) returns normal output without footer', () => {
+    const task = makeTask({ id: 't1', status: 'paused', size: 1_000_000 })
+    const normal = formatDashboard([task])
+    const explicit = formatDashboard([task], { stopped: false })
+
+    expect(normal.text).toBe(explicit.text)
+    expect(normal.keyboard).toEqual(explicit.keyboard)
+    expect(normal.text).not.toContain('обновление остановлено')
+  })
+
+  it('stopped=true with tasks → appends stopped footer and single refresh button', () => {
+    const task = makeTask({ id: 't1', status: 'downloading', size: 1_000_000, additional: { transfer: { size_downloaded: 0, speed_download: 0 } } })
+    const result = formatDashboard([task], { stopped: true })
+
+    expect(result.text).toContain('обновление остановлено')
+    expect(result.text).toContain('Активные задачи')
+    expect(result.keyboard).toHaveLength(1)
+    expect(result.keyboard[0]).toHaveLength(1)
+    expect(result.keyboard[0][0].callback_data).toBe('dash_refresh')
+    expect(result.keyboard[0][0].text).toBe('🔄 Refresh')
+  })
+
+  it('stopped=true with empty list → stopped footer and single refresh button', () => {
+    const result = formatDashboard([], { stopped: true })
+
+    expect(result.text).toContain('обновление остановлено')
+    expect(result.text).toContain('Нет активных задач')
+    expect(result.keyboard).toHaveLength(1)
+    expect(result.keyboard[0][0].callback_data).toBe('dash_refresh')
+  })
+
+  it('stopped=true preserves task list text but replaces per-task keyboard rows', () => {
+    const tasks = [
+      makeTask({ id: 't1', status: 'downloading', size: 1_000_000, additional: { transfer: { size_downloaded: 0, speed_download: 0 } } }),
+      makeTask({ id: 't2', status: 'paused', size: 2_000_000 }),
+    ]
+    const result = formatDashboard(tasks, { stopped: true })
+
+    // Task rows still visible
+    expect(result.text).toContain('Task t1')
+    expect(result.text).toContain('Task t2')
+    // But no per-task action buttons — only the single refresh button
+    const allCallbackData = result.keyboard.flat().map((b) => b.callback_data)
+    expect(allCallbackData).not.toContain('dash_action:pause:t1')
+    expect(allCallbackData).toContain('dash_refresh')
+    expect(result.keyboard).toHaveLength(1)
+  })
 })

@@ -40,7 +40,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   )
 
   // LiveDashboard — singleton per chat, in-memory, not persisted
-  const liveDashboard = new LiveDashboard(deps.synology, deps.config.dashboardRefreshMs)
+  const liveDashboard = new LiveDashboard(deps.synology, deps.config.dashboardRefreshMs, deps.config.dashboardAutostopMs)
 
   // Routes
   registerStartRoute(bot)

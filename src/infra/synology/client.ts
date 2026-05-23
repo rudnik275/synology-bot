@@ -1,4 +1,4 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, SystemUtilization, StorageInfo, DiskInfo, SharedFolder, FolderEntry } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, SharedFolder, FolderEntry } from './types.ts'
 
 export class SynologyClient {
   private host: string
@@ -30,6 +30,17 @@ export class SynologyClient {
     }
 
     this.sid = json.data.sid
+  }
+
+  async listTasks(): Promise<{ ok: true; data: Task[] } | { ok: false; reason: string }> {
+    const result = await this.request<SynoTaskListData>(
+      'SYNO.DownloadStation.Task',
+      1,
+      'list',
+      { additional: 'detail,transfer' }
+    )
+    if (!result.ok) return result
+    return { ok: true, data: result.data.tasks ?? [] }
   }
 
   async isReachable(): Promise<ReachabilityResult> {
@@ -64,7 +75,7 @@ export class SynologyClient {
       const code = json.error?.code
 
       if (code === 119) {
-        // Session expired — re-login once and retry
+        // Session expired -- re-login once and retry
         await this.login()
         return this.requestOnce<T>(api, version, method, params)
       }

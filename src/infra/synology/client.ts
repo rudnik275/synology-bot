@@ -112,15 +112,6 @@ export class SynologyClient {
     return { ok: true, data: json.data as T }
   }
 
-  async deleteTask(taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'delete', {
-      id: taskId,
-      force_complete: 'false',
-    })
-    if (!result.ok) return result
-    return { ok: true }
-  }
-
   async createDownloadTask(
     magnet: string,
     destination: string

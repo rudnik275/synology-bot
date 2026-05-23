@@ -13,6 +13,11 @@ export interface TaskMonitorStore {
 export type GetTasksFn = () => Promise<Task[]>
 export type NotifyFn = (task: Task) => Promise<void>
 
+/** A per-tick detector that receives the current task list */
+export interface TaskDetector {
+  evaluate(tasks: Task[]): Promise<void>
+}
+
 /**
  * TaskMonitor — pure polling logic, no I/O side-effects except through injected fns.
  * Designed to be testable without real timers or network.
@@ -21,11 +26,18 @@ export class TaskMonitor {
   private getTasks: GetTasksFn
   private notify: NotifyFn
   private store: TaskMonitorStore
+  private detectors: TaskDetector[]
 
-  constructor(getTasks: GetTasksFn, notify: NotifyFn, store: TaskMonitorStore) {
+  constructor(
+    getTasks: GetTasksFn,
+    notify: NotifyFn,
+    store: TaskMonitorStore,
+    detectors: TaskDetector[] = []
+  ) {
     this.getTasks = getTasks
     this.notify = notify
     this.store = store
+    this.detectors = detectors
   }
 
   /** Allow replacing getTasks after construction (test helper). */
@@ -59,6 +71,15 @@ export class TaskMonitor {
 
       this.store.markNotifFired(task.id, 'finished')
       this.store.insertCompletion(task.id, Date.now())
+    }
+
+    // Run all per-tick detectors
+    for (const detector of this.detectors) {
+      try {
+        await detector.evaluate(tasks)
+      } catch (err) {
+        console.error('[TaskMonitor] detector.evaluate threw:', err)
+      }
     }
   }
 

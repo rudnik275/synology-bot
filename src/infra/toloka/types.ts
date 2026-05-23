@@ -12,4 +12,6 @@ export interface TolokaClientConfig {
   username: string
   password: string
   baseUrl: string
+  playwrightEnabled?: boolean
+  userAgent?: string
 }

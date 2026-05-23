@@ -1,4 +1,4 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, SharedFolder, FolderEntry } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, SharedFolder, FolderEntry, SynoDownloadTaskCreateData } from './types.ts'
 
 export class SynologyClient {
   private host: string
@@ -111,6 +111,72 @@ export class SynologyClient {
     })
     if (!result.ok) return result
     return { ok: true, data: result.data.files ?? [] }
+  }
+
+  /**
+   * Creates a Download Task from a .torrent file via multipart POST.
+   * Uses SYNO.DownloadStation2.Task API.
+   */
+  async createDownloadTaskFromFile(
+    bytes: Uint8Array,
+    fileName: string,
+    destination: string
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const form = new FormData()
+    form.append('api', 'SYNO.DownloadStation2.Task')
+    form.append('version', '2')
+    form.append('method', 'create')
+    form.append('_sid', this.sid ?? '')
+    form.append('type', '"file"')
+    form.append('destination', `"${destination}"`)
+    form.append('create_list', 'false')
+    form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
+
+    const url = `${this.host}/webapi/entry.cgi`
+
+    const res = await fetch(url, { method: 'POST', body: form })
+    const json: SynoEnvelope<SynoDownloadTaskCreateData> = await res.json()
+
+    if (!json.success) {
+      const code = json.error?.code
+
+      if (code === 119) {
+        // Session expired -- re-login and retry once
+        await this.login()
+        return this.createDownloadTaskFromFileOnce(bytes, fileName, destination)
+      }
+
+      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
+    }
+
+    return { ok: true }
+  }
+
+  private async createDownloadTaskFromFileOnce(
+    bytes: Uint8Array,
+    fileName: string,
+    destination: string
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const form = new FormData()
+    form.append('api', 'SYNO.DownloadStation2.Task')
+    form.append('version', '2')
+    form.append('method', 'create')
+    form.append('_sid', this.sid ?? '')
+    form.append('type', '"file"')
+    form.append('destination', `"${destination}"`)
+    form.append('create_list', 'false')
+    form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
+
+    const url = `${this.host}/webapi/entry.cgi`
+    const res = await fetch(url, { method: 'POST', body: form })
+    const json: SynoEnvelope<SynoDownloadTaskCreateData> = await res.json()
+
+    if (!json.success) {
+      const code = json.error?.code
+      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
+    }
+
+    return { ok: true }
   }
 
   private async requestOnce<T>(

@@ -36,10 +36,22 @@ export function classifyInput(text: string): InputClass {
   return 'search'
 }
 
+/**
+ * Returns true if the document looks like a .torrent file,
+ * by MIME type or by file extension.
+ */
+export function isTorrentDocument(doc: { mime_type?: string; file_name?: string }): boolean {
+  if (doc.mime_type === 'application/x-bittorrent') return true
+  if (doc.file_name?.toLowerCase().endsWith('.torrent')) return true
+  return false
+}
+
 type PickerSession = { state: FolderPickerState; pickerId: number; originalMsgId: number }
 
 /**
- * Registers the message:text handler that routes messages to the appropriate flow.
+ * Registers message handlers that route inputs to the appropriate flow:
+ * - message:text containing a magnet URI → MagnetFlow (folder picker)
+ * - message:document with a .torrent file → TorrentFileFlow (same folder picker)
  */
 export function registerInputRouter(
   bot: Bot<Context>,
@@ -51,6 +63,7 @@ export function registerInputRouter(
   // Register the callback_query handler for folder picker interactions
   registerMagnetFlow(bot, synology, sessions)
 
+  // Handle magnet links in text messages
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text
     const kind = classifyInput(text)
@@ -62,7 +75,7 @@ export function registerInputRouter(
       // Set pending reaction on the original message
       await setReaction(ctx, 'pending')
 
-      await startFolderPicker(ctx, magnet, originalMsgId, synology, sessions)
+      await startFolderPicker(ctx, { kind: 'magnet', value: magnet }, originalMsgId, synology, sessions)
       return
     }
 
@@ -73,5 +86,52 @@ export function registerInputRouter(
     }
 
     // 'unknown' — fall through, do nothing
+  })
+
+  // Handle .torrent file uploads / forwards
+  bot.on('message:document', async (ctx) => {
+    const doc = ctx.message.document
+    if (!isTorrentDocument(doc)) return
+
+    const fileName = doc.file_name ?? 'download.torrent'
+    const originalMsgId = ctx.message.message_id
+
+    // Set pending reaction on the original message
+    await setReaction(ctx, 'pending')
+
+    // Download file bytes via grammy + fetch
+    let bytes: Uint8Array
+    try {
+      const file = await ctx.api.getFile(doc.file_id)
+      if (!file.file_path) {
+        await ctx.reply('❌ Не удалось получить ссылку на файл')
+        return
+      }
+
+      // Construct the Telegram CDN download URL from the file_path
+      const botToken = (ctx.api as unknown as { token: string }).token
+      const fileUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`
+
+      const response = await fetch(fileUrl)
+      if (!response.ok) {
+        await ctx.reply(`❌ Не удалось скачать файл: HTTP ${response.status}`)
+        return
+      }
+
+      const buffer = await response.arrayBuffer()
+      bytes = new Uint8Array(buffer)
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      await ctx.reply(`❌ Ошибка при загрузке файла: ${reason}`)
+      return
+    }
+
+    await startFolderPicker(
+      ctx,
+      { kind: 'torrentFile', bytes, name: fileName },
+      originalMsgId,
+      synology,
+      sessions
+    )
   })
 }

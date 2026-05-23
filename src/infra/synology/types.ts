@@ -108,3 +108,7 @@ export interface SynoTaskListData {
   total: number
   offset: number
 }
+
+export interface SynoDownloadTaskCreateData {
+  list_id: string[]
+}

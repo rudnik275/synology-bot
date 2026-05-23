@@ -12,6 +12,7 @@ import { runDigest, scheduleDailyDigest } from './domain/digest-scheduler.ts'
 import { getTodayEpisodes } from './infra/myshows/client.ts'
 import { DiskUsageWatcher } from './domain/disk-usage-watcher.ts'
 import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
+import { AutoCleaner } from './domain/auto-cleaner.ts'
 
 export async function startApp(): Promise<void> {
   const config = loadConfig()
@@ -100,6 +101,9 @@ export async function startApp(): Promise<void> {
 
   console.log(`[TaskMonitor] Starting polling every ${config.pollIntervalMs}ms`)
   taskMonitor.start(config.pollIntervalMs)
+
+  // Start AutoCleaner background loop
+  startAutoCleaner({ config, store, synology, bot })
 
   await botPromise
 }
@@ -258,5 +262,53 @@ function startDiskHealthWatcher({
   // Fire-and-forget: background loop, errors logged inside watcher.check()
   loop().catch((err) => {
     console.error('[DiskHealthWatcher] Loop crashed:', err)
+  })
+}
+
+function startAutoCleaner({
+  config,
+  store,
+  synology,
+  bot,
+}: {
+  config: ReturnType<typeof loadConfig>
+  store: PersistentStore
+  synology: SynologyClient
+  bot: ReturnType<typeof createBot>
+}): void {
+  const cleaner = new AutoCleaner({
+    getCompleted: (cutoffMs) => Promise.resolve(store.getCompletedBefore(cutoffMs)),
+    deleteTask: (taskId) => synology.deleteTask(taskId),
+    removeCompletion: (taskId) => { store.removeCompletion(taskId); return Promise.resolve() },
+    notify: async (message) => {
+      const ownerChatId = store.getKv('owner_chat_id')
+      if (!ownerChatId) {
+        console.warn('[AutoCleaner] No owner_chat_id in store — cannot send notification')
+        return
+      }
+      await bot.api.sendMessage(ownerChatId, message)
+    },
+    retentionDays: config.autoCleanerRetentionDays,
+    now: () => Date.now(),
+  })
+
+  const pollIntervalMs = config.autoCleanerPollMs
+
+  const loop = async (): Promise<void> => {
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+      try {
+        await cleaner.cleanup()
+      } catch (err) {
+        console.error('[AutoCleaner] Unexpected error in cleanup tick:', err)
+      }
+    }
+  }
+
+  console.log(`[AutoCleaner] Starting cleanup loop every ${pollIntervalMs}ms (retention: ${config.autoCleanerRetentionDays} days)`)
+
+  // Fire-and-forget: background loop, errors are logged not thrown
+  loop().catch((err) => {
+    console.error('[AutoCleaner] Loop crashed:', err)
   })
 }

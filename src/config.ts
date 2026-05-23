@@ -39,6 +39,8 @@ export interface Config {
   finishedDebounceMs: number
   finishedGroupThreshold: number
   dashboardRefreshMs: number
+  autoCleanerPollMs: number
+  autoCleanerRetentionDays: number
 }
 
 export function loadConfig(): Config {
@@ -71,5 +73,7 @@ export function loadConfig(): Config {
     finishedDebounceMs: parseInt(optional('FINISHED_DEBOUNCE_MS', '60000'), 10),
     finishedGroupThreshold: parseInt(optional('FINISHED_GROUP_THRESHOLD', '3'), 10),
     dashboardRefreshMs: parseInt(optional('DASHBOARD_REFRESH_MS', '5000'), 10),
+    autoCleanerPollMs: parseInt(optional('AUTOCLEANER_POLL_MS', '3600000'), 10),
+    autoCleanerRetentionDays: parseInt(optional('AUTOCLEANER_RETENTION_DAYS', '7'), 10),
   }
 }

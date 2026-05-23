@@ -21,6 +21,7 @@ export interface Config {
   toloka: {
     username: string
     password: string
+    baseUrl: string
   }
   dbPath: string
   nasReachabilityPollMs: number
@@ -40,6 +41,7 @@ export function loadConfig(): Config {
     toloka: {
       username: optional('TOLOKA_USERNAME'),
       password: optional('TOLOKA_PASSWORD'),
+      baseUrl: optional('TOLOKA_BASE_URL', 'https://toloka.to'),
     },
     dbPath: optional('DB_PATH', './data/bot.db'),
     nasReachabilityPollMs: parseInt(optional('NAS_REACHABILITY_POLL_MS', '60000'), 10),

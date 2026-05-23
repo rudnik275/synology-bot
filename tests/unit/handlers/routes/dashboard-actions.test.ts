@@ -39,6 +39,7 @@ class FakeLiveDashboard {
   getMessageId = mock((_chatId: number) => 1)
   stop = mock((_chatId: number) => {})
   start = mock(async (_ctx: any) => {})
+  extendLifetime = mock((_chatId: number) => {})
 }
 
 function makeCtx(chatId = 123, _callbackData = '') {
@@ -147,5 +148,47 @@ describe('registerDashboardActions', () => {
     await fakeBot.dispatch('dash_action:delete:task-b', 300, ctx2)
 
     expect(synology.deleteTask).not.toHaveBeenCalled()
+  })
+
+  // ─── extendLifetime called on successful actions ───────────────────────────
+  it('pause action calls extendLifetime after successful pauseTask', async () => {
+    const ctx = makeCtx(100)
+    await fakeBot.dispatch('dash_action:pause:task-abc', 100, ctx)
+
+    expect(dashboard.extendLifetime).toHaveBeenCalledWith(100)
+  })
+
+  it('resume action calls extendLifetime after successful resumeTask', async () => {
+    const ctx = makeCtx(200)
+    await fakeBot.dispatch('dash_action:resume:task-xyz', 200, ctx)
+
+    expect(dashboard.extendLifetime).toHaveBeenCalledWith(200)
+  })
+
+  it('delete second tap calls extendLifetime after successful delete', async () => {
+    const ctx = makeCtx(300)
+    // First tap
+    await fakeBot.dispatch('dash_action:delete:task-del3', 300, ctx)
+    // Second tap
+    await fakeBot.dispatch('dash_action:delete:task-del3', 300, ctx)
+
+    expect(dashboard.extendLifetime).toHaveBeenCalledWith(300)
+  })
+
+  it('pause failure does NOT call extendLifetime', async () => {
+    synology.pauseTask = mock(async () => ({ ok: false as const, reason: 'NAS error' }))
+    const ctx = makeCtx(100)
+    await fakeBot.dispatch('dash_action:pause:task-fail', 100, ctx)
+
+    expect(dashboard.extendLifetime).not.toHaveBeenCalled()
+  })
+
+  // ─── dash_refresh handler ──────────────────────────────────────────────────
+  it('dash_refresh callback calls dashboard.start()', async () => {
+    const ctx = makeCtx(400)
+    const dispatched = await fakeBot.dispatch('dash_refresh', 400, ctx)
+
+    expect(dispatched).toBe(true)
+    expect(dashboard.start).toHaveBeenCalledWith(ctx)
   })
 })

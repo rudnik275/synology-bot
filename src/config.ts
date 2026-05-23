@@ -26,6 +26,9 @@ export interface Config {
   nasReachabilityPollMs: number
   nasDownDebounceCount: number
   dockerSocketPath: string
+  diskUsagePollMs: number
+  diskFullHighPct: number
+  diskFullLowPct: number
 }
 
 export function loadConfig(): Config {
@@ -45,5 +48,8 @@ export function loadConfig(): Config {
     nasReachabilityPollMs: parseInt(optional('NAS_REACHABILITY_POLL_MS', '60000'), 10),
     nasDownDebounceCount: parseInt(optional('NAS_DOWN_DEBOUNCE_COUNT', '3'), 10),
     dockerSocketPath: optional('DOCKER_SOCKET_PATH', '/var/run/docker.sock'),
+    diskUsagePollMs: parseInt(optional('DISK_USAGE_POLL_MS', '600000'), 10),
+    diskFullHighPct: parseInt(optional('DISK_FULL_HIGH_PCT', '90'), 10),
+    diskFullLowPct: parseInt(optional('DISK_FULL_LOW_PCT', '85'), 10),
   }
 }

@@ -1,0 +1,21 @@
+{
+  "success": true,
+  "data": {
+    "disks": [
+      {
+        "id": "sata1",
+        "model": "WDC WD40EFRX",
+        "temp": 38,
+        "status": "normal",
+        "smart_status": "normal"
+      },
+      {
+        "id": "sata2",
+        "model": "ST4000VN008",
+        "temp": 41,
+        "status": "normal",
+        "smart_status": "normal"
+      }
+    ]
+  }
+}

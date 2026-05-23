@@ -1,0 +1,55 @@
+import { Database } from 'bun:sqlite'
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { runMigrations } from './migrations.ts'
+
+export class PersistentStore {
+  private db: Database
+
+  constructor(dbPath: string = './data/bot.db') {
+    if (dbPath !== ':memory:') {
+      mkdirSync(dirname(dbPath), { recursive: true })
+    }
+    this.db = new Database(dbPath, { create: true })
+    // WAL mode for concurrent access
+    this.db.run('PRAGMA journal_mode=WAL')
+    this.runMigrations()
+  }
+
+  runMigrations(): void {
+    runMigrations(this.db)
+  }
+
+  getUserVersion(): number {
+    return (this.db.query('PRAGMA user_version').get() as { user_version: number }).user_version
+  }
+
+  getKv(key: string): string | undefined {
+    const row = this.db.query<{ value: string }, [string]>(
+      'SELECT value FROM kv WHERE key = ?'
+    ).get(key)
+    return row?.value
+  }
+
+  setKv(key: string, value: string): void {
+    this.db.run('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', [key, value])
+  }
+
+  markNotifFired(taskId: string, event: string): void {
+    this.db.run(
+      'INSERT OR REPLACE INTO notif_dedup (task_id, event, fired_at) VALUES (?, ?, ?)',
+      [taskId, event, Date.now()]
+    )
+  }
+
+  wasNotifFired(taskId: string, event: string): boolean {
+    const row = this.db.query<{ task_id: string }, [string, string]>(
+      'SELECT task_id FROM notif_dedup WHERE task_id = ? AND event = ?'
+    ).get(taskId, event)
+    return row !== null
+  }
+
+  close(): void {
+    this.db.close()
+  }
+}

@@ -60,3 +60,11 @@ docker compose up -d
 - The `watchtower` container polls Docker Hub every 5 minutes. When a new image is published (e.g. after a new git tag triggers the CI workflow), Watchtower pulls the new image and restarts the bot container.
 - Watchtower only acts on containers with the `com.centurylinklabs.watchtower.enable=true` label, so it won't touch other DSM-managed containers.
 - You will receive a Telegram message when an update succeeds or fails. No message means no new image was found — silent on no-op polls.
+
+## Run locally
+
+Prereqs: Bun ≥ 1.2, 1Password CLI signed in, Owner's secrets stored in 1Password under the paths in `.env.1password`.
+
+```sh
+./scripts/with-secrets.sh bun run dev
+```

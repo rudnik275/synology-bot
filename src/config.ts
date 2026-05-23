@@ -36,6 +36,8 @@ export interface Config {
   diskHealthPollMs: number
   diskTempHighC: number
   diskTempLowC: number
+  finishedDebounceMs: number
+  finishedGroupThreshold: number
 }
 
 export function loadConfig(): Config {
@@ -65,5 +67,7 @@ export function loadConfig(): Config {
     diskHealthPollMs: parseInt(optional('DISK_HEALTH_POLL_MS', '600000'), 10),
     diskTempHighC: parseInt(optional('DISK_TEMP_HIGH_C', '50'), 10),
     diskTempLowC: parseInt(optional('DISK_TEMP_LOW_C', '45'), 10),
+    finishedDebounceMs: parseInt(optional('FINISHED_DEBOUNCE_MS', '60000'), 10),
+    finishedGroupThreshold: parseInt(optional('FINISHED_GROUP_THRESHOLD', '3'), 10),
   }
 }

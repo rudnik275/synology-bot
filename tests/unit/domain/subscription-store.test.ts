@@ -1,0 +1,70 @@
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { PersistentStore } from '../../../src/infra/persistence/store.ts'
+import type { Subscription } from '../../../src/domain/subscription.ts'
+
+describe('PersistentStore — subscription helpers', () => {
+  let store: PersistentStore
+
+  beforeEach(() => {
+    store = new PersistentStore(':memory:')
+  })
+
+  afterEach(() => {
+    store.close()
+  })
+
+  it('listSubscriptions returns empty array when no subscriptions', () => {
+    expect(store.listSubscriptions()).toEqual([])
+  })
+
+  it('addSubscription and listSubscriptions round-trip', () => {
+    const sub: Subscription = { id: 'show-1', showId: 1, title: 'Breaking Bad' }
+    store.addSubscription(sub)
+    const list = store.listSubscriptions()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toEqual(sub)
+  })
+
+  it('addSubscription stores and retrieves lastNotifiedEpisode', () => {
+    const sub: Subscription = {
+      id: 'show-42',
+      showId: 42,
+      title: 'The Wire',
+      lastNotifiedEpisode: { season: 3, episode: 7 },
+    }
+    store.addSubscription(sub)
+    const list = store.listSubscriptions()
+    expect(list[0].lastNotifiedEpisode).toEqual({ season: 3, episode: 7 })
+  })
+
+  it('removeSubscription removes existing entry', () => {
+    const sub: Subscription = { id: 'show-5', showId: 5, title: 'Sopranos' }
+    store.addSubscription(sub)
+    store.removeSubscription('show-5')
+    expect(store.listSubscriptions()).toHaveLength(0)
+  })
+
+  it('removeSubscription is a no-op for non-existing id', () => {
+    expect(() => store.removeSubscription('ghost')).not.toThrow()
+  })
+
+  it('getSubscription returns the subscription by id', () => {
+    const sub: Subscription = { id: 'show-9', showId: 9, title: 'Deadwood' }
+    store.addSubscription(sub)
+    expect(store.getSubscription('show-9')).toEqual(sub)
+  })
+
+  it('getSubscription returns undefined for unknown id', () => {
+    expect(store.getSubscription('nobody')).toBeUndefined()
+  })
+
+  it('addSubscription upserts — second add updates the record', () => {
+    const sub: Subscription = { id: 'show-3', showId: 3, title: 'Old Title' }
+    store.addSubscription(sub)
+    const updated: Subscription = { id: 'show-3', showId: 3, title: 'New Title' }
+    store.addSubscription(updated)
+    const list = store.listSubscriptions()
+    expect(list).toHaveLength(1)
+    expect(list[0].title).toBe('New Title')
+  })
+})

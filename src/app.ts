@@ -4,12 +4,18 @@ import { SynologyClient } from './infra/synology/client.ts'
 import { DockerClient } from './infra/docker/client.ts'
 import { createBot } from './bot.ts'
 import { ReachabilityMonitor } from './domain/reachability-monitor.ts'
+import { migrateJsonSubscriptions } from './infra/migration/subscriptions-migration.ts'
+import { runDigest, scheduleDailyDigest } from './domain/digest-scheduler.ts'
+import { getTodayEpisodes } from './infra/myshows/client.ts'
 
 export async function startApp(): Promise<void> {
   const config = loadConfig()
   const store = new PersistentStore(config.dbPath)
   const synology = new SynologyClient(config.synology)
   const docker = new DockerClient({ socketPath: config.dockerSocketPath })
+
+  // One-time migration from legacy JSON file
+  await migrateJsonSubscriptions(store, './db/data.json')
 
   // Pre-login so the first /ping-nas is fast
   try {
@@ -26,10 +32,30 @@ export async function startApp(): Promise<void> {
     { command: 'ping-nas', description: 'Проверить связь с NAS' },
     { command: 'health', description: 'Состояние NAS (CPU, RAM, диск)' },
     { command: 'deploy-status', description: 'Статус Watchtower / деплоя' },
+    { command: 'subscribe', description: 'Подписаться на шоу' },
+    { command: 'subscriptions', description: 'Список подписок' },
+    { command: 'unsubscribe', description: 'Отписаться от шоу' },
   ])
 
   // Start NAS reachability watcher (background loop)
   startReachabilityWatcher({ config, store, synology, bot })
+
+  // Schedule daily 9 AM digest
+  scheduleDailyDigest(async () => {
+    const subscriptions = store.listSubscriptions()
+    const ownerChatId = store.getKv('owner_chat_id')
+    await runDigest({
+      subscriptions,
+      ownerChatId,
+      fetchTodayEpisodes: getTodayEpisodes,
+      sendMessage: async (chatId, message) => {
+        await bot.api.sendMessage(chatId, message)
+      },
+      onSubscriptionUpdated: async (updated) => {
+        store.addSubscription(updated)
+      },
+    })
+  })
 
   await bot.start()
 }

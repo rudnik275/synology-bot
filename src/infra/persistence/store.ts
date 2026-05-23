@@ -130,6 +130,10 @@ export class PersistentStore {
     return rows.map((r) => r.task_id)
   }
 
+  removeCompletion(taskId: string): void {
+    this.db.run('DELETE FROM task_completion WHERE task_id = ?', [taskId])
+  }
+
   close(): void {
     this.db.close()
   }

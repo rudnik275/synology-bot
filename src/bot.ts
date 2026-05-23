@@ -11,6 +11,9 @@ import { registerDeployStatusRoute } from './handlers/routes/deploy-status.ts'
 import { registerSubscriptionRoutes } from './handlers/routes/subscriptions.ts'
 import { registerInputRouter } from './handlers/input-router.ts'
 import { registerSearchRoute } from './handlers/routes/search.ts'
+import { registerDashboardRoute } from './handlers/routes/dashboard.ts'
+import { registerDashboardActions } from './handlers/routes/dashboard-actions.ts'
+import { LiveDashboard } from './handlers/flows/live-dashboard.ts'
 import { TolokaClient } from './infra/toloka/client.ts'
 
 export interface BotDeps {
@@ -36,6 +39,9 @@ export function createBot(deps: BotDeps): Bot<Context> {
     deps.store
   )
 
+  // LiveDashboard — singleton per chat, in-memory, not persisted
+  const liveDashboard = new LiveDashboard(deps.synology, deps.config.dashboardRefreshMs)
+
   // Routes
   registerStartRoute(bot)
   registerPingNasRoute(bot, deps.synology)
@@ -44,6 +50,8 @@ export function createBot(deps: BotDeps): Bot<Context> {
   registerSubscriptionRoutes(bot, deps.store)
   registerInputRouter(bot, deps.synology, toloka)
   registerSearchRoute(bot, toloka, deps.synology)
+  registerDashboardRoute(bot, liveDashboard)
+  registerDashboardActions(bot, deps.synology, liveDashboard)
 
   return bot
 }

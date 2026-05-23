@@ -38,6 +38,7 @@ export interface Config {
   diskTempLowC: number
   finishedDebounceMs: number
   finishedGroupThreshold: number
+  dashboardRefreshMs: number
 }
 
 export function loadConfig(): Config {
@@ -69,5 +70,6 @@ export function loadConfig(): Config {
     diskTempLowC: parseInt(optional('DISK_TEMP_LOW_C', '45'), 10),
     finishedDebounceMs: parseInt(optional('FINISHED_DEBOUNCE_MS', '60000'), 10),
     finishedGroupThreshold: parseInt(optional('FINISHED_GROUP_THRESHOLD', '3'), 10),
+    dashboardRefreshMs: parseInt(optional('DASHBOARD_REFRESH_MS', '5000'), 10),
   }
 }

@@ -43,6 +43,32 @@ export class SynologyClient {
     return { ok: true, data: result.data.tasks ?? [] }
   }
 
+  async pauseTask(taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'pause', {
+      id: taskId,
+    })
+    if (!result.ok) return result
+    return { ok: true }
+  }
+
+  async resumeTask(taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'resume', {
+      id: taskId,
+    })
+    if (!result.ok) return result
+    return { ok: true }
+  }
+
+  async deleteTask(taskId: string, deleteFiles = false): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'delete', {
+      id: taskId,
+      force_complete: 'false',
+      delete_files: deleteFiles ? 'true' : 'false',
+    })
+    if (!result.ok) return result
+    return { ok: true }
+  }
+
   async isReachable(): Promise<ReachabilityResult> {
     try {
       const result = await this.request<unknown>('SYNO.API.Info', 1, 'query', { query: 'all' })

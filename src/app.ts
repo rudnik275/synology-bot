@@ -40,6 +40,7 @@ export async function startApp(): Promise<void> {
     { command: 'subscribe', description: 'Подписаться на шоу' },
     { command: 'subscriptions', description: 'Список подписок' },
     { command: 'unsubscribe', description: 'Отписаться от шоу' },
+    { command: 'dashboard', description: 'Активные задачи (авто-обновление)' },
   ])
 
   // Start NAS reachability watcher (background loop)

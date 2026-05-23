@@ -10,6 +10,8 @@ import { registerHealthRoute } from './handlers/routes/health.ts'
 import { registerDeployStatusRoute } from './handlers/routes/deploy-status.ts'
 import { registerSubscriptionRoutes } from './handlers/routes/subscriptions.ts'
 import { registerInputRouter } from './handlers/input-router.ts'
+import { registerSearchRoute } from './handlers/routes/search.ts'
+import { TolokaClient } from './infra/toloka/client.ts'
 
 export interface BotDeps {
   config: Config
@@ -24,6 +26,16 @@ export function createBot(deps: BotDeps): Bot<Context> {
   // Owner-only guard — all subsequent handlers run only for Owner
   bot.use(createOwnerOnlyMiddleware(deps.config.ownerUsername, deps.store))
 
+  // Toloka client
+  const toloka = new TolokaClient(
+    {
+      username: deps.config.toloka.username,
+      password: deps.config.toloka.password,
+      baseUrl: deps.config.toloka.baseUrl,
+    },
+    deps.store
+  )
+
   // Routes
   registerStartRoute(bot)
   registerPingNasRoute(bot, deps.synology)
@@ -31,6 +43,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   registerDeployStatusRoute(bot, deps.docker)
   registerSubscriptionRoutes(bot, deps.store)
   registerInputRouter(bot, deps.synology)
+  registerSearchRoute(bot, toloka, deps.synology)
 
   return bot
 }

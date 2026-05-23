@@ -9,15 +9,40 @@ export interface FolderEntry {
 }
 
 /**
+ * Discriminated union describing what the owner wants to download.
+ * - magnet: a magnet URI string
+ * - torrentFile: raw bytes of a .torrent file + its filename
+ */
+export type TorrentInput =
+  | { kind: 'magnet'; value: string }
+  | { kind: 'torrentFile'; bytes: Uint8Array; name: string }
+
+/**
  * In-memory state machine for the folder picker conversation.
- * Lives keyed by chatId in the MagnetFlow handler.
+ * Lives keyed by chatId in the InputRouter handler.
+ *
+ * Accepts either:
+ * - A TorrentInput union (magnet | torrentFile) — preferred
+ * - A raw magnet string — legacy, kept for backward compatibility
  */
 export class FolderPickerState {
-  readonly magnet: string
+  readonly input: TorrentInput
   readonly breadcrumb: FolderEntry[] = []
 
-  constructor(magnet: string) {
-    this.magnet = magnet
+  constructor(input: TorrentInput | string) {
+    if (typeof input === 'string') {
+      this.input = { kind: 'magnet', value: input }
+    } else {
+      this.input = input
+    }
+  }
+
+  /**
+   * The magnet URI if this session was started from a magnet link, otherwise empty string.
+   * Kept for backward compatibility.
+   */
+  get magnet(): string {
+    return this.input.kind === 'magnet' ? this.input.value : ''
   }
 
   get currentPath(): string | null {
@@ -87,7 +112,7 @@ function formatPath(state: FolderPickerState): string {
 }
 
 /**
- * Handles the full folder-picker flow for a magnet link.
+ * Handles the full folder-picker flow for any TorrentInput (magnet or .torrent file).
  * - Sends one picker message with the share list.
  * - On callback_query, edits that same message in-place.
  */
@@ -105,7 +130,7 @@ export function registerMagnetFlow(
 
     const session = sessions.get(chatId)
     if (!session) {
-      await ctx.editMessageText('❌ Сессия устарела. Пришли magnet ещё раз.')
+      await ctx.editMessageText('❌ Сессия устарела. Пришли файл или magnet ещё раз.')
       return
     }
 
@@ -114,7 +139,7 @@ export function registerMagnetFlow(
     if (data === 'fp:cancel') {
       sessions.delete(chatId)
       await ctx.editMessageText('❌ Отменено.')
-      // Try to clear the hourglass reaction on original message
+      // Try to clear the reaction on original message
       try {
         await ctx.api.setMessageReaction(chatId, session.originalMsgId, [])
       } catch {
@@ -131,7 +156,17 @@ export function registerMagnetFlow(
 
     if (data === 'fp:select') {
       const destination = session.state.currentPath ?? '/'
-      const result = await synology.createDownloadTask(session.state.magnet, destination)
+      let result: { ok: true } | { ok: false; reason: string }
+
+      if (session.state.input.kind === 'magnet') {
+        result = await synology.createDownloadTask(session.state.input.value, destination)
+      } else {
+        result = await synology.createDownloadTaskFromFile(
+          session.state.input.bytes,
+          session.state.input.name,
+          destination
+        )
+      }
 
       if (!result.ok) {
         await ctx.editMessageText(`❌ Ошибка: ${result.reason}`)
@@ -144,7 +179,12 @@ export function registerMagnetFlow(
         return
       }
 
-      await ctx.editMessageText(`✅ Качается → ${destination}`)
+      const label =
+        session.state.input.kind === 'magnet'
+          ? session.state.input.value.slice(0, 60)
+          : session.state.input.name
+
+      await ctx.editMessageText(`✅ Качается → ${destination}\n${label}`)
       try {
         await ctx.api.setMessageReaction(chatId, session.originalMsgId, [{ type: 'emoji', emoji: '👍' }])
       } catch {
@@ -201,12 +241,12 @@ async function renderPicker(
 }
 
 /**
- * Starts the folder picker for a given magnet URI.
+ * Starts the folder picker for a given TorrentInput (magnet or .torrent file).
  * Sends the initial message and registers the session.
  */
 export async function startFolderPicker(
   ctx: Context,
-  magnet: string,
+  input: TorrentInput,
   originalMsgId: number,
   synology: SynologyClient,
   sessions: Map<number, { state: FolderPickerState; pickerId: number; originalMsgId: number }>
@@ -214,7 +254,7 @@ export async function startFolderPicker(
   const chatId = ctx.chat?.id
   if (!chatId) return
 
-  const state = new FolderPickerState(magnet)
+  const state = new FolderPickerState(input)
 
   // Fetch top-level shares immediately
   const result = await synology.listSharedFolders()

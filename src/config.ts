@@ -31,6 +31,9 @@ export interface Config {
   diskFullHighPct: number
   diskFullLowPct: number
   pollIntervalMs: number
+  diskHealthPollMs: number
+  diskTempHighC: number
+  diskTempLowC: number
 }
 
 export function loadConfig(): Config {
@@ -55,5 +58,8 @@ export function loadConfig(): Config {
     diskFullHighPct: parseInt(optional('DISK_FULL_HIGH_PCT', '90'), 10),
     diskFullLowPct: parseInt(optional('DISK_FULL_LOW_PCT', '85'), 10),
     pollIntervalMs: parseInt(optional('POLL_INTERVAL_MS', '30000'), 10),
+    diskHealthPollMs: parseInt(optional('DISK_HEALTH_POLL_MS', '600000'), 10),
+    diskTempHighC: parseInt(optional('DISK_TEMP_HIGH_C', '50'), 10),
+    diskTempLowC: parseInt(optional('DISK_TEMP_LOW_C', '45'), 10),
   }
 }

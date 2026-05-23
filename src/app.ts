@@ -10,6 +10,7 @@ import { migrateJsonSubscriptions } from './infra/migration/subscriptions-migrat
 import { runDigest, scheduleDailyDigest } from './domain/digest-scheduler.ts'
 import { getTodayEpisodes } from './infra/myshows/client.ts'
 import { DiskUsageWatcher } from './domain/disk-usage-watcher.ts'
+import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 
 export async function startApp(): Promise<void> {
   const config = loadConfig()
@@ -45,6 +46,9 @@ export async function startApp(): Promise<void> {
 
   // Start disk usage watcher (background loop)
   startDiskUsageWatcher({ config, store, synology, bot })
+
+  // Start disk health watcher (background loop)
+  startDiskHealthWatcher({ config, store, synology, bot })
 
   // Schedule daily 9 AM digest
   scheduleDailyDigest(async () => {
@@ -186,5 +190,60 @@ function startDiskUsageWatcher({
   // Fire-and-forget: background loop, errors are logged not thrown
   loop().catch((err) => {
     console.error('[DiskUsageWatcher] Loop crashed:', err)
+  })
+}
+
+function startDiskHealthWatcher({
+  config,
+  store,
+  synology,
+  bot,
+}: {
+  config: ReturnType<typeof loadConfig>
+  store: PersistentStore
+  synology: SynologyClient
+  bot: ReturnType<typeof createBot>
+}): void {
+  const watcher = new DiskHealthWatcher({
+    getDiskInfo: () => synology.getDiskInfo(),
+    getState: (event, resourceId) => {
+      if (store.wasHealthFired(event, resourceId)) {
+        // Determine the active state from the event name
+        if (event === 'disk_temp') return 'hot'
+        if (event === 'disk_smart') return 'warn'
+      }
+      return 'ok'
+    },
+    setState: (event, resourceId, state) => {
+      if (state === 'ok') {
+        store.clearHealthFired(event, resourceId)
+      } else {
+        store.markHealthFired(event, resourceId)
+      }
+    },
+    notify: async (message) => {
+      const ownerChatId = store.getKv('owner_chat_id')
+      if (!ownerChatId) {
+        console.warn(`[DiskHealthWatcher] No owner_chat_id in store — cannot send: ${message}`)
+        return
+      }
+      await bot.api.sendMessage(ownerChatId, message)
+    },
+    tempHigh: config.diskTempHighC,
+    tempLow: config.diskTempLowC,
+  })
+
+  const pollIntervalMs = config.diskHealthPollMs
+
+  const loop = async (): Promise<void> => {
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+      await watcher.check()
+    }
+  }
+
+  // Fire-and-forget: background loop, errors logged inside watcher.check()
+  loop().catch((err) => {
+    console.error('[DiskHealthWatcher] Loop crashed:', err)
   })
 }

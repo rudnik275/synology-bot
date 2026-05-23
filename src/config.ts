@@ -23,6 +23,8 @@ export interface Config {
     password: string
   }
   dbPath: string
+  nasReachabilityPollMs: number
+  nasDownDebounceCount: number
 }
 
 export function loadConfig(): Config {
@@ -39,5 +41,7 @@ export function loadConfig(): Config {
       password: optional('TOLOKA_PASSWORD'),
     },
     dbPath: optional('DB_PATH', './data/bot.db'),
+    nasReachabilityPollMs: parseInt(optional('NAS_REACHABILITY_POLL_MS', '60000'), 10),
+    nasDownDebounceCount: parseInt(optional('NAS_DOWN_DEBOUNCE_COUNT', '3'), 10),
   }
 }

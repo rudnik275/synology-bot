@@ -4,6 +4,7 @@ import { SynologyClient } from './infra/synology/client.ts'
 import { DockerClient } from './infra/docker/client.ts'
 import { TaskMonitor } from './domain/task-monitor/task-monitor.ts'
 import { Notifier } from './domain/notifier/notifier.ts'
+import { FinishedDebouncer } from './domain/finished-debouncer.ts'
 import { createBot } from './bot.ts'
 import { ReachabilityMonitor } from './domain/reachability-monitor.ts'
 import { migrateJsonSubscriptions } from './infra/migration/subscriptions-migration.ts'
@@ -72,6 +73,14 @@ export async function startApp(): Promise<void> {
     await bot.api.sendMessage(chatId, text)
   })
 
+  // FinishedDebouncer: batch tasks finished within the same window
+  const debouncer = new FinishedDebouncer({
+    windowMs: config.finishedDebounceMs,
+    threshold: config.finishedGroupThreshold,
+    flushIndividual: (task) => notifier.notify(task),
+    flushGrouped: (tasks) => notifier.notifyFinishedGrouped(tasks),
+  })
+
   const getTasks = async () => {
     const result = await synology.listTasks()
     if (!result.ok) {
@@ -80,7 +89,10 @@ export async function startApp(): Promise<void> {
     return result.data
   }
 
-  const taskMonitor = new TaskMonitor(getTasks, notifier.asCallback(), store)
+  const taskMonitor = new TaskMonitor(getTasks, (task) => {
+    debouncer.enqueue(task)
+    return Promise.resolve()
+  }, store)
 
   // Start bot first, then begin polling loops
   const botPromise = bot.start()

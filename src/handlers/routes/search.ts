@@ -9,6 +9,52 @@ function emoji(e: ReactionTypeEmoji['emoji']): ReactionTypeEmoji {
   return { type: 'emoji', emoji: e }
 }
 
+export interface SearchDeps {
+  toloka: TolokaClient
+}
+
+/**
+ * Core search execution: runs a Toloka query and sends results to the user.
+ * Called both by the /search command and by the free-form text router.
+ */
+export async function runTolokaSearch(ctx: Context, query: string, deps: SearchDeps): Promise<void> {
+  // Acknowledge with 👀 reaction when possible
+  try {
+    await ctx.react(emoji('👀'))
+  } catch {
+    // Reactions not available in all contexts
+  }
+
+  try {
+    const results = await deps.toloka.search(query)
+
+    if (results.length === 0) {
+      try {
+        await ctx.react(emoji('😢'))
+      } catch {
+        // Ignore
+      }
+      await ctx.reply(`По запиту "${query}" нічого не знайдено.`)
+      return
+    }
+
+    const { text, inlineKeyboard } = formatSearchResults(query, results)
+
+    await ctx.reply(text, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: inlineKeyboard },
+    })
+  } catch (err) {
+    try {
+      await ctx.react(emoji('😢'))
+    } catch {
+      // Ignore
+    }
+    console.error('[search] Toloka error:', err)
+    await ctx.reply('❌ Toloka недоступна. Спробуй пізніше.')
+  }
+}
+
 /**
  * Registers /search command and its callback query handlers.
  *
@@ -34,41 +80,7 @@ export function registerSearchRoute(
       return
     }
 
-    // Acknowledge with 👀 reaction when possible (⏳ not in Telegram's supported list)
-    try {
-      await ctx.react(emoji('👀'))
-    } catch {
-      // Reactions not available in all contexts
-    }
-
-    try {
-      const results = await toloka.search(query)
-
-      if (results.length === 0) {
-        try {
-          await ctx.react(emoji('😢'))
-        } catch {
-          // Ignore
-        }
-        await ctx.reply(`По запиту "${query}" нічого не знайдено.`)
-        return
-      }
-
-      const { text, inlineKeyboard } = formatSearchResults(query, results)
-
-      await ctx.reply(text, {
-        parse_mode: 'HTML',
-        reply_markup: { inline_keyboard: inlineKeyboard },
-      })
-    } catch (err) {
-      try {
-        await ctx.react(emoji('😢'))
-      } catch {
-        // Ignore
-      }
-      console.error('[search] Toloka error:', err)
-      await ctx.reply('❌ Toloka недоступна. Спробуй пізніше.')
-    }
+    await runTolokaSearch(ctx, query, { toloka })
   })
 
   // Callback: user tapped a result — show folder picker

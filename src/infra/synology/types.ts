@@ -58,3 +58,16 @@ export interface DiskEntry {
 export interface DiskInfo {
   disks: DiskEntry[]
 }
+
+// ─── Download / FileStation types ────────────────────────────────────────────
+
+export interface SharedFolder {
+  name: string
+  path: string
+}
+
+export interface FolderEntry {
+  name: string
+  path: string
+  isdir: boolean
+}

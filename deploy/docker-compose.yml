@@ -6,6 +6,8 @@ services:
     env_file: /volume1/docker/nas-torrent-bot/.env
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower

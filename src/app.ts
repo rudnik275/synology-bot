@@ -5,6 +5,8 @@ import { DockerClient } from './infra/docker/client.ts'
 import { TaskMonitor } from './domain/task-monitor/task-monitor.ts'
 import { Notifier } from './domain/notifier/notifier.ts'
 import { FinishedDebouncer } from './domain/finished-debouncer.ts'
+import { StuckDetector } from './domain/stuck-detector.ts'
+import { FailedDetector } from './domain/failed-detector.ts'
 import { createBot } from './bot.ts'
 import { ReachabilityMonitor } from './domain/reachability-monitor.ts'
 import { migrateJsonSubscriptions } from './infra/migration/subscriptions-migration.ts'
@@ -13,6 +15,7 @@ import { getTodayEpisodes } from './infra/myshows/client.ts'
 import { DiskUsageWatcher } from './domain/disk-usage-watcher.ts'
 import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
+import { buildTaskActionKeyboard } from './handlers/routes/task-actions.ts'
 
 export async function startApp(): Promise<void> {
   const config = loadConfig()
@@ -70,7 +73,7 @@ export async function startApp(): Promise<void> {
     })
   })
 
-  // Set up TaskMonitor + Notifier -- runs as a background polling loop
+  // Set up TaskMonitor + Notifier + detectors — background polling loop
   const notifier = new Notifier(store, async (chatId, text) => {
     await bot.api.sendMessage(chatId, text)
   })
@@ -91,10 +94,46 @@ export async function startApp(): Promise<void> {
     return result.data
   }
 
-  const taskMonitor = new TaskMonitor(getTasks, (task) => {
-    debouncer.enqueue(task)
-    return Promise.resolve()
-  }, store)
+  const ownerChatId = () => store.getKv('owner_chat_id')
+
+  const stuckDetector = new StuckDetector({
+    zeroSpeedThresholdMs: 5 * 60 * 1000,
+    store,
+    sendAlert: async ({ text, taskId }) => {
+      const chatId = ownerChatId()
+      if (!chatId) {
+        console.warn('[StuckDetector] No owner_chat_id — cannot send stuck alert')
+        return
+      }
+      await bot.api.sendMessage(Number(chatId), text, {
+        reply_markup: buildTaskActionKeyboard(taskId),
+      })
+    },
+  })
+
+  const failedDetector = new FailedDetector({
+    store,
+    sendAlert: async ({ text, taskId }) => {
+      const chatId = ownerChatId()
+      if (!chatId) {
+        console.warn('[FailedDetector] No owner_chat_id — cannot send failed alert')
+        return
+      }
+      await bot.api.sendMessage(Number(chatId), text, {
+        reply_markup: buildTaskActionKeyboard(taskId),
+      })
+    },
+  })
+
+  const taskMonitor = new TaskMonitor(
+    getTasks,
+    (task) => {
+      debouncer.enqueue(task)
+      return Promise.resolve()
+    },
+    store,
+    [stuckDetector, failedDetector]
+  )
 
   // Start bot first, then begin polling loops
   const botPromise = bot.start()

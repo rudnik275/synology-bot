@@ -14,6 +14,7 @@ import { registerSearchRoute } from './handlers/routes/search.ts'
 import { registerDashboardRoute } from './handlers/routes/dashboard.ts'
 import { registerDashboardActions } from './handlers/routes/dashboard-actions.ts'
 import { LiveDashboard } from './handlers/flows/live-dashboard.ts'
+import { registerTaskActionsRoute } from './handlers/routes/task-actions.ts'
 import { TolokaClient } from './infra/toloka/client.ts'
 
 export interface BotDeps {
@@ -52,6 +53,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   registerSearchRoute(bot, toloka, deps.synology)
   registerDashboardRoute(bot, liveDashboard)
   registerDashboardActions(bot, deps.synology, liveDashboard)
+  registerTaskActionsRoute(bot, deps.synology)
 
   return bot
 }

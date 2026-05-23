@@ -2,6 +2,8 @@ import { loadConfig } from './config.ts'
 import { PersistentStore } from './infra/persistence/store.ts'
 import { SynologyClient } from './infra/synology/client.ts'
 import { DockerClient } from './infra/docker/client.ts'
+import { TaskMonitor } from './domain/task-monitor/task-monitor.ts'
+import { Notifier } from './domain/notifier/notifier.ts'
 import { createBot } from './bot.ts'
 import { ReachabilityMonitor } from './domain/reachability-monitor.ts'
 import { migrateJsonSubscriptions } from './infra/migration/subscriptions-migration.ts'
@@ -61,7 +63,28 @@ export async function startApp(): Promise<void> {
     })
   })
 
-  await bot.start()
+  // Set up TaskMonitor + Notifier -- runs as a background polling loop
+  const notifier = new Notifier(store, async (chatId, text) => {
+    await bot.api.sendMessage(chatId, text)
+  })
+
+  const getTasks = async () => {
+    const result = await synology.listTasks()
+    if (!result.ok) {
+      throw new Error(result.reason)
+    }
+    return result.data
+  }
+
+  const taskMonitor = new TaskMonitor(getTasks, notifier.asCallback(), store)
+
+  // Start bot first, then begin polling loops
+  const botPromise = bot.start()
+
+  console.log(`[TaskMonitor] Starting polling every ${config.pollIntervalMs}ms`)
+  taskMonitor.start(config.pollIntervalMs)
+
+  await botPromise
 }
 
 function startReachabilityWatcher({
@@ -81,7 +104,7 @@ function startReachabilityWatcher({
       onEvent: async (event, reason) => {
         const ownerChatId = store.getKv('owner_chat_id')
         if (!ownerChatId) {
-          console.warn(`[ReachabilityWatcher] No owner_chat_id in store — cannot send ${event}`)
+          console.warn(`[ReachabilityWatcher] No owner_chat_id in store -- cannot send ${event}`)
           return
         }
 

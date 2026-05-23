@@ -114,6 +114,22 @@ export class PersistentStore {
     return row ? (JSON.parse(row.data) as Subscription) : undefined
   }
 
+  // --- Task completion (for AutoCleaner #18) ---
+
+  insertCompletion(taskId: string, completedAt: number): void {
+    this.db.run(
+      'INSERT OR IGNORE INTO task_completion (task_id, completed_at) VALUES (?, ?)',
+      [taskId, completedAt]
+    )
+  }
+
+  getCompletedBefore(cutoffMs: number): string[] {
+    const rows = this.db.query<{ task_id: string }, [number]>(
+      'SELECT task_id FROM task_completion WHERE completed_at < ?'
+    ).all(cutoffMs)
+    return rows.map((r) => r.task_id)
+  }
+
   close(): void {
     this.db.close()
   }

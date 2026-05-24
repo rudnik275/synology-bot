@@ -178,7 +178,7 @@ describe('formatDashboard', () => {
     expect(result.keyboard).toHaveLength(1)
     expect(result.keyboard[0]).toHaveLength(1)
     expect(result.keyboard[0][0].callback_data).toBe('dash_refresh')
-    expect(result.keyboard[0][0].text).toBe('🔄 Refresh')
+    expect(result.keyboard[0][0].text).toBe('🔄 Обновить')
   })
 
   it('stopped=true with empty list → stopped footer and single refresh button', () => {

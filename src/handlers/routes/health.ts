@@ -17,7 +17,7 @@ export function formatHealthMessage(
     return `❌ NAS не отвечает — ${reason}`
   }
 
-  const lines: string[] = ['🩺 NAS Health', '']
+  const lines: string[] = ['🩺 Состояние NAS', '']
 
   // ── CPU / RAM ──────────────────────────────────────────────────────────────
   if (!utilResult.ok) {
@@ -35,9 +35,9 @@ export function formatHealthMessage(
 
   // ── Storage ────────────────────────────────────────────────────────────────
   if (!storageResult.ok) {
-    lines.push(`💽 Storage: ❌ ${storageResult.reason}`)
+    lines.push(`💽 Хранилище: ❌ ${storageResult.reason}`)
   } else {
-    lines.push('💽 Storage:')
+    lines.push('💽 Хранилище:')
     for (const vol of storageResult.data.volumes) {
       const totalTb = (Number(vol.size.total) / 1024 / 1024 / 1024 / 1024).toFixed(1)
       const usedTb = (Number(vol.size.used) / 1024 / 1024 / 1024 / 1024).toFixed(1)
@@ -51,9 +51,9 @@ export function formatHealthMessage(
 
   // ── Disks ──────────────────────────────────────────────────────────────────
   if (!diskResult.ok) {
-    lines.push(`🌡 Disks: ❌ ${diskResult.reason}`)
+    lines.push(`🌡 Диски: ❌ ${diskResult.reason}`)
   } else {
-    lines.push('🌡 Disks:')
+    lines.push('🌡 Диски:')
     for (const disk of diskResult.data.disks) {
       const diskEmoji =
         disk.status === 'crashed' || disk.smart_status === 'failed'

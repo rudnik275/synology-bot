@@ -69,7 +69,7 @@ describe('runTolokaSearch', () => {
 
     expect(ctx.reply).toHaveBeenCalledTimes(1)
     const calls = ctx.reply.mock.calls[0] as unknown as [string]
-    expect(calls[0]).toContain('нічого не знайдено')
+    expect(calls[0]).toContain('ничего не найдено')
   })
 
   it('sends error message when toloka throws', async () => {

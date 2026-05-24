@@ -76,7 +76,7 @@ describe('TolokaClient', () => {
     expect(String(init.body)).toContain('entry=login')
   })
 
-  it('login() persists captured cookie to store under toloka.session.cookies key', async () => {
+  it('login() persists captured cookie to store under toloka_cookie key', async () => {
     fetchMock.mockImplementation(() =>
       Promise.resolve(
         makeHtmlResponse('<html>ok</html>', 302, [
@@ -89,7 +89,7 @@ describe('TolokaClient', () => {
     const client = new TolokaClient(CONFIG, store)
     await client.login()
 
-    const stored = store.getKv('toloka.session.cookies')
+    const stored = store.getKv('toloka_cookie')
     expect(stored).toBeDefined()
     const parsed = JSON.parse(stored!)
     expect(parsed['PHPSESSID']).toBe('sess123')
@@ -97,7 +97,7 @@ describe('TolokaClient', () => {
   })
 
   it('isLoggedIn() returns true when cookies are stored in PersistentStore', () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'existing' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'existing' }))
     const client = new TolokaClient(CONFIG, store)
     expect(client.isLoggedIn()).toBe(true)
   })
@@ -127,7 +127,7 @@ describe('TolokaClient', () => {
   // -------------------------------------------------------------------------
 
   it('search() includes Cookie header in request', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'my-session' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'my-session' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('search-results.html')))
@@ -186,7 +186,7 @@ describe('TolokaClient', () => {
   // -------------------------------------------------------------------------
 
   it('search() returns parsed results from tracker.php response', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('search-results.html')))
@@ -201,7 +201,7 @@ describe('TolokaClient', () => {
   })
 
   it('search() passes URL-encoded query to tracker.php', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('search-empty.html')))
@@ -216,7 +216,7 @@ describe('TolokaClient', () => {
   })
 
   it('search() returns empty array for no-results page', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('search-empty.html')))
@@ -232,7 +232,7 @@ describe('TolokaClient', () => {
   // -------------------------------------------------------------------------
 
   it('downloadTorrent() GETs URL with session cookie and returns Uint8Array', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'dl-sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'dl-sess' }))
     const fakeBytes = new Uint8Array([100, 101, 58, 49])
 
     fetchMock.mockImplementation(() => Promise.resolve(makeBytesResponse(fakeBytes)))
@@ -250,7 +250,7 @@ describe('TolokaClient', () => {
   })
 
   it('downloadTorrent() throws on non-200 status', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(new Response('Not Found', { status: 404 }))

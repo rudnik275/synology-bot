@@ -3,7 +3,7 @@ import type { TolokaResult, TolokaClientConfig } from './types.ts'
 import { parseSearchPage, isLoginPage } from './parser.ts'
 import type { PlaywrightFallbackOptions, PlaywrightFallbackResult } from './playwright-fallback.ts'
 
-const COOKIE_KEY = 'toloka.session.cookies'
+const COOKIE_KEY = 'toloka_cookie'
 
 /** Cloudflare / bot-detection markers that indicate a non-usable response. */
 const INTERSTITIAL_MARKERS = [

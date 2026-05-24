@@ -1,6 +1,6 @@
 {
   "name": "nas-torrent-bot",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",
@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "cheerio": "^1.2.0",
-    "grammy": "^1.33.0",
-    "playwright": "^1.60.0"
+    "grammy": "^1.33.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.2"

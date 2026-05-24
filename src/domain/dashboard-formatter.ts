@@ -102,7 +102,7 @@ export interface FormatDashboardOptions {
 }
 
 const STOPPED_FOOTER = '\n\nобновление остановлено'
-const REFRESH_BUTTON: CallbackButton = { text: '🔄 Refresh', callback_data: 'dash_refresh' }
+const REFRESH_BUTTON: CallbackButton = { text: '🔄 Обновить', callback_data: 'dash_refresh' }
 
 export function formatDashboard(tasks: Task[], options: FormatDashboardOptions = {}): DashboardRender {
   const { stopped = false } = options

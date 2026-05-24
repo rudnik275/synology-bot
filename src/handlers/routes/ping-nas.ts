@@ -6,14 +6,14 @@ export function registerPingNasRoute(bot: Bot<Context>, synology: SynologyClient
     const result = await synology.isReachable()
 
     if (result.ok) {
-      await ctx.reply('✅ NAS reachable')
+      await ctx.reply('✅ NAS на связи')
     } else {
       try {
         await ctx.react('👎')
       } catch {
         // Fallback if reaction API is unavailable
       }
-      await ctx.reply(`❌ NAS down — ${result.reason}`)
+      await ctx.reply(`❌ NAS недоступен — ${result.reason}`)
     }
   })
 }

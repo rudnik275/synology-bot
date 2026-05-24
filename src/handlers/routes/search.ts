@@ -34,7 +34,7 @@ export async function runTolokaSearch(ctx: Context, query: string, deps: SearchD
       } catch {
         // Ignore
       }
-      await ctx.reply(`По запиту "${query}" нічого не знайдено.`)
+      await ctx.reply(`По запросу "${query}" ничего не найдено.`)
       return
     }
 
@@ -51,7 +51,7 @@ export async function runTolokaSearch(ctx: Context, query: string, deps: SearchD
       // Ignore
     }
     console.error('[search] Toloka error:', err)
-    await ctx.reply('❌ Toloka недоступна. Спробуй пізніше.')
+    await ctx.reply('❌ Toloka недоступна. Попробуй позже.')
   }
 }
 
@@ -76,7 +76,7 @@ export function registerSearchRoute(
     const query = ctx.match?.trim()
 
     if (!query) {
-      await ctx.reply('🔍 Введи запит для пошуку. Наприклад: /search ubuntu 24.04')
+      await ctx.reply('🔍 Введи запрос для поиска. Например: /search ubuntu 24.04')
       return
     }
 
@@ -95,7 +95,7 @@ export function registerSearchRoute(
     ])
     folderButtons.push([{ text: '↩️ Назад', callback_data: 'search_back' }])
 
-    await ctx.editMessageText('📂 Оберіть папку для завантаження:', {
+    await ctx.editMessageText('📂 Выбери папку для скачивания:', {
       reply_markup: { inline_keyboard: folderButtons },
     })
     await ctx.answerCallbackQuery()
@@ -106,7 +106,7 @@ export function registerSearchRoute(
     const topicId = ctx.match[1]
     const folder = ctx.match[2]
 
-    await ctx.editMessageText('⏳ Завантажую торент…')
+    await ctx.editMessageText('⏳ Скачиваю торрент…')
     await ctx.answerCallbackQuery()
 
     try {
@@ -126,11 +126,11 @@ export function registerSearchRoute(
       )
 
       if (!result.ok) {
-        await ctx.editMessageText(`❌ Помилка Synology: ${result.reason}`)
+        await ctx.editMessageText(`❌ Ошибка Synology: ${result.reason}`)
         return
       }
 
-      await ctx.editMessageText(`✅ Качається → ${folder}`)
+      await ctx.editMessageText(`✅ Качается → ${folder}`)
 
       // Update reaction on original message if possible
       try {

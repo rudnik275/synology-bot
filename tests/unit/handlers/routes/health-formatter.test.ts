@@ -39,7 +39,7 @@ describe('formatHealthMessage()', () => {
       { ok: true, data: diskData },
     )
 
-    expect(msg).toContain('🩺 NAS Health')
+    expect(msg).toContain('🩺 Состояние NAS')
     // CPU section
     expect(msg).toContain('🖥')
     expect(msg).toContain('CPU')
@@ -133,7 +133,7 @@ describe('formatHealthMessage()', () => {
       { ok: true, data: diskData },
     )
 
-    expect(msg).toContain('🩺 NAS Health')
+    expect(msg).toContain('🩺 Состояние NAS')
     // CPU/RAM section should show error
     expect(msg).toContain('❌')
     expect(msg).toContain('timeout')

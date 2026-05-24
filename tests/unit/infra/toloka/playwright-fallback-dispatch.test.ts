@@ -75,7 +75,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('does NOT call fallback when HTTP search succeeds with valid results', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('search-results.html')))
@@ -89,7 +89,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   })
 
   it('does NOT call fallback when HTTP returns legitimate empty results (clean body)', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('search-empty.html')))
@@ -107,7 +107,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('calls fallback when HTTP returns Cloudflare interstitial HTML (cf-browser-verification)', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('cloudflare-interstitial.html')))
@@ -121,7 +121,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   })
 
   it('calls fallback when HTTP returns "Just a moment..." interstitial body', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     const interstitialHtml = '<html><head><title>Just a moment...</title></head><body>checking your browser</body></html>'
     fetchMock.mockImplementation(() =>
@@ -140,7 +140,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('calls fallback when HTTP returns 403 status', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse('Forbidden', 403))
@@ -158,7 +158,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('calls fallback when HTTP returns 503 status', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse('Service Unavailable', 503))
@@ -176,7 +176,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('calls fallback when HTTP returns 0 results and body has challenge marker', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     const suspiciousHtml = '<html><body><p>checking your browser</p></body></html>'
     fetchMock.mockImplementation(() =>
@@ -211,7 +211,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('does NOT call fallback when playwrightEnabled=false even on Cloudflare-style failure', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse(readFixture('cloudflare-interstitial.html')))
@@ -232,7 +232,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('goes HTTP-first on the next search after fallback was used (not sticky)', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     let callIndex = 0
     fetchMock.mockImplementation(() => {
@@ -262,7 +262,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('propagates fallback error to caller when fallback itself throws', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse('Forbidden', 403))
@@ -282,7 +282,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('persists cookies returned by fallback back into the session store', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'old-sess' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'old-sess' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse('Forbidden', 403))
@@ -295,7 +295,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
     const client = new TolokaClient(CONFIG, store, fakeFallback as any)
     await client.search('ubuntu')
 
-    const stored = store.getKv('toloka.session.cookies')
+    const stored = store.getKv('toloka_cookie')
     expect(stored).toBeDefined()
     const parsed = JSON.parse(stored!)
     expect(parsed['PHPSESSID']).toBe('fresh-cookie')
@@ -306,7 +306,7 @@ describe('TolokaClient Playwright fallback dispatch', () => {
   // ---------------------------------------------------------------------------
 
   it('passes existing session cookie to fallback for session reuse', async () => {
-    store.setKv('toloka.session.cookies', JSON.stringify({ PHPSESSID: 'old-sess', bb_session: 'bb' }))
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'old-sess', bb_session: 'bb' }))
 
     fetchMock.mockImplementation(() =>
       Promise.resolve(makeHtmlResponse('Forbidden', 403))

@@ -8,9 +8,9 @@ import { InlineKeyboard } from 'grammy'
  */
 export function buildTaskActionKeyboard(taskId: string): InlineKeyboard {
   return new InlineKeyboard()
-    .text('▶️ Resume', `task_action:resume:${taskId}`)
-    .text('⏸ Pause', `task_action:pause:${taskId}`)
-    .text('🗑 Delete', `task_action:delete:${taskId}`)
+    .text('▶️ Возобновить', `task_action:resume:${taskId}`)
+    .text('⏸ Пауза', `task_action:pause:${taskId}`)
+    .text('🗑 Удалить', `task_action:delete:${taskId}`)
 }
 
 /**

@@ -34,8 +34,6 @@ export interface Config {
   diskFullLowPct: number
   pollIntervalMs: number
   diskHealthPollMs: number
-  diskTempHighC: number
-  diskTempLowC: number
   finishedDebounceMs: number
   finishedGroupThreshold: number
   dashboardRefreshMs: number
@@ -69,8 +67,6 @@ export function loadConfig(): Config {
     diskFullLowPct: parseInt(optional('DISK_FULL_LOW_PCT', '85'), 10),
     pollIntervalMs: parseInt(optional('POLL_INTERVAL_MS', '30000'), 10),
     diskHealthPollMs: parseInt(optional('DISK_HEALTH_POLL_MS', '600000'), 10),
-    diskTempHighC: parseInt(optional('DISK_TEMP_HIGH_C', '50'), 10),
-    diskTempLowC: parseInt(optional('DISK_TEMP_LOW_C', '45'), 10),
     finishedDebounceMs: parseInt(optional('FINISHED_DEBOUNCE_MS', '60000'), 10),
     finishedGroupThreshold: parseInt(optional('FINISHED_GROUP_THRESHOLD', '3'), 10),
     dashboardRefreshMs: parseInt(optional('DASHBOARD_REFRESH_MS', '5000'), 10),

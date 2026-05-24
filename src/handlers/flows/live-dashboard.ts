@@ -2,12 +2,19 @@ import type { Context } from 'grammy'
 import type { SynologyClient } from '../../infra/synology/client.ts'
 import { formatDashboard } from '../../domain/dashboard-formatter.ts'
 
+/** Minimum gap between consecutive editMessageText calls (ms). Prevents the
+ *  interval refresh and an action-callback refresh from both firing within
+ *  a Telegram rate-limit window. */
+const REFRESH_THROTTLE_MS = 1000
+
 export interface DashboardEntry {
   messageId: number
   intervalId: ReturnType<typeof setInterval>
   autoStopTimer: ReturnType<typeof setTimeout>
   /** ctx captured from most recent start() — api is bot-level so stays valid */
   ctx: Context
+  /** Unix ms of the last successful (or attempted) edit. Used by throttle. */
+  lastRefreshAt: number
   stop: () => void
 }
 
@@ -70,6 +77,10 @@ export class LiveDashboard {
       intervalId,
       autoStopTimer,
       ctx,
+      // 0 = no edits yet; the initial sendMessage doesn't count, so the
+      // first refresh always passes the throttle. Throttle only fires
+      // between successive edit calls.
+      lastRefreshAt: 0,
       stop: () => {
         clearInterval(intervalId)
         clearTimeout(autoStopTimer)
@@ -88,12 +99,17 @@ export class LiveDashboard {
     }
   }
 
-  /** Force-refresh the dashboard message for a chat. Called after actions. */
+  /** Force-refresh the dashboard message for a chat. Called after actions.
+   *  Throttled: if a refresh happened within REFRESH_THROTTLE_MS, skip — the
+   *  5s interval will catch up. */
   async refresh(chatId: number, ctx: Context): Promise<void> {
     const entry = this.active.get(chatId)
     if (!entry) return
 
+    if (Date.now() - entry.lastRefreshAt < REFRESH_THROTTLE_MS) return
+
     const render = await this.fetchRender()
+    entry.lastRefreshAt = Date.now()
     try {
       await ctx.api.editMessageText(chatId, entry.messageId, render.text, {
         reply_markup: { inline_keyboard: render.keyboard },

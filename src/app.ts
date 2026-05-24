@@ -285,8 +285,6 @@ function startDiskHealthWatcher({
       }
       await bot.api.sendMessage(ownerChatId, message)
     },
-    tempHigh: config.diskTempHighC,
-    tempLow: config.diskTempLowC,
   })
 
   const pollIntervalMs = config.diskHealthPollMs

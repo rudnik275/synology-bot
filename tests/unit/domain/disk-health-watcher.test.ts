@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect } from 'bun:test'
 import { DiskHealthWatcher } from '../../../src/domain/disk-health-watcher.ts'
 import type { DiskEntry } from '../../../src/infra/synology/types.ts'
 
@@ -25,8 +25,15 @@ function makeFakeStore(): FakeStore {
   }
 }
 
-function makeDisk(id: string, model: string, temp: number, status = 'normal', smart_status = 'normal'): DiskEntry {
-  return { id, model, temp, status, smart_status }
+function makeDisk(
+  id: string,
+  model: string,
+  temp: number,
+  temperature_status = 'normal',
+  status = 'normal',
+  smart_status = 'normal',
+): DiskEntry {
+  return { id, model, temp, temperature_status, status, smart_status }
 }
 
 interface TestHarness {
@@ -36,7 +43,7 @@ interface TestHarness {
   setDisks(disks: DiskEntry[]): void
 }
 
-function makeHarness(tempHigh = 50, tempLow = 45): TestHarness {
+function makeHarness(): TestHarness {
   const store = makeFakeStore()
   const pushes: string[] = []
   let disks: DiskEntry[] = []
@@ -46,8 +53,6 @@ function makeHarness(tempHigh = 50, tempLow = 45): TestHarness {
     getState: (event, resourceId) => store.getState(event, resourceId),
     setState: (event, resourceId, state) => store.setState(event, resourceId, state),
     notify: async (message: string) => { pushes.push(message) },
-    tempHigh,
-    tempLow,
   })
 
   return {
@@ -60,10 +65,10 @@ function makeHarness(tempHigh = 50, tempLow = 45): TestHarness {
 
 // ---- Tests ----
 
-describe('DiskHealthWatcher – temperature', () => {
-  it('disk at 40°C → no push, state stays ok', async () => {
+describe('DiskHealthWatcher – temperature (Synology status-based)', () => {
+  it('disk with temperature_status=normal → no push, stays ok', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 40)])
+    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal')])
 
     await h.watcher.check()
 
@@ -71,42 +76,52 @@ describe('DiskHealthWatcher – temperature', () => {
     expect(h.store.getState('disk_temp', 'disk1')).toBe('ok')
   })
 
-  it('disk at 50°C (= tempHigh) → 🌡 push, state becomes hot', async () => {
+  it('disk with temperature_status=critical → 🌡 push, state becomes hot', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 50)])
+    h.setDisks([makeDisk('disk1', 'WD Red', 58, 'critical')])
 
     await h.watcher.check()
 
     expect(h.pushes).toHaveLength(1)
-    expect(h.pushes[0]).toBe('🌡 WD Red перегрев: 50°C')
+    expect(h.pushes[0]).toBe('🌡 WD Red перегрев: 58°C (статус: critical)')
     expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
   })
 
-  it('disk at 48°C when already hot → no push, stays hot (hysteresis)', async () => {
+  it('disk with temperature_status=warning (was ok) → no push, stays ok', async () => {
     const h = makeHarness()
-    // First tick: heat up
-    h.setDisks([makeDisk('disk1', 'WD Red', 55)])
+    h.setDisks([makeDisk('disk1', 'WD Red', 52, 'warning')])
+
+    await h.watcher.check()
+
+    expect(h.pushes).toHaveLength(0)
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('ok')
+  })
+
+  it('hot disk with temperature_status=warning → no push, stays hot (hysteresis band)', async () => {
+    const h = makeHarness()
+    // First tick: critical
+    h.setDisks([makeDisk('disk1', 'WD Red', 58, 'critical')])
     await h.watcher.check()
     expect(h.pushes).toHaveLength(1)
     h.pushes.length = 0
 
-    // Second tick: still hot (48 > tempLow=45 but < tempHigh=50 → hysteresis)
-    h.setDisks([makeDisk('disk1', 'WD Red', 48)])
+    // Second tick: warning — hysteresis, stay hot
+    h.setDisks([makeDisk('disk1', 'WD Red', 53, 'warning')])
     await h.watcher.check()
 
     expect(h.pushes).toHaveLength(0)
     expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
   })
 
-  it('disk at 45°C (= tempLow) when hot → ✅ recovery push, state becomes ok', async () => {
+  it('hot disk with temperature_status=normal → ✅ recovery push, state becomes ok', async () => {
     const h = makeHarness()
     // Start hot
-    h.setDisks([makeDisk('disk1', 'WD Red', 55)])
+    h.setDisks([makeDisk('disk1', 'WD Red', 58, 'critical')])
     await h.watcher.check()
     h.pushes.length = 0
 
-    // Cool down to exactly tempLow
-    h.setDisks([makeDisk('disk1', 'WD Red', 45)])
+    // Cool down to normal
+    h.setDisks([makeDisk('disk1', 'WD Red', 45, 'normal')])
     await h.watcher.check()
 
     expect(h.pushes).toHaveLength(1)
@@ -114,9 +129,9 @@ describe('DiskHealthWatcher – temperature', () => {
     expect(h.store.getState('disk_temp', 'disk1')).toBe('ok')
   })
 
-  it('disk at 55°C → second check same temp → no duplicate push', async () => {
+  it('disk stays critical → second check → no duplicate push', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 55)])
+    h.setDisks([makeDisk('disk1', 'WD Red', 58, 'critical')])
 
     await h.watcher.check()
     await h.watcher.check()
@@ -128,7 +143,7 @@ describe('DiskHealthWatcher – temperature', () => {
 describe('DiskHealthWatcher – SMART', () => {
   it('disk with smart_status=normal, status=normal → no push', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal')])
+    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal', 'normal')])
 
     await h.watcher.check()
 
@@ -138,7 +153,7 @@ describe('DiskHealthWatcher – SMART', () => {
 
   it('disk with smart_status=warning → ❌ SMART push, state warn', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'warning')])
+    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal', 'warning')])
 
     await h.watcher.check()
 
@@ -149,7 +164,7 @@ describe('DiskHealthWatcher – SMART', () => {
 
   it('disk with status=warning → ❌ SMART push', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'warning', 'normal')])
+    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'warning', 'normal')])
 
     await h.watcher.check()
 
@@ -159,7 +174,7 @@ describe('DiskHealthWatcher – SMART', () => {
 
   it('disk with smart_status=warning → second check → no duplicate push', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'warning')])
+    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal', 'warning')])
 
     await h.watcher.check()
     await h.watcher.check()
@@ -170,12 +185,12 @@ describe('DiskHealthWatcher – SMART', () => {
   it('SMART warn → both return to normal → ✅ recovery push, state ok', async () => {
     const h = makeHarness()
     // Start with SMART warning
-    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'warning')])
+    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal', 'warning')])
     await h.watcher.check()
     h.pushes.length = 0
 
     // Recovery
-    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal')])
+    h.setDisks([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal', 'normal')])
     await h.watcher.check()
 
     expect(h.pushes).toHaveLength(1)
@@ -185,26 +200,26 @@ describe('DiskHealthWatcher – SMART', () => {
 })
 
 describe('DiskHealthWatcher – combined and multi-disk', () => {
-  it('disk simultaneously hot AND smart warn → two separate pushes', async () => {
+  it('disk simultaneously critical-temp AND smart-warn → two separate pushes', async () => {
     const h = makeHarness()
-    h.setDisks([makeDisk('disk1', 'WD Red', 55, 'normal', 'warning')])
+    h.setDisks([makeDisk('disk1', 'WD Red', 58, 'critical', 'normal', 'warning')])
 
     await h.watcher.check()
 
     expect(h.pushes).toHaveLength(2)
     const tempPush = h.pushes.find(p => p.includes('перегрев'))
     const smartPush = h.pushes.find(p => p.includes('SMART:'))
-    expect(tempPush).toBe('🌡 WD Red перегрев: 55°C')
+    expect(tempPush).toBe('🌡 WD Red перегрев: 58°C (статус: critical)')
     expect(smartPush).toBe('❌ WD Red SMART: warning, status: normal')
     expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
     expect(h.store.getState('disk_smart', 'disk1')).toBe('warn')
   })
 
-  it('two disks with different events → independent state', async () => {
+  it('two disks with different temperature statuses → independent state', async () => {
     const h = makeHarness()
     h.setDisks([
-      makeDisk('disk1', 'WD Red', 55),     // hot
-      makeDisk('disk2', 'Seagate', 40),    // ok
+      makeDisk('disk1', 'WD Red', 58, 'critical'),
+      makeDisk('disk2', 'Seagate', 40, 'normal'),
     ])
 
     await h.watcher.check()
@@ -218,7 +233,7 @@ describe('DiskHealthWatcher – combined and multi-disk', () => {
   it('restart: states restored from store, no duplicate pushes when nothing changed', async () => {
     const store = makeFakeStore()
     const pushes: string[] = []
-    const disks = [makeDisk('disk1', 'WD Red', 55, 'normal', 'warning')]
+    const disks = [makeDisk('disk1', 'WD Red', 58, 'critical', 'normal', 'warning')]
 
     // Simulate previous run: states already in store
     store.setState('disk_temp', 'disk1', 'hot')
@@ -229,8 +244,6 @@ describe('DiskHealthWatcher – combined and multi-disk', () => {
       getState: (event, resourceId) => store.getState(event, resourceId),
       setState: (event, resourceId, state) => store.setState(event, resourceId, state),
       notify: async (message: string) => { pushes.push(message) },
-      tempHigh: 50,
-      tempLow: 45,
     })
 
     await watcher.check()
@@ -248,8 +261,6 @@ describe('DiskHealthWatcher – error handling', () => {
       getState: () => 'ok',
       setState: () => {},
       notify: async (message: string) => { pushes.push(message) },
-      tempHigh: 50,
-      tempLow: 45,
     })
 
     // Should not throw
@@ -264,8 +275,6 @@ describe('DiskHealthWatcher – error handling', () => {
       getState: () => 'ok',
       setState: () => {},
       notify: async (message: string) => { pushes.push(message) },
-      tempHigh: 50,
-      tempLow: 45,
     })
 
     await expect(watcher.check()).resolves.toBeUndefined()

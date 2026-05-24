@@ -114,7 +114,7 @@ describe('AutoCleaner', () => {
   })
 
   describe('second tick after successful clean', () => {
-    it('→ more old completions deleted but NO additional push', async () => {
+    it('→ more old completions deleted and a second push fires (one per non-empty run)', async () => {
       const completions: Array<{ taskId: string; completedAt: number }> = [
         { taskId: 'task-first', completedAt: NOW - 8 * DAY_MS },
       ]
@@ -153,11 +153,10 @@ describe('AutoCleaner', () => {
       // Add another old task
       completions.push({ taskId: 'task-second', completedAt: NOW - 9 * DAY_MS })
 
-      // Second tick — should delete task-second but NOT push again
+      // Second tick — should delete task-second AND push a second notification
       await cleaner.cleanup()
       expect(deleted).toContain('task-second')
-      // Still only 1 notification total
-      expect(notifications).toHaveLength(1)
+      expect(notifications).toHaveLength(2)
     })
   })
 

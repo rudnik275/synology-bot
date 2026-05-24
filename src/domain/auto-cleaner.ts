@@ -23,13 +23,10 @@ export interface AutoCleanerDeps {
  *  2. For each, call deleteTask (removes task entry from DownloadStation, keeps files).
  *  3. On success, call removeCompletion to clean up the dedup row.
  *  4. On Synology error: log and skip (next tick will retry).
- *  5. If any tasks were deleted AND this is the first successful clean in this
- *     process run, send one summary push to the owner.
+ *  5. If any tasks were deleted, send one summary push to the owner.
  */
 export class AutoCleaner {
   private readonly deps: AutoCleanerDeps
-  /** In-memory flag: true until the first cleanup notification has been sent. */
-  private firstCleanInThisRun = true
 
   constructor(deps: AutoCleanerDeps) {
     this.deps = deps
@@ -57,8 +54,7 @@ export class AutoCleaner {
       }
     }
 
-    if (deletedCount > 0 && this.firstCleanInThisRun) {
-      this.firstCleanInThisRun = false
+    if (deletedCount > 0) {
       const retentionDays = this.deps.retentionDays
       await this.deps.notify(
         `🧹 Автоматически удалено ${deletedCount} завершённых задач старше ${retentionDays} дней (файлы сохранены)`

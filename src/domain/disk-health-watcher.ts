@@ -11,19 +11,15 @@ export interface DiskHealthWatcherDeps {
   setState: (event: string, resourceId: string, state: DiskHealthState) => void
   /** Send a push notification message to the owner */
   notify: (message: string) => Promise<void>
-  /** Temperature threshold to enter hot state (°C, inclusive) */
-  tempHigh: number
-  /** Temperature threshold to leave hot state (°C, inclusive) */
-  tempLow: number
 }
 
 /**
  * DiskHealthWatcher checks disk temperature and SMART status on each poll tick.
  *
- * Temperature state machine (per disk):
- *   ok  → hot   when temp >= tempHigh  (push: 🌡 overheating alert)
- *   hot → ok    when temp <= tempLow   (push: ✅ recovery)
- *   Hysteresis band: tempLow < temp < tempHigh keeps current state unchanged.
+ * Temperature state machine (per disk) — driven by Synology's own classifier:
+ *   ok  → hot   when temperature_status === 'critical'   (push: 🌡 overheating alert)
+ *   hot → ok    when temperature_status === 'normal'     (push: ✅ recovery)
+ *   Hysteresis band: 'warning' keeps current state unchanged.
  *
  * SMART state machine (per disk):
  *   ok   → warn  when smart_status !== 'normal' OR status !== 'normal'  (push: ❌ SMART alert)
@@ -55,28 +51,28 @@ export class DiskHealthWatcher {
     }
 
     for (const disk of result.data.disks) {
-      await this.checkTemperature(disk.id, disk.model, disk.temp)
+      await this.checkTemperature(disk.id, disk.model, disk.temp, disk.temperature_status)
       await this.checkSmart(disk.id, disk.model, disk.smart_status, disk.status)
     }
   }
 
-  private async checkTemperature(diskId: string, model: string, temp: number): Promise<void> {
+  private async checkTemperature(diskId: string, model: string, temp: number, tempStatus: string): Promise<void> {
     const event = 'disk_temp'
     const currentState = this.deps.getState(event, diskId)
 
     if (currentState === 'ok') {
-      if (temp >= this.deps.tempHigh) {
+      if (tempStatus === 'critical') {
         this.deps.setState(event, diskId, 'hot')
-        await this.deps.notify(`🌡 ${model} перегрев: ${temp}°C`)
+        await this.deps.notify(`🌡 ${model} перегрев: ${temp}°C (статус: critical)`)
       }
-      // Below tempHigh: stay ok, no action
+      // 'normal' or 'warning': stay ok
     } else {
       // Currently hot
-      if (temp <= this.deps.tempLow) {
+      if (tempStatus === 'normal') {
         this.deps.setState(event, diskId, 'ok')
         await this.deps.notify(`✅ ${model} температура в норме (${temp}°C)`)
       }
-      // Between tempLow and tempHigh: hysteresis — stay hot, no action
+      // 'warning' or still 'critical': stay hot (hysteresis)
     }
   }
 

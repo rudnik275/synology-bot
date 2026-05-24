@@ -1,7 +1,11 @@
 import type { Task } from '../infra/synology/types.ts'
-import type { InlineKeyboardButton as GrammyIKBtn } from 'grammy/types'
 
-type CallbackButton = GrammyIKBtn.CallbackButton
+// Local plain-object shape so the domain layer doesn't import grammy (ADR-0002).
+// Handler layer treats this as a structurally-compatible InlineKeyboardButton.CallbackButton.
+export interface CallbackButton {
+  text: string
+  callback_data: string
+}
 
 const MAX_TASKS = 20
 const TITLE_MAX_CHARS = 30

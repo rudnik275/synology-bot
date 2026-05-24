@@ -51,6 +51,8 @@ export interface DiskEntry {
   id: string
   model: string
   temp: number
+  /** Synology's own temperature classifier — preferred over numeric temp for alerting. */
+  temperature_status: 'normal' | 'warning' | 'critical' | string
   status: 'normal' | 'warning' | 'crashed' | string
   smart_status: 'normal' | 'failed' | 'warning' | string
 }

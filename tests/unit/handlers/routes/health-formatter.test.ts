@@ -26,8 +26,8 @@ const storageData: StorageInfo = {
 
 const diskData: DiskInfo = {
   disks: [
-    { id: 'sata1', model: 'WDC WD40EFRX', temp: 38, status: 'normal', smart_status: 'normal' },
-    { id: 'sata2', model: 'ST4000VN008', temp: 41, status: 'normal', smart_status: 'normal' },
+    { id: 'sata1', model: 'WDC WD40EFRX', temp: 38, temperature_status: 'normal', status: 'normal', smart_status: 'normal' },
+    { id: 'sata2', model: 'ST4000VN008', temp: 41, temperature_status: 'normal', status: 'normal', smart_status: 'normal' },
   ],
 }
 
@@ -93,7 +93,7 @@ describe('formatHealthMessage()', () => {
   it('marks crashed/warning disks with the proper emoji', () => {
     const crashedDiskData: DiskInfo = {
       disks: [
-        { id: 'sata1', model: 'BadDisk', temp: 55, status: 'crashed', smart_status: 'failed' },
+        { id: 'sata1', model: 'BadDisk', temp: 55, temperature_status: 'critical', status: 'crashed', smart_status: 'failed' },
       ],
     }
 
@@ -111,7 +111,7 @@ describe('formatHealthMessage()', () => {
   it('marks warning disks with ⚠️', () => {
     const warningDiskData: DiskInfo = {
       disks: [
-        { id: 'sata1', model: 'WarnDisk', temp: 48, status: 'warning', smart_status: 'warning' },
+        { id: 'sata1', model: 'WarnDisk', temp: 48, temperature_status: 'warning', status: 'warning', smart_status: 'warning' },
       ],
     }
 

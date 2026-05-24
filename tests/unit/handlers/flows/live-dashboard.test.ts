@@ -123,6 +123,20 @@ describe('LiveDashboard', () => {
     expect(editMessageText).not.toHaveBeenCalled()
   })
 
+  it('refresh is throttled: second call within 1s is suppressed', async () => {
+    const { ctx, editMessageText } = makeFakeCtx(450, 90)
+    synology.tasks = []
+
+    await dashboard.start(ctx)
+    // First refresh — passes (lastRefreshAt was 0)
+    await dashboard.refresh(450, ctx)
+    // Second refresh immediately — throttled, no extra edit
+    await dashboard.refresh(450, ctx)
+    await dashboard.refresh(450, ctx)
+
+    expect(editMessageText).toHaveBeenCalledTimes(1)
+  })
+
   // ─── refresh ignores "message is not modified" error ──────────────────────
   it('refresh ignores "message is not modified" telegram error', async () => {
     const messageId = 111

@@ -34,7 +34,7 @@ function makeDockerStub(overrides: Partial<DockerClient> = {}): DockerClient {
   } as unknown as DockerClient
 }
 
-describe('/deploy-status handler', () => {
+describe('/deploy_status handler', () => {
   let ctx: FakeCtx
   let bot: ReturnType<typeof makeFakeBot>
 
@@ -49,7 +49,7 @@ describe('/deploy-status handler', () => {
     })
 
     registerDeployStatusRoute(bot as never, docker)
-    await bot.trigger('deploy-status', ctx)
+    await bot.trigger('deploy_status', ctx)
 
     expect(ctx.reply.mock.calls[0]![0]).toContain('watchtower не найден')
   })
@@ -64,7 +64,7 @@ describe('/deploy-status handler', () => {
     })
 
     registerDeployStatusRoute(bot as never, docker)
-    await bot.trigger('deploy-status', ctx)
+    await bot.trigger('deploy_status', ctx)
 
     const reply = ctx.reply.mock.calls[0]![0] as string
     expect(reply).toContain('Watchtower не запущен')
@@ -87,7 +87,7 @@ describe('/deploy-status handler', () => {
     })
 
     registerDeployStatusRoute(bot as never, docker)
-    await bot.trigger('deploy-status', ctx)
+    await bot.trigger('deploy_status', ctx)
 
     const reply = ctx.reply.mock.calls[0]![0] as string
     expect(reply).toContain('✅')
@@ -106,7 +106,7 @@ describe('/deploy-status handler', () => {
     })
 
     registerDeployStatusRoute(bot as never, docker)
-    await bot.trigger('deploy-status', ctx)
+    await bot.trigger('deploy_status', ctx)
 
     const reply = ctx.reply.mock.calls[0]![0] as string
     expect(reply).toContain('Watchtower работает')
@@ -121,7 +121,7 @@ describe('/deploy-status handler', () => {
     })
 
     registerDeployStatusRoute(bot as never, docker)
-    await bot.trigger('deploy-status', ctx)
+    await bot.trigger('deploy_status', ctx)
 
     const reply = ctx.reply.mock.calls[0]![0] as string
     expect(reply).toContain('❌')
@@ -135,7 +135,7 @@ describe('/deploy-status handler', () => {
     })
 
     registerDeployStatusRoute(bot as never, docker)
-    await bot.trigger('deploy-status', ctx)
+    await bot.trigger('deploy_status', ctx)
 
     const reply = ctx.reply.mock.calls[0]![0] as string
     expect(reply).toContain('❌')

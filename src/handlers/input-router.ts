@@ -64,7 +64,7 @@ export function registerInputRouter(
   registerMagnetFlow(bot, synology, sessions)
 
   // Handle magnet links in text messages
-  bot.on('message:text', async (ctx) => {
+  bot.on('message:text', async (ctx, next) => {
     const text = ctx.message.text
     const kind = classifyInput(text)
 
@@ -85,7 +85,10 @@ export function registerInputRouter(
       return
     }
 
-    // 'unknown' — fall through, do nothing
+    // 'unknown' (including slash-commands like /dashboard that this router
+    // doesn't handle) — pass through so downstream `bot.command()` handlers
+    // registered after the input router get a chance to match.
+    await next()
   })
 
   // Handle .torrent file uploads / forwards

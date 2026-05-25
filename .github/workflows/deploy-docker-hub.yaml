@@ -23,7 +23,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: rudnik275/nas-torrent-bot
+          images: rudnik275/synology-bot
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7

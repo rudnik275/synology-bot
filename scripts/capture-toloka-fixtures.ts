@@ -94,7 +94,7 @@ console.log(`  → logged in, got ${cookies.size} cookies`)
 console.log(`Capturing search results for "${SEARCH_QUERY}"...`)
 const searchUrl = `${BASE_URL}/tracker.php?nm=${encodeURIComponent(SEARCH_QUERY)}`
 const searchRes = await fetch(searchUrl, {
-  headers: { Cookie: cookieHeader, 'User-Agent': 'Mozilla/5.0 (compatible; nas-torrent-bot)' },
+  headers: { Cookie: cookieHeader, 'User-Agent': 'Mozilla/5.0 (compatible; synology-bot)' },
 })
 const searchHtml = await searchRes.text()
 writeFileSync(join(FIXTURES_DIR, 'search-results.html'), searchHtml, 'utf-8')
@@ -106,7 +106,7 @@ console.log('  → saved search-results.html')
 console.log(`Capturing empty results page for "${EMPTY_QUERY}"...`)
 const emptyUrl = `${BASE_URL}/tracker.php?nm=${encodeURIComponent(EMPTY_QUERY)}`
 const emptyRes = await fetch(emptyUrl, {
-  headers: { Cookie: cookieHeader, 'User-Agent': 'Mozilla/5.0 (compatible; nas-torrent-bot)' },
+  headers: { Cookie: cookieHeader, 'User-Agent': 'Mozilla/5.0 (compatible; synology-bot)' },
 })
 const emptyHtml = await emptyRes.text()
 writeFileSync(join(FIXTURES_DIR, 'search-empty.html'), emptyHtml, 'utf-8')

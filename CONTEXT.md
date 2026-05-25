@@ -23,3 +23,7 @@ _Avoid:_ User, admin, allowed user
 ## Domain boundary
 
 Бот живёт в момент **активной задачи** и **активного NAS**. Как только файл лёг в папку назначения — что с ним дальше (Plex, Jellyfin, ручной просмотр) **не наша забота**. Как только NAS офлайн дольше N минут — бот может только сигналить «не достучался», но не пытаться сам что-то чинить.
+
+## Engineering lessons
+
+Captured incidents and the lessons they produced live in [`docs/lessons-learned.md`](./docs/lessons-learned.md).

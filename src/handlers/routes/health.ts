@@ -26,7 +26,7 @@ export function formatHealthMessage(
     const u = utilResult.data
     const cpuPct = u.cpu.user_load
     const totalGb = (u.memory.total_real / 1024 / 1024).toFixed(1)
-    const usedGb = ((u.memory.total_real - u.memory.available_real) / 1024 / 1024).toFixed(1)
+    const usedGb = ((u.memory.total_real - u.memory.avail_real) / 1024 / 1024).toFixed(1)
     const ramPct = u.memory.real_usage
     lines.push(`🖥 CPU: ${cpuPct}% • RAM: ${usedGb} / ${totalGb} GB (${ramPct}%)`)
   }
@@ -43,7 +43,7 @@ export function formatHealthMessage(
       const usedTb = (Number(vol.size.used) / 1024 / 1024 / 1024 / 1024).toFixed(1)
       const pct = Math.round((Number(vol.size.used) / Number(vol.size.total)) * 100)
       const statusEmoji = vol.status === 'crashed' ? '❌' : pct >= 90 ? '⚠️' : '✅'
-      lines.push(`  • ${vol.name}: ${usedTb} / ${totalTb} TB (${pct}%) ${statusEmoji}`)
+      lines.push(`  • ${vol.vol_path}: ${usedTb} / ${totalTb} TB (${pct}%) ${statusEmoji}`)
     }
   }
 

@@ -70,14 +70,14 @@ export class DiskUsageWatcher {
       const usedGb = this.formatBytes(used)
       const totalGb = this.formatBytes(total)
       await this.deps.notify(
-        `⚠️ ${volume.name} заполнен на ${pctDisplay}% (${usedGb}/${totalGb})`
+        `⚠️ ${volume.vol_path} заполнен на ${pctDisplay}% (${usedGb}/${totalGb})`
       )
     } else if (isWarned && usedPct < this.deps.lowPct) {
       // warn → ok: dropped below low threshold
       await this.deps.clearWarned(volume.id)
       const pctDisplay = Math.round(usedPct)
       await this.deps.notify(
-        `✅ ${volume.name} восстановлен (${pctDisplay}% использовано)`
+        `✅ ${volume.vol_path} восстановлен (${pctDisplay}% использовано)`
       )
     }
     // Otherwise: no transition (hysteresis band or already in correct state)

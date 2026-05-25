@@ -4,24 +4,23 @@
     "volumes": [
       {
         "id": "volume_1",
-        "name": "Volume 1",
+        "vol_path": "/volume1",
         "size": {
           "total": "4398046511104",
-          "used": "1319413953331",
-          "free": "3078632557773"
+          "used": "1319413953331"
         },
         "status": "normal"
       },
       {
         "id": "volume_2",
-        "name": "Volume 2",
+        "vol_path": "/volume2",
         "size": {
           "total": "4398046511104",
-          "used": "4178144185549",
-          "free": "219902325555"
+          "used": "4178144185549"
         },
         "status": "normal"
       }
-    ]
+    ],
+    "disks": []
   }
 }

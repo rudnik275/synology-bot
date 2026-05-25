@@ -29,9 +29,9 @@ function makeDisk(
   id: string,
   model: string,
   temp: number,
-  temperature_status = 'normal',
-  status = 'normal',
-  smart_status = 'normal',
+  temperature_status: DiskEntry['temperature_status'] = 'normal',
+  status: DiskEntry['status'] = 'normal',
+  smart_status: DiskEntry['smart_status'] = 'normal',
 ): DiskEntry {
   return { id, model, temp, temperature_status, status, smart_status }
 }

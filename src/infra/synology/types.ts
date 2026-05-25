@@ -27,18 +27,20 @@ export interface SystemUtilization {
   }
   memory: {
     real_usage: number
+    /** Total physical memory in KB. */
     total_real: number
-    available_real: number
+    /** Available (unused) physical memory in KB. Note: DSM returns `avail_real`, not `available_real`. */
+    avail_real: number
   }
 }
 
 export interface VolumeInfo {
   id: string
-  name: string
+  /** Mount path, e.g. `/volume1`. DSM `load_info` doesn't return a separate `name` field. */
+  vol_path: string
   size: {
     total: string
     used: string
-    free: string
   }
   status: 'normal' | 'crashed' | 'degraded' | string
 }
@@ -51,14 +53,22 @@ export interface DiskEntry {
   id: string
   model: string
   temp: number
-  /** Synology's own temperature classifier — preferred over numeric temp for alerting. */
-  temperature_status: 'normal' | 'warning' | 'critical' | string
+  /** Synology's own temperature classifier — preferred over numeric temp for alerting.
+   *  Synthesised by the client from the numeric `temp` since `load_info` doesn't return
+   *  this field directly. */
+  temperature_status: 'normal' | 'warning' | 'critical'
   status: 'normal' | 'warning' | 'crashed' | string
   smart_status: 'normal' | 'failed' | 'warning' | string
 }
 
 export interface DiskInfo {
   disks: DiskEntry[]
+}
+
+/** Raw response of SYNO.Storage.CGI.Storage `load_info` — both volumes and disks come in one call. */
+export interface SynoStorageLoadInfo {
+  volumes?: VolumeInfo[]
+  disks?: Array<Omit<DiskEntry, 'temperature_status'>>
 }
 
 // --- Download / FileStation types ---

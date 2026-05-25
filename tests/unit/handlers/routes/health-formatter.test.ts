@@ -4,21 +4,21 @@ import type { SystemUtilization, StorageInfo, DiskInfo } from '../../../../src/i
 
 const utilizationData: SystemUtilization = {
   cpu: { user_load: 42, system_load: 8 },
-  memory: { real_usage: 44, total_real: 16777216, available_real: 9437184 },
+  memory: { real_usage: 44, total_real: 16777216, avail_real: 9437184 },
 }
 
 const storageData: StorageInfo = {
   volumes: [
     {
       id: 'volume_1',
-      name: 'Volume 1',
-      size: { total: '4398046511104', used: '1319413953331', free: '3078632557773' },
+      vol_path: '/volume1',
+      size: { total: '4398046511104', used: '1319413953331' },
       status: 'normal',
     },
     {
       id: 'volume_2',
-      name: 'Volume 2',
-      size: { total: '4398046511104', used: '4178144185549', free: '219902325555' },
+      vol_path: '/volume2',
+      size: { total: '4398046511104', used: '4178144185549' },
       status: 'normal',
     },
   ],
@@ -49,8 +49,8 @@ describe('formatHealthMessage()', () => {
     expect(msg).toContain('44%')
     // Storage
     expect(msg).toContain('💽')
-    expect(msg).toContain('Volume 1')
-    expect(msg).toContain('Volume 2')
+    expect(msg).toContain('/volume1')
+    expect(msg).toContain('/volume2')
     // Disk
     expect(msg).toContain('🌡')
     expect(msg).toContain('WDC WD40EFRX')
@@ -68,12 +68,12 @@ describe('formatHealthMessage()', () => {
 
     // Volume 2 is ~95% used
     const lines = msg.split('\n')
-    const vol2Line = lines.find(l => l.includes('Volume 2'))
+    const vol2Line = lines.find(l => l.includes('/volume2'))
     expect(vol2Line).toBeDefined()
     expect(vol2Line).toContain('⚠️')
 
     // Volume 1 is ~30% used — no warning
-    const vol1Line = lines.find(l => l.includes('Volume 1'))
+    const vol1Line = lines.find(l => l.includes('/volume1'))
     expect(vol1Line).toBeDefined()
     expect(vol1Line).not.toContain('⚠️')
   })
@@ -138,7 +138,7 @@ describe('formatHealthMessage()', () => {
     expect(msg).toContain('❌')
     expect(msg).toContain('timeout')
     // Storage and disks should still appear
-    expect(msg).toContain('Volume 1')
+    expect(msg).toContain('/volume1')
     expect(msg).toContain('WDC WD40EFRX')
   })
 

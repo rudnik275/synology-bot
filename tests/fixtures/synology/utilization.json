@@ -9,7 +9,7 @@
     "memory": {
       "real_usage": 44,
       "total_real": 16384000,
-      "available_real": 9175040,
+      "avail_real": 9175040,
       "cached": 2048000,
       "buffer": 512000
     },

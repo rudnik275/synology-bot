@@ -1,4 +1,14 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, SharedFolder, FolderEntry, SynoDownloadTaskCreateData } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoDownloadTaskCreateData, SynoStorageLoadInfo } from './types.ts'
+
+const PATH_ENTRY = 'webapi/entry.cgi'
+const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
+
+/** Synology HDD temperature classification, synthesised from numeric `temp` (°C). */
+function classifyTemp(t: number): 'normal' | 'warning' | 'critical' {
+  if (t >= 56) return 'critical'
+  if (t >= 50) return 'warning'
+  return 'normal'
+}
 
 export class SynologyClient {
   private host: string
@@ -37,7 +47,8 @@ export class SynologyClient {
       'SYNO.DownloadStation.Task',
       1,
       'list',
-      { additional: 'detail,transfer' }
+      { additional: 'detail,transfer' },
+      PATH_DOWNLOAD_TASK,
     )
     if (!result.ok) return result
     return { ok: true, data: result.data.tasks ?? [] }
@@ -46,7 +57,7 @@ export class SynologyClient {
   async pauseTask(taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'pause', {
       id: taskId,
-    })
+    }, PATH_DOWNLOAD_TASK)
     if (!result.ok) return result
     return { ok: true }
   }
@@ -54,7 +65,7 @@ export class SynologyClient {
   async resumeTask(taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'resume', {
       id: taskId,
-    })
+    }, PATH_DOWNLOAD_TASK)
     if (!result.ok) return result
     return { ok: true }
   }
@@ -64,14 +75,14 @@ export class SynologyClient {
       id: taskId,
       force_complete: 'false',
       delete_files: deleteFiles ? 'true' : 'false',
-    })
+    }, PATH_DOWNLOAD_TASK)
     if (!result.ok) return result
     return { ok: true }
   }
 
   async isReachable(): Promise<ReachabilityResult> {
     try {
-      const result = await this.request<unknown>('SYNO.API.Info', 1, 'query', { query: 'all' })
+      const result = await this.request<unknown>('SYNO.API.Info', 1, 'query', { query: 'all' }, 'webapi/query.cgi')
       if (result.ok) return { ok: true }
       return result
     } catch (err) {
@@ -84,9 +95,10 @@ export class SynologyClient {
     api: string,
     version: number,
     method: string,
-    params: Record<string, string | number> = {}
+    params: Record<string, string | number> = {},
+    path: string = PATH_ENTRY,
   ): Promise<{ ok: true; data: T } | { ok: false; reason: string }> {
-    const url = this.buildUrl('webapi/query.cgi', {
+    const url = this.buildUrl(path, {
       api,
       version: String(version),
       method,
@@ -103,7 +115,7 @@ export class SynologyClient {
       if (code === 119) {
         // Session expired -- re-login once and retry
         await this.login()
-        return this.requestOnce<T>(api, version, method, params)
+        return this.requestOnce<T>(api, version, method, params, path)
       }
 
       return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
@@ -119,7 +131,7 @@ export class SynologyClient {
     const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'create', {
       uri: magnet,
       destination,
-    })
+    }, PATH_DOWNLOAD_TASK)
     if (!result.ok) return result
     return { ok: true }
   }
@@ -209,9 +221,10 @@ export class SynologyClient {
     api: string,
     version: number,
     method: string,
-    params: Record<string, string | number> = {}
+    params: Record<string, string | number> = {},
+    path: string = PATH_ENTRY,
   ): Promise<{ ok: true; data: T } | { ok: false; reason: string }> {
-    const url = this.buildUrl('webapi/query.cgi', {
+    const url = this.buildUrl(path, {
       api,
       version: String(version),
       method,
@@ -235,11 +248,19 @@ export class SynologyClient {
   }
 
   async getStorageInfo(): Promise<{ ok: true; data: StorageInfo } | { ok: false; reason: string }> {
-    return this.request<StorageInfo>('SYNO.Core.Storage.Volume', 1, 'list')
+    const result = await this.request<SynoStorageLoadInfo>('SYNO.Storage.CGI.Storage', 1, 'load_info')
+    if (!result.ok) return result
+    return { ok: true, data: { volumes: result.data.volumes ?? [] } }
   }
 
   async getDiskInfo(): Promise<{ ok: true; data: DiskInfo } | { ok: false; reason: string }> {
-    return this.request<DiskInfo>('SYNO.Core.Storage.Disk', 1, 'list')
+    const result = await this.request<SynoStorageLoadInfo>('SYNO.Storage.CGI.Storage', 1, 'load_info')
+    if (!result.ok) return result
+    const disks: DiskEntry[] = (result.data.disks ?? []).map(d => ({
+      ...d,
+      temperature_status: classifyTemp(d.temp),
+    }))
+    return { ok: true, data: { disks } }
   }
 
   private buildUrl(path: string, params: Record<string, string>): string {

@@ -5,17 +5,15 @@ import type { StorageInfo } from '../../../src/infra/synology/types.ts'
 
 // ---- Helpers ----
 
-function makeVolume(id: string, name: string, usedPct: number): StorageInfo['volumes'][number] {
+function makeVolume(id: string, vol_path: string, usedPct: number): StorageInfo['volumes'][number] {
   const total = 1_000_000_000_000 // 1 TB in bytes (as number)
   const used = Math.round(total * usedPct / 100)
-  const free = total - used
   return {
     id,
-    name,
+    vol_path,
     size: {
       total: String(total),
       used: String(used),
-      free: String(free),
     },
     status: 'normal',
   }

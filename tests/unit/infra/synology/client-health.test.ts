@@ -55,7 +55,7 @@ describe('SynologyClient health extensions', () => {
         expect(result.data.cpu.system_load).toBe(5)
         expect(result.data.memory.real_usage).toBe(44)
         expect(result.data.memory.total_real).toBe(16384000)
-        expect(result.data.memory.available_real).toBe(9175040)
+        expect(result.data.memory.avail_real).toBe(9175040)
       }
     })
 
@@ -114,7 +114,7 @@ describe('SynologyClient health extensions', () => {
         expect(result.data.volumes).toHaveLength(2)
         const v1 = result.data.volumes[0]
         expect(v1.id).toBe('volume_1')
-        expect(v1.name).toBe('Volume 1')
+        expect(v1.vol_path).toBe('/volume1')
         expect(v1.size.total).toBe('4398046511104')
         expect(v1.size.used).toBe('1319413953331')
         expect(v1.status).toBe('normal')

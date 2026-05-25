@@ -7,10 +7,10 @@ const COOKIE_KEY = 'toloka_cookie'
 /**
  * HTTP-only Toloka client. Uses fetch + cookie jar stored in PersistentStore.
  *
- * Toloka has Cloudflare in passive-CDN mode (no JS challenge, no CAPTCHA, no CSRF),
- * so a plain HTTPS request with a browser User-Agent is sufficient. The only
- * fallback we need is session-expired detection: if the server returns the login
- * page, re-login once and retry.
+ * Why no browser automation: see docs/integrations/toloka-defences.md (probed 2026-05-24).
+ * The only fallback we need is session-expired detection — if the server returns the
+ * login page, re-login once and retry. Revisit if you observe cf-browser-verification
+ * HTML, 403/503 with a valid cookie, or login-form changes.
  */
 export class TolokaClient {
   private config: TolokaClientConfig

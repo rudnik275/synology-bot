@@ -28,7 +28,7 @@ Create `/volume1/docker/nas-torrent-bot/.env` on the NAS with the following cont
 ```
 # Telegram (required)
 BOT_TOKEN=<your-telegram-bot-token>
-OWNER_USERNAME=<your-telegram-username>
+OWNER_CHAT_ID=<your-numeric-chat-id>
 
 # Synology DSM API (required — bot calls DSM for DownloadStation + NAS health)
 SYNOLOGY_HOST=https://<nas-host>:5001
@@ -38,20 +38,16 @@ SYNOLOGY_PASSWORD=<dsm-user-password>
 # Toloka (optional — without these, free-text search is disabled; .torrent upload still works)
 TOLOKA_USERNAME=<toloka-username>
 TOLOKA_PASSWORD=<toloka-password>
-
-# Watchtower telegram notifications (required for watchtower service)
-WATCHTOWER_TELEGRAM_URL=telegram://<bot-token>@telegram?chats=<owner-chat-id>&preview=false
 ```
 
 Replace:
-- `<your-telegram-bot-token>` — token from BotFather (also used in `WATCHTOWER_TELEGRAM_URL`)
-- `<your-telegram-username>` — your Telegram username (without `@`)
+- `<your-telegram-bot-token>` — token from BotFather
+- `<your-numeric-chat-id>` — your numeric Telegram chat ID (get it by messaging [@userinfobot](https://t.me/userinfobot)). Used for both bot owner identification AND Watchtower deploy notifications.
 - `<nas-host>` — same hostname/IP you use to reach DSM (port 5001 = DSM HTTPS)
-- `<dsm-user-*>` — a DSM user with permission to use DownloadStation (often `admin` or a dedicated user)
+- `<dsm-user-*>` — a DSM user with permission to use DownloadStation (preferably a dedicated low-privilege user, not an admin)
 - `<toloka-*>` — credentials for [toloka.to](https://toloka.to) if you want free-text torrent search
-- `<owner-chat-id>` — your numeric Telegram chat ID (get it by messaging [@userinfobot](https://t.me/userinfobot))
 
-The `WATCHTOWER_TELEGRAM_URL` reuses the same bot token so deploy reports arrive from the same bot (visually distinct because Watchtower prefixes them with the session name).
+Watchtower's deploy-notification URL is assembled by the compose file from `BOT_TOKEN` and `OWNER_CHAT_ID` — you don't need to pass it explicitly. Deploy reports arrive from the same bot (visually distinct because Watchtower prefixes them with the session name).
 
 All other tunables (poll intervals, disk thresholds, dashboard refresh rate, etc.) have sensible defaults baked into the image — see `src/config.ts` if you want to override them.
 

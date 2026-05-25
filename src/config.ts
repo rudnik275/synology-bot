@@ -6,13 +6,22 @@ function required(name: string): string {
   return value
 }
 
+function requiredInt(name: string): number {
+  const raw = required(name)
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`Environment variable ${name} must be an integer (got: "${raw}")`)
+  }
+  return parsed
+}
+
 function optional(name: string, fallback = ''): string {
   return process.env[name] ?? fallback
 }
 
 export interface Config {
   botToken: string
-  ownerUsername: string
+  ownerChatId: number
   synology: {
     host: string
     user: string
@@ -43,7 +52,7 @@ export interface Config {
 export function loadConfig(): Config {
   return {
     botToken: required('BOT_TOKEN'),
-    ownerUsername: required('OWNER_USERNAME'),
+    ownerChatId: requiredInt('OWNER_CHAT_ID'),
     synology: {
       host: required('SYNOLOGY_HOST'),
       user: required('SYNOLOGY_USER'),

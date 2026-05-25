@@ -28,7 +28,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   const bot = new Bot<Context>(deps.config.botToken)
 
   // Owner-only guard — all subsequent handlers run only for Owner
-  bot.use(createOwnerOnlyMiddleware(deps.config.ownerUsername, deps.store))
+  bot.use(createOwnerOnlyMiddleware(deps.config.ownerChatId, deps.store))
 
   // Toloka client
   const toloka = new TolokaClient(

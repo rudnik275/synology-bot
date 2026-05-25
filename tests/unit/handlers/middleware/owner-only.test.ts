@@ -2,7 +2,6 @@ import { describe, it, expect, mock } from 'bun:test'
 import { createOwnerOnlyMiddleware } from '../../../../src/handlers/middleware/owner-only.ts'
 import type { PersistentStore } from '../../../../src/infra/persistence/store.ts'
 
-// Minimal fake PersistentStore for middleware tests
 function makeStore(): { setKv: ReturnType<typeof mock>; getKv: ReturnType<typeof mock> } {
   return {
     setKv: mock(() => {}),
@@ -10,29 +9,24 @@ function makeStore(): { setKv: ReturnType<typeof mock>; getKv: ReturnType<typeof
   }
 }
 
-// Build a minimal grammy-like context
 function makeCtx(overrides: {
   chatType?: string
-  username?: string
   chatId?: number
 } = {}) {
-  const { chatType = 'private', username, chatId = 99999 } = overrides
+  const { chatType = 'private', chatId = 99999 } = overrides
   return {
-    chat: chatType === 'private'
-      ? { type: 'private', username, id: chatId }
-      : { type: chatType, id: chatId },
+    chat: { type: chatType, id: chatId },
   }
 }
 
 describe('ownerOnly middleware', () => {
-  const OWNER = 'owner_user'
+  const OWNER_CHAT_ID = 12345
 
-  // --- Cycle 7: Owner passes through and writes owner_chat_id ---
-  it('calls next() when username matches OWNER_USERNAME', async () => {
+  it('calls next() when chat.id matches OWNER_CHAT_ID', async () => {
     const store = makeStore()
-    const middleware = createOwnerOnlyMiddleware(OWNER, store as unknown as PersistentStore)
+    const middleware = createOwnerOnlyMiddleware(OWNER_CHAT_ID, store as unknown as PersistentStore)
     const next = mock(async () => {})
-    const ctx = makeCtx({ username: OWNER, chatId: 12345 })
+    const ctx = makeCtx({ chatId: OWNER_CHAT_ID })
 
     await middleware(ctx as never, next)
 
@@ -41,21 +35,20 @@ describe('ownerOnly middleware', () => {
 
   it('writes owner_chat_id to PersistentStore when Owner calls', async () => {
     const store = makeStore()
-    const middleware = createOwnerOnlyMiddleware(OWNER, store as unknown as PersistentStore)
+    const middleware = createOwnerOnlyMiddleware(OWNER_CHAT_ID, store as unknown as PersistentStore)
     const next = mock(async () => {})
-    const ctx = makeCtx({ username: OWNER, chatId: 12345 })
+    const ctx = makeCtx({ chatId: OWNER_CHAT_ID })
 
     await middleware(ctx as never, next)
 
-    expect(store.setKv).toHaveBeenCalledWith('owner_chat_id', '12345')
+    expect(store.setKv).toHaveBeenCalledWith('owner_chat_id', String(OWNER_CHAT_ID))
   })
 
-  // --- Cycle 8: non-Owner is silently ignored ---
-  it('returns silently without calling next() for non-Owner username', async () => {
+  it('returns silently without calling next() for non-Owner chat id', async () => {
     const store = makeStore()
-    const middleware = createOwnerOnlyMiddleware(OWNER, store as unknown as PersistentStore)
+    const middleware = createOwnerOnlyMiddleware(OWNER_CHAT_ID, store as unknown as PersistentStore)
     const next = mock(async () => {})
-    const ctx = makeCtx({ username: 'intruder', chatId: 77777 })
+    const ctx = makeCtx({ chatId: 77777 })
 
     await middleware(ctx as never, next)
 
@@ -65,31 +58,18 @@ describe('ownerOnly middleware', () => {
 
   it('does not reply to non-Owner (no ctx.reply method needed)', async () => {
     const store = makeStore()
-    const middleware = createOwnerOnlyMiddleware(OWNER, store as unknown as PersistentStore)
+    const middleware = createOwnerOnlyMiddleware(OWNER_CHAT_ID, store as unknown as PersistentStore)
     const next = mock(async () => {})
-    const ctx = makeCtx({ username: 'intruder' })
+    const ctx = makeCtx({ chatId: 77777 })
 
-    // If middleware tries to call ctx.reply, it will throw — context has no reply method
     await expect(middleware(ctx as never, next)).resolves.toBeUndefined()
   })
 
-  // --- Cycle 9: missing username returns silently ---
-  it('returns silently when ctx.chat.username is undefined', async () => {
+  it('returns silently when chat type is not private (even if id matches)', async () => {
     const store = makeStore()
-    const middleware = createOwnerOnlyMiddleware(OWNER, store as unknown as PersistentStore)
+    const middleware = createOwnerOnlyMiddleware(OWNER_CHAT_ID, store as unknown as PersistentStore)
     const next = mock(async () => {})
-    const ctx = makeCtx({ username: undefined })
-
-    await middleware(ctx as never, next)
-
-    expect(next).not.toHaveBeenCalled()
-  })
-
-  it('returns silently when chat type is not private', async () => {
-    const store = makeStore()
-    const middleware = createOwnerOnlyMiddleware(OWNER, store as unknown as PersistentStore)
-    const next = mock(async () => {})
-    const ctx = makeCtx({ chatType: 'group', username: OWNER })
+    const ctx = makeCtx({ chatType: 'group', chatId: OWNER_CHAT_ID })
 
     await middleware(ctx as never, next)
 

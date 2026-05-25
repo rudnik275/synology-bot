@@ -1,38 +1,39 @@
 # toloka.to defences map
 
-Probed 2026-05-24 (post-v2.0.0, pre-PR #44).
+> Probed 2026-05-24
 
-## Summary
+Snapshot of what toloka.to exposes to anonymous requests, captured during the Toloka rewrite. Documents the evidence behind the HTTP-only `TolokaClient` design — i.e. why no browser automation is needed. Revisit when any signal from "When to revisit" below appears.
 
-Cloudflare is in front as a passive CDN only. No active bot challenges observed.
+## Findings (anonymous `curl` probe, 2026-05-24)
 
-## Findings
+toloka.to is a Ukrainian torrent tracker (`Гуртом - торрент-толока`). Probed with plain `curl -sSL -A "Mozilla/5.0 ... Chrome/120 ..."`.
 
-| Endpoint | Auth required | JS challenge | CAPTCHA | Notes |
-|---|---|---|---|---|
-| `/` (home) | No | No | No | Static HTML, no challenge |
-| `/login` | No | No | No | Plain HTML form, `POST` with `username`/`password` |
-| `/browse` | Session cookie | No | No | Standard session-cookie auth after login |
-| Torrent download | Session cookie | No | No | Direct file download |
+| Endpoint | Anon access | Notes |
+|---|---|---|
+| `/` | ✅ HTTP/2 200 in 200 ms | HTML landing page |
+| `/tracker.php?nm=ubuntu` | ⛔ login wall | response shows "Вхід / реєструватися", no result rows |
+| `/viewtopic.php?t=N` | ⛔ login wall | empty `<title>` |
+| `/download.php?id=N` | ⛔ login wall | HTTP 200 (no redirect, just login form body) |
+| `/rss.php?t=1` | ✅ works | returns all forum posts (questions, discussions) — not torrents |
+| `/rss.php?t=1&toronly=1&cat=N` | ⛔ empty `<channel>` | torrent-only RSS needs auth |
+| `/sitemap.xml` + `/forum-N.xml` | ✅ works | URLs + lastmod, no metadata |
+| `/login.php` form | ✅ plain HTML | `name=username`, `name=password`, `name=autologin`, `name=ssl` — no CSRF token, no CAPTCHA, no JS challenge |
 
-## Auth flow
+## Cloudflare status
 
-1. `POST /login` with `application/x-www-form-urlencoded` body containing credentials.
-2. Server sets a session cookie on success.
-3. All subsequent requests carry that cookie — no token refresh, no 2FA.
+`server: cloudflare` + `cf-ray:` headers are present, but plain `curl` with a Chrome User-Agent gets `HTTP/2 200` immediately for every endpoint. Cloudflare is in **passive-CDN mode**, not aggressive bot-mode. **No interstitial observed.**
 
-## What was assumed (incorrectly)
+## Implication
 
-- Aggressive Cloudflare JS challenge on every request.
-- Need for a real browser (Playwright) to pass the challenge.
-- Potential CAPTCHA on login.
+The HTTP-first `TolokaClient` (cookie jar in `kv['toloka_cookie']`, `isLoginPage()` re-login retry once) is **sufficient**. No browser automation needed.
 
-None of these were present. A plain `fetch()` with cookie jar is sufficient.
+## When to revisit
 
-## How to re-probe
+If owner ever observes:
+- Search returning HTML containing `cf-browser-verification` / `Just a moment...` / `checking your browser`
+- HTTP 403 / 503 from `/tracker.php` with a valid cookie
+- `/login.php` form changes (new hidden tokens, CAPTCHA appears)
 
-```sh
-curl -s -o /dev/null -w "%{http_code} %{redirect_url}" -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" https://toloka.to/
-```
+→ then the assumption changes and we might need to revisit (FlareSolverr sidecar, TLS fingerprint impersonation, or some other approach). Until then, lean HTTP path stays.
 
-If the response is `200` with HTML content (not a Cloudflare interstitial), passive CDN is confirmed.
+Reference for the lesson behind this: [`../lessons-learned.md`](../lessons-learned.md) → "Probe external systems before architecting around assumed defences".

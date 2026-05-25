@@ -2,7 +2,7 @@ import type { Bot, Context } from 'grammy'
 import type { SynologyClient } from '../../infra/synology/client.ts'
 
 export function registerPingNasRoute(bot: Bot<Context>, synology: SynologyClient): void {
-  bot.command('ping-nas', async (ctx) => {
+  bot.command('ping_nas', async (ctx) => {
     const result = await synology.isReachable()
 
     if (result.ok) {

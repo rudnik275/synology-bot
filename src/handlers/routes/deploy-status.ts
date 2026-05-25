@@ -38,7 +38,7 @@ function hourWord(n: number): string {
 }
 
 export function registerDeployStatusRoute(bot: Bot<Context>, docker: DockerClient): void {
-  bot.command('deploy-status', async (ctx) => {
+  bot.command('deploy_status', async (ctx) => {
     let container: Awaited<ReturnType<DockerClient['getContainerByName']>>
 
     try {

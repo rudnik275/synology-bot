@@ -26,17 +26,42 @@ Or create the directory and file manually via DSM File Station.
 Create `/volume1/docker/nas-torrent-bot/.env` on the NAS with the following content:
 
 ```
+# Telegram (required)
 BOT_TOKEN=<your-telegram-bot-token>
 OWNER_USERNAME=<your-telegram-username>
+
+# Synology DSM API (required — bot calls DSM for DownloadStation + NAS health)
+SYNOLOGY_HOST=https://<nas-host>:5001
+SYNOLOGY_USER=<dsm-user-with-downloadstation-access>
+SYNOLOGY_PASSWORD=<dsm-user-password>
+
+# Toloka (optional — without these, free-text search is disabled; .torrent upload still works)
+TOLOKA_USERNAME=<toloka-username>
+TOLOKA_PASSWORD=<toloka-password>
+
+# Watchtower telegram notifications (required for watchtower service)
 WATCHTOWER_TELEGRAM_URL=telegram://<bot-token>@telegram?chats=<owner-chat-id>&preview=false
 ```
 
 Replace:
-- `<your-telegram-bot-token>` — token from BotFather
+- `<your-telegram-bot-token>` — token from BotFather (also used in `WATCHTOWER_TELEGRAM_URL`)
 - `<your-telegram-username>` — your Telegram username (without `@`)
-- `<owner-chat-id>` — your numeric Telegram chat ID
+- `<nas-host>` — same hostname/IP you use to reach DSM (port 5001 = DSM HTTPS)
+- `<dsm-user-*>` — a DSM user with permission to use DownloadStation (often `admin` or a dedicated user)
+- `<toloka-*>` — credentials for [toloka.to](https://toloka.to) if you want free-text torrent search
+- `<owner-chat-id>` — your numeric Telegram chat ID (get it by messaging [@userinfobot](https://t.me/userinfobot))
 
 The `WATCHTOWER_TELEGRAM_URL` reuses the same bot token so deploy reports arrive from the same bot (visually distinct because Watchtower prefixes them with the session name).
+
+All other tunables (poll intervals, disk thresholds, dashboard refresh rate, etc.) have sensible defaults baked into the image — see `src/config.ts` if you want to override them.
+
+### 2a. Bot state persists in `./data/`
+
+The bot keeps its state — subscriptions, owner chat ID, Toloka session cookie — in a SQLite file. The compose mounts `/volume1/docker/nas-torrent-bot/data` into the container at `/usr/src/app/data`, so the database survives image upgrades and container recreates. Create the directory before first start:
+
+```sh
+mkdir -p /volume1/docker/nas-torrent-bot/data
+```
 
 ### 3. Start the stack
 

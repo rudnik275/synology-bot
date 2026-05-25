@@ -8,6 +8,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /volume1/docker/nas-torrent-bot/data:/usr/src/app/data
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower

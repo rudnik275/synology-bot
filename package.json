@@ -1,6 +1,6 @@
 {
-  "name": "nas-torrent-bot",
-  "version": "2.2.0",
+  "name": "synology-bot",
+  "version": "3.0.0",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",

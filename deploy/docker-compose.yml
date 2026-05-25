@@ -1,14 +1,14 @@
 services:
   bot:
-    image: rudnik275/nas-torrent-bot:latest
-    container_name: nas-torrent-bot
+    image: rudnik275/synology-bot:latest
+    container_name: synology-bot
     restart: unless-stopped
-    env_file: /volume1/docker/nas-torrent-bot/.env
+    env_file: /volume1/docker/synology-bot/.env
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /volume1/docker/nas-torrent-bot/data:/usr/src/app/data
+      - /volume1/docker/synology-bot/data:/usr/src/app/data
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower

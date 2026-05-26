@@ -4,6 +4,8 @@ export interface ContainerInfo {
   state: string
   /** Human-readable status from Docker, e.g. "Up 10 minutes" */
   status: string
+  /** Image SHA256 the container was started from (changes on each deploy). */
+  imageId: string
 }
 
 export interface DockerClientOptions {
@@ -46,6 +48,7 @@ export class DockerClient {
       id: json['Id'] as string,
       state: (json['State']?.['Status'] as string) ?? 'unknown',
       status: (json['State']?.['Status'] as string) ?? 'unknown',
+      imageId: (json['Image'] as string) ?? '',
     }
   }
 

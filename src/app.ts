@@ -16,6 +16,10 @@ import { DiskUsageWatcher } from './domain/disk-usage-watcher.ts'
 import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
 import { buildTaskActionKeyboard } from './handlers/routes/task-actions.ts'
+import { OwnerNotifier } from './infra/notify/owner-notifier.ts'
+import { bootstrapTopics } from './infra/notify/topic-bootstrap.ts'
+import { DeployReporter } from './domain/deploy-reporter.ts'
+import pkg from '../package.json' with { type: 'json' }
 
 export async function startApp(): Promise<void> {
   const config = loadConfig()
@@ -26,7 +30,14 @@ export async function startApp(): Promise<void> {
   // One-time migration from legacy JSON file
   await migrateJsonSubscriptions(store, './db/data.json')
 
-  // Pre-login so the first /ping_nas is fast
+  // We know owner_chat_id from env at boot — seed it so OwnerNotifier works
+  // before the owner even talks to the bot. Otherwise watchers fire into the
+  // void during the first session.
+  if (!store.getKv('owner_chat_id')) {
+    store.setKv('owner_chat_id', String(config.ownerChatId))
+  }
+
+  // Pre-login so the first /ping-nas is fast
   try {
     await synology.login()
   } catch (err) {
@@ -38,23 +49,40 @@ export async function startApp(): Promise<void> {
   // Register bot commands for Telegram UI
   await bot.api.setMyCommands([
     { command: 'start', description: 'Запустить бота' },
-    { command: 'ping_nas', description: 'Проверить связь с NAS' },
+    { command: 'ping-nas', description: 'Проверить связь с NAS' },
     { command: 'health', description: 'Состояние NAS (CPU, RAM, диск)' },
-    { command: 'deploy_status', description: 'Статус Watchtower / деплоя' },
+    { command: 'deploy-status', description: 'Статус Watchtower / деплоя' },
     { command: 'subscribe', description: 'Подписаться на шоу' },
     { command: 'subscriptions', description: 'Список подписок' },
     { command: 'unsubscribe', description: 'Отписаться от шоу' },
     { command: 'dashboard', description: 'Активные задачи (авто-обновление)' },
   ])
 
-  // Start NAS reachability watcher (background loop)
-  startReachabilityWatcher({ config, store, synology, bot })
+  // Create the four private-chat forum topics if they don't yet exist.
+  // Best-effort: if Telegram refuses (old client, BotFather setting), we set
+  // topics_disabled and route everything to the flat chat.
+  try {
+    await bootstrapTopics(bot, config.ownerChatId, store)
+  } catch (err) {
+    console.warn('[startup] topic bootstrap failed (will retry on next boot):', err)
+  }
 
-  // Start disk usage watcher (background loop)
-  startDiskUsageWatcher({ config, store, synology, bot })
+  // Single notification routing surface — all category-aware sends go here.
+  const ownerNotifier = new OwnerNotifier(store, async ({ chatId, text, messageThreadId, replyMarkup }) => {
+    await bot.api.sendMessage(chatId, text, {
+      message_thread_id: messageThreadId,
+      reply_markup: replyMarkup,
+    })
+  })
 
-  // Start disk health watcher (background loop)
-  startDiskHealthWatcher({ config, store, synology, bot })
+  // Background watchers
+  startReachabilityWatcher({ config, store, synology, ownerNotifier })
+  startDiskUsageWatcher({ config, store, synology, ownerNotifier })
+  startDiskHealthWatcher({ config, store, synology, ownerNotifier })
+
+  // One-shot deploy reporter: detects if our image SHA changed since last
+  // boot (i.e. Watchtower just deployed us) and posts to #deploy.
+  await runDeployReporter({ docker, store, ownerNotifier })
 
   // Schedule daily 9 AM digest
   scheduleDailyDigest(async () => {
@@ -64,8 +92,8 @@ export async function startApp(): Promise<void> {
       subscriptions,
       ownerChatId,
       fetchTodayEpisodes: getTodayEpisodes,
-      sendMessage: async (chatId, message) => {
-        await bot.api.sendMessage(chatId, message)
+      sendMessage: async (_chatId, message) => {
+        await ownerNotifier.send('subscriptions', message)
       },
       onSubscriptionUpdated: async (updated) => {
         store.addSubscription(updated)
@@ -73,12 +101,9 @@ export async function startApp(): Promise<void> {
     })
   })
 
-  // Set up TaskMonitor + Notifier + detectors — background polling loop
-  const notifier = new Notifier(store, async (chatId, text) => {
-    await bot.api.sendMessage(chatId, text)
-  })
+  // TaskMonitor + Notifier + detectors — background polling loop
+  const notifier = new Notifier(ownerNotifier)
 
-  // FinishedDebouncer: batch tasks finished within the same window
   const debouncer = new FinishedDebouncer({
     windowMs: config.finishedDebounceMs,
     threshold: config.finishedGroupThreshold,
@@ -94,19 +119,12 @@ export async function startApp(): Promise<void> {
     return result.data
   }
 
-  const ownerChatId = () => store.getKv('owner_chat_id')
-
   const stuckDetector = new StuckDetector({
     zeroSpeedThresholdMs: 5 * 60 * 1000,
     store,
     sendAlert: async ({ text, taskId }) => {
-      const chatId = ownerChatId()
-      if (!chatId) {
-        console.warn('[StuckDetector] No owner_chat_id — cannot send stuck alert')
-        return
-      }
-      await bot.api.sendMessage(Number(chatId), text, {
-        reply_markup: buildTaskActionKeyboard(taskId),
+      await ownerNotifier.send('torrents', text, {
+        replyMarkup: buildTaskActionKeyboard(taskId),
       })
     },
   })
@@ -114,13 +132,8 @@ export async function startApp(): Promise<void> {
   const failedDetector = new FailedDetector({
     store,
     sendAlert: async ({ text, taskId }) => {
-      const chatId = ownerChatId()
-      if (!chatId) {
-        console.warn('[FailedDetector] No owner_chat_id — cannot send failed alert')
-        return
-      }
-      await bot.api.sendMessage(Number(chatId), text, {
-        reply_markup: buildTaskActionKeyboard(taskId),
+      await ownerNotifier.send('torrents', text, {
+        replyMarkup: buildTaskActionKeyboard(taskId),
       })
     },
   })
@@ -142,38 +155,28 @@ export async function startApp(): Promise<void> {
   taskMonitor.start(config.pollIntervalMs)
 
   // Start AutoCleaner background loop
-  startAutoCleaner({ config, store, synology, bot })
+  startAutoCleaner({ config, store, synology, ownerNotifier })
 
   await botPromise
 }
 
-function startReachabilityWatcher({
-  config,
-  store,
-  synology,
-  bot,
-}: {
+interface WatcherDeps {
   config: ReturnType<typeof loadConfig>
   store: PersistentStore
   synology: SynologyClient
-  bot: ReturnType<typeof createBot>
-}): void {
+  ownerNotifier: OwnerNotifier
+}
+
+function startReachabilityWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
   const monitor = new ReachabilityMonitor(
     {
       checkReachability: () => synology.isReachable(),
       onEvent: async (event, reason) => {
-        const ownerChatId = store.getKv('owner_chat_id')
-        if (!ownerChatId) {
-          console.warn(`[ReachabilityWatcher] No owner_chat_id in store -- cannot send ${event}`)
-          return
-        }
-
         if (event === 'nas.down') {
-          const msg = `❌ NAS недоступен${reason ? ` — ${reason}` : ''}`
-          await bot.api.sendMessage(ownerChatId, msg)
+          await ownerNotifier.send('health', `❌ NAS недоступен${reason ? ` — ${reason}` : ''}`)
           store.markHealthFired('nas_down', 'nas')
         } else if (event === 'nas.recovered') {
-          await bot.api.sendMessage(ownerChatId, '✅ NAS снова доступен')
+          await ownerNotifier.send('health', '✅ NAS снова доступен')
           store.clearHealthFired('nas_down', 'nas')
         }
       },
@@ -184,7 +187,6 @@ function startReachabilityWatcher({
   )
 
   const pollIntervalMs = config.nasReachabilityPollMs
-
   const loop = async (): Promise<void> => {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
@@ -195,43 +197,21 @@ function startReachabilityWatcher({
       }
     }
   }
-
-  // Fire-and-forget: background loop, errors are logged not thrown
-  loop().catch((err) => {
-    console.error('[ReachabilityWatcher] Loop crashed:', err)
-  })
+  loop().catch((err) => console.error('[ReachabilityWatcher] Loop crashed:', err))
 }
 
-function startDiskUsageWatcher({
-  config,
-  store,
-  synology,
-  bot,
-}: {
-  config: ReturnType<typeof loadConfig>
-  store: PersistentStore
-  synology: SynologyClient
-  bot: ReturnType<typeof createBot>
-}): void {
+function startDiskUsageWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
   const watcher = new DiskUsageWatcher({
     getStorageInfo: () => synology.getStorageInfo(),
     isVolumeWarned: async (volumeId) => store.wasHealthFired('disk_full', volumeId),
     markWarned: async (volumeId) => store.markHealthFired('disk_full', volumeId),
     clearWarned: async (volumeId) => store.clearHealthFired('disk_full', volumeId),
-    notify: async (message) => {
-      const ownerChatId = store.getKv('owner_chat_id')
-      if (!ownerChatId) {
-        console.warn('[DiskUsageWatcher] No owner_chat_id in store — cannot send notification')
-        return
-      }
-      await bot.api.sendMessage(ownerChatId, message)
-    },
+    notify: (message) => ownerNotifier.send('health', message),
     highPct: config.diskFullHighPct,
     lowPct: config.diskFullLowPct,
   })
 
   const pollIntervalMs = config.diskUsagePollMs
-
   const loop = async (): Promise<void> => {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
@@ -242,95 +222,47 @@ function startDiskUsageWatcher({
       }
     }
   }
-
-  // Fire-and-forget: background loop, errors are logged not thrown
-  loop().catch((err) => {
-    console.error('[DiskUsageWatcher] Loop crashed:', err)
-  })
+  loop().catch((err) => console.error('[DiskUsageWatcher] Loop crashed:', err))
 }
 
-function startDiskHealthWatcher({
-  config,
-  store,
-  synology,
-  bot,
-}: {
-  config: ReturnType<typeof loadConfig>
-  store: PersistentStore
-  synology: SynologyClient
-  bot: ReturnType<typeof createBot>
-}): void {
+function startDiskHealthWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
   const watcher = new DiskHealthWatcher({
     getDiskInfo: () => synology.getDiskInfo(),
     getState: (event, resourceId) => {
       if (store.wasHealthFired(event, resourceId)) {
-        // Determine the active state from the event name
         if (event === 'disk_temp') return 'hot'
         if (event === 'disk_smart') return 'warn'
       }
       return 'ok'
     },
     setState: (event, resourceId, state) => {
-      if (state === 'ok') {
-        store.clearHealthFired(event, resourceId)
-      } else {
-        store.markHealthFired(event, resourceId)
-      }
+      if (state === 'ok') store.clearHealthFired(event, resourceId)
+      else store.markHealthFired(event, resourceId)
     },
-    notify: async (message) => {
-      const ownerChatId = store.getKv('owner_chat_id')
-      if (!ownerChatId) {
-        console.warn(`[DiskHealthWatcher] No owner_chat_id in store — cannot send: ${message}`)
-        return
-      }
-      await bot.api.sendMessage(ownerChatId, message)
-    },
+    notify: (message) => ownerNotifier.send('health', message),
   })
 
   const pollIntervalMs = config.diskHealthPollMs
-
   const loop = async (): Promise<void> => {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
       await watcher.check()
     }
   }
-
-  // Fire-and-forget: background loop, errors logged inside watcher.check()
-  loop().catch((err) => {
-    console.error('[DiskHealthWatcher] Loop crashed:', err)
-  })
+  loop().catch((err) => console.error('[DiskHealthWatcher] Loop crashed:', err))
 }
 
-function startAutoCleaner({
-  config,
-  store,
-  synology,
-  bot,
-}: {
-  config: ReturnType<typeof loadConfig>
-  store: PersistentStore
-  synology: SynologyClient
-  bot: ReturnType<typeof createBot>
-}): void {
+function startAutoCleaner({ config, store, synology, ownerNotifier }: WatcherDeps): void {
   const cleaner = new AutoCleaner({
     getCompleted: (cutoffMs) => Promise.resolve(store.getCompletedBefore(cutoffMs)),
     deleteTask: (taskId) => synology.deleteTask(taskId),
     removeCompletion: (taskId) => { store.removeCompletion(taskId); return Promise.resolve() },
-    notify: async (message) => {
-      const ownerChatId = store.getKv('owner_chat_id')
-      if (!ownerChatId) {
-        console.warn('[AutoCleaner] No owner_chat_id in store — cannot send notification')
-        return
-      }
-      await bot.api.sendMessage(ownerChatId, message)
-    },
+    notify: (message) => ownerNotifier.send('torrents', message),
     retentionDays: config.autoCleanerRetentionDays,
     now: () => Date.now(),
   })
 
   const pollIntervalMs = config.autoCleanerPollMs
-
   const loop = async (): Promise<void> => {
     while (true) {
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
@@ -341,11 +273,28 @@ function startAutoCleaner({
       }
     }
   }
-
   console.log(`[AutoCleaner] Starting cleanup loop every ${pollIntervalMs}ms (retention: ${config.autoCleanerRetentionDays} days)`)
+  loop().catch((err) => console.error('[AutoCleaner] Loop crashed:', err))
+}
 
-  // Fire-and-forget: background loop, errors are logged not thrown
-  loop().catch((err) => {
-    console.error('[AutoCleaner] Loop crashed:', err)
+async function runDeployReporter({
+  docker,
+  store,
+  ownerNotifier,
+}: {
+  docker: DockerClient
+  store: PersistentStore
+  ownerNotifier: OwnerNotifier
+}): Promise<void> {
+  const reporter = new DeployReporter({
+    getOwnImageId: async () => {
+      const container = await docker.getContainerByName('synology-bot')
+      return container?.imageId ?? ''
+    },
+    getLastImageId: () => store.getKv('bot_image_sha'),
+    setLastImageId: (sha) => store.setKv('bot_image_sha', sha),
+    version: pkg.version,
+    notify: (message) => ownerNotifier.send('deploy', message),
   })
+  await reporter.report()
 }

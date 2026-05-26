@@ -19,3 +19,4 @@
 | [0001](./0001-owner-only-single-user.md) | Owner-only single-user bot |
 | [0002](./0002-telegram-bot-primary-surface.md) | Telegram Bot as primary surface; Mini App / PWA deferred |
 | [0003](./0003-in-flight-only-domain-boundary.md) | Domain boundary — in-flight downloads, not a library |
+| [0004](./0004-topics-and-centralized-notifier.md) | Centralized OwnerNotifier; per-category private-chat forum topics |

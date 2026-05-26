@@ -1,13 +1,14 @@
 import type { Bot, Context } from 'grammy'
 import type { SynologyClient } from '../../infra/synology/client.ts'
 import type { SystemUtilization, StorageInfo, DiskInfo, ProcessGroupSlice } from '../../infra/synology/types.ts'
+import { formatBytes, formatBytesPair } from '../../lib/format-size.ts'
 
 type QueryResult<T> = { ok: true; data: T } | { ok: false; reason: string }
 
 const TOP_RAM_LIMIT = 3
 const TOP_CPU_LIMIT = 3
 const CPU_REPORT_THRESHOLD = 0.5 // % — quieter than this isn't worth listing
-const RAM_REPORT_THRESHOLD_MB = 5 // MB — skip < 5 MB so the list isn't padded with daemons
+const RAM_REPORT_THRESHOLD_BYTES = 5 * 1024 * 1024 // 5 MB — skip tiny daemons
 
 /**
  * Pick the human-readable label for a slice. DSM sometimes returns an empty
@@ -24,17 +25,12 @@ function sliceLabel(s: ProcessGroupSlice): string {
     .replace(/_/g, ' ')
 }
 
-/** DSM's `memory` field on ProcessGroup is bytes (not KB — Process API uses KB). */
-function bytesToMb(bytes: number): number {
-  return bytes / 1024 / 1024
-}
-
 function topRamLines(slices: ProcessGroupSlice[], limit: number): string[] {
   return [...slices]
-    .filter((s) => bytesToMb(s.memory) >= RAM_REPORT_THRESHOLD_MB)
+    .filter((s) => s.memory >= RAM_REPORT_THRESHOLD_BYTES)
     .sort((a, b) => b.memory - a.memory)
     .slice(0, limit)
-    .map((s) => `      • ${sliceLabel(s)} — ${Math.round(bytesToMb(s.memory))} MB`)
+    .map((s) => `      • ${sliceLabel(s)} — ${formatBytes(s.memory)}`)
 }
 
 function topCpuLines(slices: ProcessGroupSlice[], limit: number): string[] {
@@ -68,11 +64,13 @@ export function formatHealthMessage(
     const u = utilResult.data
     const cpuPct = u.cpu.user_load + u.cpu.system_load
     const ramPct = u.memory.real_usage
-    const totalGb = u.memory.total_real / 1024 / 1024
-    // Derive used GB from real_usage so it matches the displayed percent
+    // DSM gives memory in KB; convert to bytes so formatBytesPair can do
+    // the unit selection (matches what the rest of the bot uses).
+    const totalBytes = u.memory.total_real * 1024
+    // Derive used bytes from real_usage so it matches the displayed percent
     // (avoids the avail_real-includes-cache trap, see types.ts).
-    const usedGb = (totalGb * ramPct) / 100
-    lines.push(`🖥 CPU: ${cpuPct}% • RAM: ${usedGb.toFixed(1)} / ${totalGb.toFixed(1)} GB (${ramPct}%)`)
+    const usedBytes = (totalBytes * ramPct) / 100
+    lines.push(`🖥 CPU: ${cpuPct}% • RAM: ${formatBytesPair(usedBytes, totalBytes)} (${ramPct}%)`)
 
     if (processGroups.length > 0) {
       const ramTop = topRamLines(processGroups, TOP_RAM_LIMIT)
@@ -96,11 +94,11 @@ export function formatHealthMessage(
   } else {
     lines.push('💽 Хранилище:')
     for (const vol of storageResult.data.volumes) {
-      const totalTb = (Number(vol.size.total) / 1024 / 1024 / 1024 / 1024).toFixed(1)
-      const usedTb = (Number(vol.size.used) / 1024 / 1024 / 1024 / 1024).toFixed(1)
-      const pct = Math.round((Number(vol.size.used) / Number(vol.size.total)) * 100)
+      const total = Number(vol.size.total)
+      const used = Number(vol.size.used)
+      const pct = Math.round((used / total) * 100)
       const statusEmoji = vol.status === 'crashed' ? '❌' : pct >= 90 ? '⚠️' : '✅'
-      lines.push(`  • ${vol.vol_path}: ${usedTb} / ${totalTb} TB (${pct}%) ${statusEmoji}`)
+      lines.push(`  • ${vol.vol_path}: ${formatBytesPair(used, total)} (${pct}%) ${statusEmoji}`)
     }
   }
 

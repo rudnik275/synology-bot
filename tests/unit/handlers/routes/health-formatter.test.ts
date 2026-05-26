@@ -43,8 +43,9 @@ describe('formatHealthMessage()', () => {
     // CPU section — user_load + system_load = 42 + 8 = 50
     expect(msg).toContain('🖥')
     expect(msg).toContain('CPU: 50%')
-    // RAM derived from real_usage (44%) × total_real (16 GB) = 7.0 GB used, 16.0 total
-    expect(msg).toContain('RAM: 7.0 / 16.0 GB (44%)')
+    // RAM derived from real_usage (44%) × total_real (16 GB) = 7.0 GB used,
+    // 16 GB total. formatBytesPair drops the decimal at ≥ 10.
+    expect(msg).toContain('RAM: 7.0 / 16 GB (44%)')
     // Storage
     expect(msg).toContain('💽')
     expect(msg).toContain('/volume1')

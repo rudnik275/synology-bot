@@ -1,4 +1,5 @@
 import type { StorageInfo } from '../infra/synology/types.ts'
+import { formatBytesPair } from '../lib/format-size.ts'
 
 export interface DiskUsageWatcherDeps {
   /** Fetch current storage info from Synology. Returns ok:false on error. */
@@ -67,10 +68,8 @@ export class DiskUsageWatcher {
       // ok → warn: crossed high threshold
       await this.deps.markWarned(volume.id)
       const pctDisplay = Math.round(usedPct)
-      const usedGb = this.formatBytes(used)
-      const totalGb = this.formatBytes(total)
       await this.deps.notify(
-        `⚠️ ${volume.vol_path} заполнен на ${pctDisplay}% (${usedGb}/${totalGb})`
+        `⚠️ ${volume.vol_path} заполнен на ${pctDisplay}% (${formatBytesPair(used, total)})`
       )
     } else if (isWarned && usedPct < this.deps.lowPct) {
       // warn → ok: dropped below low threshold
@@ -81,14 +80,5 @@ export class DiskUsageWatcher {
       )
     }
     // Otherwise: no transition (hysteresis band or already in correct state)
-  }
-
-  private formatBytes(bytes: number): string {
-    const tb = bytes / 1_099_511_627_776
-    if (tb >= 1) return `${tb.toFixed(1)} ТБ`
-    const gb = bytes / 1_073_741_824
-    if (gb >= 1) return `${gb.toFixed(1)} ГБ`
-    const mb = bytes / 1_048_576
-    return `${mb.toFixed(0)} МБ`
   }
 }

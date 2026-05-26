@@ -1,4 +1,5 @@
 import type { Task } from '../infra/synology/types.ts'
+import { formatBytes, formatSpeed } from '../lib/format-size.ts'
 
 // Local plain-object shape so the domain layer doesn't import grammy (ADR-0002).
 // Handler layer treats this as a structurally-compatible InlineKeyboardButton.CallbackButton.
@@ -15,19 +16,6 @@ const TITLE_MAX_CHARS = 30
 function truncateTitle(title: string): string {
   if ([...title].length <= TITLE_MAX_CHARS) return title
   return [...title].slice(0, TITLE_MAX_CHARS - 1).join('') + '…'
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`
-  return `${bytes} B`
-}
-
-function formatSpeed(bytesPerSec: number): string {
-  if (bytesPerSec >= 1_048_576) return `${(bytesPerSec / 1_048_576).toFixed(1)} MB/s`
-  if (bytesPerSec >= 1_024) return `${(bytesPerSec / 1_024).toFixed(1)} KB/s`
-  return `${bytesPerSec} B/s`
 }
 
 function statusIcon(status: Task['status']): string {

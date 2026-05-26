@@ -1,4 +1,4 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoDownloadTaskCreateData, SynoStorageLoadInfo } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoDownloadTaskCreateData, SynoStorageLoadInfo, ProcessGroupList, ProcessGroupSlice } from './types.ts'
 
 const PATH_ENTRY = 'webapi/entry.cgi'
 const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
@@ -261,6 +261,12 @@ export class SynologyClient {
       temperature_status: classifyTemp(d.temp),
     }))
     return { ok: true, data: { disks } }
+  }
+
+  async getProcessGroups(): Promise<{ ok: true; data: ProcessGroupSlice[] } | { ok: false; reason: string }> {
+    const result = await this.request<ProcessGroupList>('SYNO.Core.System.ProcessGroup', 1, 'list')
+    if (!result.ok) return result
+    return { ok: true, data: result.data.slices ?? [] }
   }
 
   private buildUrl(path: string, params: Record<string, string>): string {

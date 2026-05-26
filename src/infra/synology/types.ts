@@ -26,12 +26,43 @@ export interface SystemUtilization {
     system_load: number
   }
   memory: {
+    /**
+     * Percent of memory in use, computed by DSM the same way `free -m` does
+     * (total minus available, where available accounts for reclaimable
+     * cache/buffers). This is the only number you should trust for "is the
+     * NAS under memory pressure?".
+     */
     real_usage: number
     /** Total physical memory in KB. */
     total_real: number
-    /** Available (unused) physical memory in KB. Note: DSM returns `avail_real`, not `available_real`. */
+    /**
+     * Free memory in KB — currently not used by anything, including not as
+     * cache. DSM names this `avail_real`, but it is NOT Linux's
+     * `MemAvailable` (which counts reclaimable cache). Don't compute "used"
+     * as `total - avail_real`; that includes cache and massively
+     * over-reports usage. Use `real_usage` to derive used bytes.
+     */
     avail_real: number
   }
+}
+
+/**
+ * One process slice from `SYNO.Core.System.ProcessGroup/list` — DSM groups
+ * related processes by systemd slice (`USBCopy.slice`, `plex.slice`, …) so
+ * we get user-meaningful labels instead of raw command names.
+ *
+ * `cpu_utilization` is fraction-of-percent (e.g. `0.034` ≈ 0.034 % CPU);
+ * `memory` is RSS in KB summed across processes in the slice.
+ */
+export interface ProcessGroupSlice {
+  name: string
+  unit_name: string
+  cpu_utilization: number
+  memory: number
+}
+
+export interface ProcessGroupList {
+  slices: ProcessGroupSlice[]
 }
 
 export interface VolumeInfo {

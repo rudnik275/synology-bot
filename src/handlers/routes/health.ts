@@ -1,8 +1,38 @@
 import type { Bot, Context } from 'grammy'
 import type { SynologyClient } from '../../infra/synology/client.ts'
-import type { SystemUtilization, StorageInfo, DiskInfo } from '../../infra/synology/types.ts'
+import type { SystemUtilization, StorageInfo, DiskInfo, ProcessGroupSlice } from '../../infra/synology/types.ts'
 
 type QueryResult<T> = { ok: true; data: T } | { ok: false; reason: string }
+
+const TOP_RAM_LIMIT = 3
+const TOP_CPU_LIMIT = 3
+const CPU_REPORT_THRESHOLD = 0.5 // % — quieter than this isn't worth listing
+
+/**
+ * Pick the human-readable label for a slice. DSM sometimes returns an empty
+ * `name` for low-level systemd slices (kthreadd grouping, etc.); fall back to
+ * `unit_name` stripped of the trailing `.slice`.
+ */
+function sliceLabel(s: ProcessGroupSlice): string {
+  if (s.name && s.name.trim() !== '') return s.name
+  return s.unit_name.replace(/\.slice$/, '')
+}
+
+function topRamSlices(slices: ProcessGroupSlice[], limit: number): string[] {
+  return [...slices]
+    .filter((s) => s.memory > 0)
+    .sort((a, b) => b.memory - a.memory)
+    .slice(0, limit)
+    .map((s) => `${sliceLabel(s)} ${Math.round(s.memory / 1024)} MB`)
+}
+
+function topCpuSlices(slices: ProcessGroupSlice[], limit: number): string[] {
+  return [...slices]
+    .filter((s) => s.cpu_utilization >= CPU_REPORT_THRESHOLD)
+    .sort((a, b) => b.cpu_utilization - a.cpu_utilization)
+    .slice(0, limit)
+    .map((s) => `${sliceLabel(s)} ${s.cpu_utilization.toFixed(1)}%`)
+}
 
 // ─── Pure formatter (exported for tests) ────────────────────────────────────
 
@@ -10,6 +40,7 @@ export function formatHealthMessage(
   utilResult: QueryResult<SystemUtilization>,
   storageResult: QueryResult<StorageInfo>,
   diskResult: QueryResult<DiskInfo>,
+  processGroups: ProcessGroupSlice[] = [],
 ): string {
   const allFailed = !utilResult.ok && !storageResult.ok && !diskResult.ok
   if (allFailed) {
@@ -24,11 +55,20 @@ export function formatHealthMessage(
     lines.push(`🖥 CPU / RAM: ❌ ${utilResult.reason}`)
   } else {
     const u = utilResult.data
-    const cpuPct = u.cpu.user_load
-    const totalGb = (u.memory.total_real / 1024 / 1024).toFixed(1)
-    const usedGb = ((u.memory.total_real - u.memory.avail_real) / 1024 / 1024).toFixed(1)
+    const cpuPct = u.cpu.user_load + u.cpu.system_load
     const ramPct = u.memory.real_usage
-    lines.push(`🖥 CPU: ${cpuPct}% • RAM: ${usedGb} / ${totalGb} GB (${ramPct}%)`)
+    const totalGb = u.memory.total_real / 1024 / 1024
+    // Derive used GB from real_usage so it matches the displayed percent
+    // (avoids the avail_real-includes-cache trap, see types.ts).
+    const usedGb = (totalGb * ramPct) / 100
+    lines.push(`🖥 CPU: ${cpuPct}% • RAM: ${usedGb.toFixed(1)} / ${totalGb.toFixed(1)} GB (${ramPct}%)`)
+
+    if (processGroups.length > 0) {
+      const ramTop = topRamSlices(processGroups, TOP_RAM_LIMIT)
+      if (ramTop.length > 0) lines.push(`   Топ RAM: ${ramTop.join(' · ')}`)
+      const cpuTop = topCpuSlices(processGroups, TOP_CPU_LIMIT)
+      if (cpuTop.length > 0) lines.push(`   Топ CPU: ${cpuTop.join(' · ')}`)
+    }
   }
 
   lines.push('')
@@ -72,10 +112,11 @@ export function formatHealthMessage(
 
 export function registerHealthRoute(bot: Bot<Context>, synology: SynologyClient): void {
   bot.command('health', async (ctx) => {
-    const [utilResult, storageResult, diskResult] = await Promise.all([
+    const [utilResult, storageResult, diskResult, processGroupsResult] = await Promise.all([
       synology.getSystemUtilization(),
       synology.getStorageInfo(),
       synology.getDiskInfo(),
+      synology.getProcessGroups(),
     ])
 
     const allFailed = !utilResult.ok && !storageResult.ok && !diskResult.ok
@@ -91,7 +132,8 @@ export function registerHealthRoute(bot: Bot<Context>, synology: SynologyClient)
       return
     }
 
-    const message = formatHealthMessage(utilResult, storageResult, diskResult)
+    const processGroups = processGroupsResult.ok ? processGroupsResult.data : []
+    const message = formatHealthMessage(utilResult, storageResult, diskResult, processGroups)
     await ctx.reply(message)
   })
 }

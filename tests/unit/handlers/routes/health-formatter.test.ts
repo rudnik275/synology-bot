@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { formatHealthMessage } from '../../../../src/handlers/routes/health.ts'
-import type { SystemUtilization, StorageInfo, DiskInfo } from '../../../../src/infra/synology/types.ts'
+import type { SystemUtilization, StorageInfo, DiskInfo, ProcessGroupSlice } from '../../../../src/infra/synology/types.ts'
 
 const utilizationData: SystemUtilization = {
   cpu: { user_load: 42, system_load: 8 },
@@ -40,13 +40,11 @@ describe('formatHealthMessage()', () => {
     )
 
     expect(msg).toContain('🩺 Состояние NAS')
-    // CPU section
+    // CPU section — user_load + system_load = 42 + 8 = 50
     expect(msg).toContain('🖥')
-    expect(msg).toContain('CPU')
-    expect(msg).toContain('42%')
-    // RAM section — total_real 16777216 KB = 16 GB, available 9437184 KB = 9 GB → used ~ 7 GB, 44%
-    expect(msg).toContain('RAM')
-    expect(msg).toContain('44%')
+    expect(msg).toContain('CPU: 50%')
+    // RAM derived from real_usage (44%) × total_real (16 GB) = 7.0 GB used, 16.0 total
+    expect(msg).toContain('RAM: 7.0 / 16.0 GB (44%)')
     // Storage
     expect(msg).toContain('💽')
     expect(msg).toContain('/volume1')
@@ -153,7 +151,7 @@ describe('formatHealthMessage()', () => {
     expect(msg).toContain('❌')
     expect(msg).toContain('connection refused')
     // CPU should still show
-    expect(msg).toContain('42%')
+    expect(msg).toContain('CPU: 50%')
   })
 
   it('returns all-failed short message when all three fail', () => {
@@ -165,5 +163,72 @@ describe('formatHealthMessage()', () => {
 
     expect(msg).toContain('❌')
     expect(msg).toContain('NAS')
+  })
+
+  // ── Process groups (top RAM / top CPU lines) ──────────────────────────────
+
+  const processGroups: ProcessGroupSlice[] = [
+    { name: 'Plex Media Server', unit_name: 'plex.slice', cpu_utilization: 5.2, memory: 204800 },
+    { name: 'Synology Photos', unit_name: 'photos.slice', cpu_utilization: 0.1, memory: 27000 },
+    { name: 'Tailscale', unit_name: 'tailscale.slice', cpu_utilization: 0.02, memory: 25000 },
+    { name: '', unit_name: 'system-low.slice', cpu_utilization: 0, memory: 5000 },
+  ]
+
+  it('omits Топ RAM / Топ CPU lines when no process groups supplied', () => {
+    const msg = formatHealthMessage(
+      { ok: true, data: utilizationData },
+      { ok: true, data: storageData },
+      { ok: true, data: diskData },
+    )
+    expect(msg).not.toContain('Топ RAM')
+    expect(msg).not.toContain('Топ CPU')
+  })
+
+  it('shows top 3 RAM consumers ordered by memory descending', () => {
+    const msg = formatHealthMessage(
+      { ok: true, data: utilizationData },
+      { ok: true, data: storageData },
+      { ok: true, data: diskData },
+      processGroups,
+    )
+    expect(msg).toContain('Топ RAM: Plex Media Server 200 MB · Synology Photos 26 MB · Tailscale 24 MB')
+  })
+
+  it('falls back to unit_name (minus .slice) when name is empty', () => {
+    const groups: ProcessGroupSlice[] = [
+      { name: '', unit_name: 'snmp.slice', cpu_utilization: 0, memory: 500000 },
+    ]
+    const msg = formatHealthMessage(
+      { ok: true, data: utilizationData },
+      { ok: true, data: storageData },
+      { ok: true, data: diskData },
+      groups,
+    )
+    expect(msg).toContain('Топ RAM: snmp')
+  })
+
+  it('shows top CPU consumers only when one is above the noise floor', () => {
+    const msg = formatHealthMessage(
+      { ok: true, data: utilizationData },
+      { ok: true, data: storageData },
+      { ok: true, data: diskData },
+      processGroups,
+    )
+    // Plex at 5.2% qualifies; others are below 0.5% threshold and must not appear
+    expect(msg).toContain('Топ CPU: Plex Media Server 5.2%')
+    expect(msg).not.toContain('Synology Photos 0.1%')
+  })
+
+  it('hides Топ CPU line entirely when every process is below threshold', () => {
+    const quiet: ProcessGroupSlice[] = [
+      { name: 'Plex', unit_name: 'plex.slice', cpu_utilization: 0.1, memory: 1000 },
+    ]
+    const msg = formatHealthMessage(
+      { ok: true, data: utilizationData },
+      { ok: true, data: storageData },
+      { ok: true, data: diskData },
+      quiet,
+    )
+    expect(msg).not.toContain('Топ CPU')
   })
 })

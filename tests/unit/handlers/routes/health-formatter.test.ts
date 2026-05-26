@@ -167,14 +167,16 @@ describe('formatHealthMessage()', () => {
 
   // ── Process groups (top RAM / top CPU lines) ──────────────────────────────
 
+  // DSM returns memory in BYTES (not KB — that's the Process API).
+  const MB = 1024 * 1024
   const processGroups: ProcessGroupSlice[] = [
-    { name: 'Plex Media Server', unit_name: 'plex.slice', cpu_utilization: 5.2, memory: 204800 },
-    { name: 'Synology Photos', unit_name: 'photos.slice', cpu_utilization: 0.1, memory: 27000 },
-    { name: 'Tailscale', unit_name: 'tailscale.slice', cpu_utilization: 0.02, memory: 25000 },
-    { name: '', unit_name: 'system-low.slice', cpu_utilization: 0, memory: 5000 },
+    { name: 'Plex Media Server', unit_name: 'plex.slice', cpu_utilization: 5.2, memory: 200 * MB },
+    { name: 'Synology Photos', unit_name: 'photos.slice', cpu_utilization: 0.1, memory: 26 * MB },
+    { name: 'Tailscale', unit_name: 'tailscale.slice', cpu_utilization: 0.02, memory: 24 * MB },
+    { name: '', unit_name: 'system-low.slice', cpu_utilization: 0, memory: 2 * MB },
   ]
 
-  it('omits Топ RAM / Топ CPU lines when no process groups supplied', () => {
+  it('omits Топ RAM / Топ CPU sections when no process groups supplied', () => {
     const msg = formatHealthMessage(
       { ok: true, data: utilizationData },
       { ok: true, data: storageData },
@@ -184,19 +186,29 @@ describe('formatHealthMessage()', () => {
     expect(msg).not.toContain('Топ CPU')
   })
 
-  it('shows top 3 RAM consumers ordered by memory descending', () => {
+  it('shows top RAM consumers as a bulleted list ordered by memory descending', () => {
     const msg = formatHealthMessage(
       { ok: true, data: utilizationData },
       { ok: true, data: storageData },
       { ok: true, data: diskData },
       processGroups,
     )
-    expect(msg).toContain('Топ RAM: Plex Media Server 200 MB · Synology Photos 26 MB · Tailscale 24 MB')
+    expect(msg).toContain('Топ RAM:')
+    expect(msg).toContain('Plex Media Server — 200 MB')
+    expect(msg).toContain('Synology Photos — 26 MB')
+    expect(msg).toContain('Tailscale — 24 MB')
+
+    // Order: Plex must come before Synology Photos must come before Tailscale
+    const plexIdx = msg.indexOf('Plex Media Server')
+    const photosIdx = msg.indexOf('Synology Photos')
+    const tailscaleIdx = msg.indexOf('Tailscale')
+    expect(plexIdx).toBeLessThan(photosIdx)
+    expect(photosIdx).toBeLessThan(tailscaleIdx)
   })
 
-  it('falls back to unit_name (minus .slice) when name is empty', () => {
+  it('humanizes unit_name fallback (strips syno_ prefix, replaces underscores)', () => {
     const groups: ProcessGroupSlice[] = [
-      { name: '', unit_name: 'snmp.slice', cpu_utilization: 0, memory: 500000 },
+      { name: '', unit_name: 'syno_dsm_internal.slice', cpu_utilization: 0, memory: 80 * MB },
     ]
     const msg = formatHealthMessage(
       { ok: true, data: utilizationData },
@@ -204,7 +216,23 @@ describe('formatHealthMessage()', () => {
       { ok: true, data: diskData },
       groups,
     )
-    expect(msg).toContain('Топ RAM: snmp')
+    expect(msg).toContain('dsm internal — 80 MB')
+    expect(msg).not.toContain('syno_dsm_internal')
+  })
+
+  it('skips RAM entries below the 5 MB noise floor', () => {
+    const tiny: ProcessGroupSlice[] = [
+      { name: 'Big', unit_name: 'big.slice', cpu_utilization: 0, memory: 100 * MB },
+      { name: 'Tiny', unit_name: 'tiny.slice', cpu_utilization: 0, memory: 1 * MB },
+    ]
+    const msg = formatHealthMessage(
+      { ok: true, data: utilizationData },
+      { ok: true, data: storageData },
+      { ok: true, data: diskData },
+      tiny,
+    )
+    expect(msg).toContain('Big — 100 MB')
+    expect(msg).not.toContain('Tiny')
   })
 
   it('shows top CPU consumers only when one is above the noise floor', () => {
@@ -214,14 +242,14 @@ describe('formatHealthMessage()', () => {
       { ok: true, data: diskData },
       processGroups,
     )
-    // Plex at 5.2% qualifies; others are below 0.5% threshold and must not appear
-    expect(msg).toContain('Топ CPU: Plex Media Server 5.2%')
-    expect(msg).not.toContain('Synology Photos 0.1%')
+    expect(msg).toContain('Топ CPU:')
+    expect(msg).toContain('Plex Media Server — 5.2%')
+    expect(msg).not.toContain('Synology Photos — 0.1%')
   })
 
-  it('hides Топ CPU line entirely when every process is below threshold', () => {
+  it('hides Топ CPU section entirely when every process is below threshold', () => {
     const quiet: ProcessGroupSlice[] = [
-      { name: 'Plex', unit_name: 'plex.slice', cpu_utilization: 0.1, memory: 1000 },
+      { name: 'Plex', unit_name: 'plex.slice', cpu_utilization: 0.1, memory: 100 * MB },
     ]
     const msg = formatHealthMessage(
       { ok: true, data: utilizationData },

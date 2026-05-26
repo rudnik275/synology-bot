@@ -52,7 +52,9 @@ export interface SystemUtilization {
  * we get user-meaningful labels instead of raw command names.
  *
  * `cpu_utilization` is fraction-of-percent (e.g. `0.034` ≈ 0.034 % CPU);
- * `memory` is RSS in KB summed across processes in the slice.
+ * `memory` is RSS in **bytes** summed across processes in the slice. Note
+ * that the sibling `SYNO.Core.System.Process` API uses **KB** instead;
+ * the two APIs share field names but not units.
  */
 export interface ProcessGroupSlice {
   name: string

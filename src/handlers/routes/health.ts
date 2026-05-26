@@ -7,31 +7,42 @@ type QueryResult<T> = { ok: true; data: T } | { ok: false; reason: string }
 const TOP_RAM_LIMIT = 3
 const TOP_CPU_LIMIT = 3
 const CPU_REPORT_THRESHOLD = 0.5 // % — quieter than this isn't worth listing
+const RAM_REPORT_THRESHOLD_MB = 5 // MB — skip < 5 MB so the list isn't padded with daemons
 
 /**
  * Pick the human-readable label for a slice. DSM sometimes returns an empty
- * `name` for low-level systemd slices (kthreadd grouping, etc.); fall back to
- * `unit_name` stripped of the trailing `.slice`.
+ * `name` for low-level systemd slices (e.g. `syno_dsm_internal.slice`);
+ * fall back to a cleaned-up `unit_name`. We strip the `.slice` suffix,
+ * drop the `syno_` prefix that DSM uses for its own services, and
+ * replace `_` with space so the label reads naturally in Telegram.
  */
 function sliceLabel(s: ProcessGroupSlice): string {
   if (s.name && s.name.trim() !== '') return s.name
-  return s.unit_name.replace(/\.slice$/, '')
+  return s.unit_name
+    .replace(/\.slice$/, '')
+    .replace(/^syno_/, '')
+    .replace(/_/g, ' ')
 }
 
-function topRamSlices(slices: ProcessGroupSlice[], limit: number): string[] {
+/** DSM's `memory` field on ProcessGroup is bytes (not KB — Process API uses KB). */
+function bytesToMb(bytes: number): number {
+  return bytes / 1024 / 1024
+}
+
+function topRamLines(slices: ProcessGroupSlice[], limit: number): string[] {
   return [...slices]
-    .filter((s) => s.memory > 0)
+    .filter((s) => bytesToMb(s.memory) >= RAM_REPORT_THRESHOLD_MB)
     .sort((a, b) => b.memory - a.memory)
     .slice(0, limit)
-    .map((s) => `${sliceLabel(s)} ${Math.round(s.memory / 1024)} MB`)
+    .map((s) => `      • ${sliceLabel(s)} — ${Math.round(bytesToMb(s.memory))} MB`)
 }
 
-function topCpuSlices(slices: ProcessGroupSlice[], limit: number): string[] {
+function topCpuLines(slices: ProcessGroupSlice[], limit: number): string[] {
   return [...slices]
     .filter((s) => s.cpu_utilization >= CPU_REPORT_THRESHOLD)
     .sort((a, b) => b.cpu_utilization - a.cpu_utilization)
     .slice(0, limit)
-    .map((s) => `${sliceLabel(s)} ${s.cpu_utilization.toFixed(1)}%`)
+    .map((s) => `      • ${sliceLabel(s)} — ${s.cpu_utilization.toFixed(1)}%`)
 }
 
 // ─── Pure formatter (exported for tests) ────────────────────────────────────
@@ -64,10 +75,16 @@ export function formatHealthMessage(
     lines.push(`🖥 CPU: ${cpuPct}% • RAM: ${usedGb.toFixed(1)} / ${totalGb.toFixed(1)} GB (${ramPct}%)`)
 
     if (processGroups.length > 0) {
-      const ramTop = topRamSlices(processGroups, TOP_RAM_LIMIT)
-      if (ramTop.length > 0) lines.push(`   Топ RAM: ${ramTop.join(' · ')}`)
-      const cpuTop = topCpuSlices(processGroups, TOP_CPU_LIMIT)
-      if (cpuTop.length > 0) lines.push(`   Топ CPU: ${cpuTop.join(' · ')}`)
+      const ramTop = topRamLines(processGroups, TOP_RAM_LIMIT)
+      if (ramTop.length > 0) {
+        lines.push('   Топ RAM:')
+        lines.push(...ramTop)
+      }
+      const cpuTop = topCpuLines(processGroups, TOP_CPU_LIMIT)
+      if (cpuTop.length > 0) {
+        lines.push('   Топ CPU:')
+        lines.push(...cpuTop)
+      }
     }
   }
 

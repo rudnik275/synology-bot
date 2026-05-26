@@ -60,6 +60,7 @@ describe('/deploy_status handler', () => {
         id: 'abc123',
         state: 'exited',
         status: 'Exited (0) 2 hours ago',
+        imageId: 'sha256:test',
       })),
     })
 
@@ -82,6 +83,7 @@ describe('/deploy_status handler', () => {
         id: 'abc123',
         state: 'running',
         status: 'Up 10 minutes',
+        imageId: 'sha256:test',
       })),
       getContainerLogs: mock(async () => logLine),
     })
@@ -101,6 +103,7 @@ describe('/deploy_status handler', () => {
         id: 'abc123',
         state: 'running',
         status: 'Up 10 minutes',
+        imageId: 'sha256:test',
       })),
       getContainerLogs: mock(async () => 'time="2024-01-15T10:00:00Z" level=info msg="Starting"'),
     })

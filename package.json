@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "cheerio": "^1.2.0",
-    "grammy": "^1.33.0"
+    "grammy": "^1.40.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.2"

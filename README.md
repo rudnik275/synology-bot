@@ -42,14 +42,16 @@ TOLOKA_PASSWORD=<toloka-password>
 
 Replace:
 - `<your-telegram-bot-token>` — token from BotFather
-- `<your-numeric-chat-id>` — your numeric Telegram chat ID (get it by messaging [@userinfobot](https://t.me/userinfobot)). Used for both bot owner identification AND Watchtower deploy notifications.
+- `<your-numeric-chat-id>` — your numeric Telegram chat ID (get it by messaging [@userinfobot](https://t.me/userinfobot)). Used to identify the bot owner; the bot self-reports deploys to this chat after each image upgrade.
 - `<nas-host>` — same hostname/IP you use to reach DSM (port 5001 = DSM HTTPS)
 - `<dsm-user-*>` — a DSM user with permission to use DownloadStation (preferably a dedicated low-privilege user, not an admin)
 - `<toloka-*>` — credentials for [toloka.to](https://toloka.to) if you want free-text torrent search
 
-Watchtower's deploy-notification URL is assembled by the compose file from `BOT_TOKEN` and `OWNER_CHAT_ID` — you don't need to pass it explicitly. Deploy reports arrive from the same bot (visually distinct because Watchtower prefixes them with the session name).
-
 All other tunables (poll intervals, disk thresholds, dashboard refresh rate, etc.) have sensible defaults baked into the image — see `src/config.ts` if you want to override them.
+
+### Notification topics
+
+On first start the bot creates four forum topics in your private chat with it — `Торренты`, `Состояние NAS`, `Деплой`, `Подписки` — and routes each notification type into the matching topic. Interactive commands (`/health`, `/dashboard`, `/search`, etc.) still respond in the default (General) thread because *you* initiated them. This needs a Telegram client recent enough to support topics in private chats (Bot API 9.4, February 2026); on older clients `createForumTopic` returns 4xx and the bot silently falls back to a flat DM. Deploy notifications come from the bot itself — it checks its own container image SHA on every boot and posts to `Деплой` when it changed, so no Watchtower shoutrrr config is needed.
 
 ### 2a. Bot state persists in `./data/`
 
@@ -80,7 +82,7 @@ docker compose up -d
 - The `bot` container runs `rudnik275/synology-bot:latest` with `restart: unless-stopped` — it restarts automatically after a crash or NAS reboot.
 - The `watchtower` container polls Docker Hub every 5 minutes. When a new image is published (e.g. after a new git tag triggers the CI workflow), Watchtower pulls the new image and restarts the bot container.
 - Watchtower only acts on containers with the `com.centurylinklabs.watchtower.enable=true` label, so it won't touch other DSM-managed containers.
-- You will receive a Telegram message when an update succeeds or fails. No message means no new image was found — silent on no-op polls.
+- The bot self-reports successful deploys to the `Деплой` topic by comparing its image SHA across boots. No message means no new image was found — silent on no-op polls. A failed deploy where the bot fails to start cannot self-report; use `/deploy-status` to check Watchtower's health directly.
 
 ## Run locally
 

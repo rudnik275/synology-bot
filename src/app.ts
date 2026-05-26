@@ -37,7 +37,7 @@ export async function startApp(): Promise<void> {
     store.setKv('owner_chat_id', String(config.ownerChatId))
   }
 
-  // Pre-login so the first /ping-nas is fast
+  // Pre-login so the first /ping_nas is fast
   try {
     await synology.login()
   } catch (err) {
@@ -49,9 +49,9 @@ export async function startApp(): Promise<void> {
   // Register bot commands for Telegram UI
   await bot.api.setMyCommands([
     { command: 'start', description: 'Запустить бота' },
-    { command: 'ping-nas', description: 'Проверить связь с NAS' },
+    { command: 'ping_nas', description: 'Проверить связь с NAS' },
     { command: 'health', description: 'Состояние NAS (CPU, RAM, диск)' },
-    { command: 'deploy-status', description: 'Статус Watchtower / деплоя' },
+    { command: 'deploy_status', description: 'Статус Watchtower / деплоя' },
     { command: 'subscribe', description: 'Подписаться на шоу' },
     { command: 'subscriptions', description: 'Список подписок' },
     { command: 'unsubscribe', description: 'Отписаться от шоу' },

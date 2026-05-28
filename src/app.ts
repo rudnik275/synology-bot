@@ -17,7 +17,6 @@ import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
 import { buildTaskActionKeyboard } from './handlers/routes/task-actions.ts'
 import { OwnerNotifier } from './infra/notify/owner-notifier.ts'
-import { bootstrapTopics } from './infra/notify/topic-bootstrap.ts'
 import { DeployReporter } from './domain/deploy-reporter.ts'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -58,19 +57,9 @@ export async function startApp(): Promise<void> {
     { command: 'dashboard', description: 'Активные задачи (авто-обновление)' },
   ])
 
-  // Create the four private-chat forum topics if they don't yet exist.
-  // Best-effort: if Telegram refuses (old client, BotFather setting), we set
-  // topics_disabled and route everything to the flat chat.
-  try {
-    await bootstrapTopics(bot, config.ownerChatId, store)
-  } catch (err) {
-    console.warn('[startup] topic bootstrap failed (will retry on next boot):', err)
-  }
-
-  // Single notification routing surface — all category-aware sends go here.
-  const ownerNotifier = new OwnerNotifier(store, async ({ chatId, text, messageThreadId, replyMarkup }) => {
+  // Single notification surface — all owner-bound push messages go here.
+  const ownerNotifier = new OwnerNotifier(store, async ({ chatId, text, replyMarkup }) => {
     await bot.api.sendMessage(chatId, text, {
-      message_thread_id: messageThreadId,
       reply_markup: replyMarkup,
     })
   })

@@ -4,8 +4,6 @@ import { dirname } from 'node:path'
 import { runMigrations } from './migrations.ts'
 import type { NasState } from '../../domain/reachability-monitor.ts'
 import type { Subscription } from '../../domain/subscription.ts'
-import type { Category } from '../notify/categories.ts'
-import { TOPIC_THREAD_KEY_PREFIX, TOPICS_DISABLED_KEY } from '../notify/owner-notifier.ts'
 
 export class PersistentStore {
   private db: Database
@@ -141,25 +139,6 @@ export class PersistentStore {
 
   removeCompletion(taskId: string): void {
     this.db.run('DELETE FROM task_completion WHERE task_id = ?', [taskId])
-  }
-
-  // --- Forum topic routing (#54) ---
-
-  getTopicThreadId(category: Category): number | undefined {
-    const value = this.getKv(`${TOPIC_THREAD_KEY_PREFIX}${category}`)
-    return value ? Number(value) : undefined
-  }
-
-  setTopicThreadId(category: Category, threadId: number): void {
-    this.setKv(`${TOPIC_THREAD_KEY_PREFIX}${category}`, String(threadId))
-  }
-
-  areTopicsDisabled(): boolean {
-    return this.getKv(TOPICS_DISABLED_KEY) === '1'
-  }
-
-  setTopicsDisabled(): void {
-    this.setKv(TOPICS_DISABLED_KEY, '1')
   }
 
   // --- DeployWatcher dedup (#54) ---

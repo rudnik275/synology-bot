@@ -62,21 +62,6 @@ describe('Notifier', () => {
     expect(h.sent).toHaveLength(0)
   })
 
-  it('routes to torrents topic when thread id is stored', async () => {
-    const h = makeHarness('12345')
-    h.kv.set('topic_thread_id:torrents', '42')
-    await h.notifier.notify(makeTask({ id: 'task-1' }))
-    expect(h.sent[0].messageThreadId).toBe(42)
-  })
-
-  it('falls back to flat chat when topics_disabled flag is set', async () => {
-    const h = makeHarness('12345')
-    h.kv.set('topic_thread_id:torrents', '42')
-    h.kv.set('topics_disabled', '1')
-    await h.notifier.notify(makeTask({ id: 'task-1' }))
-    expect(h.sent[0].messageThreadId).toBeUndefined()
-  })
-
   it('grouped push uses ✅ Скачано (N) header', async () => {
     const h = makeHarness('12345')
     await h.notifier.notifyFinishedGrouped([

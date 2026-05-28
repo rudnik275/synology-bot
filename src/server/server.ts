@@ -1,11 +1,26 @@
 import { Hono } from 'hono'
 import type { SynologyClient } from '../infra/synology/client.ts'
 import type { TolokaClient } from '../infra/toloka/client.ts'
+import type { DockerClient } from '../infra/docker/client.ts'
+import { parseLastSessionDone } from '../infra/docker/client.ts'
+import type { Subscription } from '../domain/subscription.ts'
 import { ownerAuth, type AppEnv } from './auth.ts'
+
+/** Narrow slice of PersistentStore the subscriptions endpoints need. */
+export interface SubscriptionStore {
+  listSubscriptions(): Subscription[]
+  getSubscription(id: string): Subscription | undefined
+  addSubscription(sub: Subscription): void
+  removeSubscription(id: string): void
+}
 
 export interface ServerDeps {
   synology: SynologyClient
   toloka: TolokaClient
+  docker: DockerClient
+  store: SubscriptionStore
+  /** Resolve a myshows.me show's title; injected for testability. */
+  getShowById: (showId: number) => Promise<{ title: string }>
   botToken: string
   ownerId: number
   /** Max initData age in seconds; 0 disables the freshness check. */
@@ -25,7 +40,7 @@ function errorMessage(err: unknown): string {
  * Upstream (NAS / Toloka) failures map to 502; bad client input maps to 400.
  */
 export function createServer(deps: ServerDeps): Hono<AppEnv> {
-  const { synology, toloka } = deps
+  const { synology, toloka, docker, store, getShowById } = deps
   const app = new Hono<AppEnv>()
 
   app.get('/healthz', (c) => c.json({ ok: true }))
@@ -155,6 +170,65 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       disks: disks.ok ? disks.data : null,
       processGroups: processGroups.ok ? processGroups.data : null,
       errors,
+    })
+  })
+
+  // --- Subscriptions ---
+
+  app.get('/api/subscriptions', (c) => c.json({ subscriptions: store.listSubscriptions() }))
+
+  app.post('/api/subscriptions', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const showId = Number(body?.showId)
+    if (!Number.isInteger(showId)) {
+      return c.json({ error: 'showId (integer) is required' }, 400)
+    }
+    const existing = store.getSubscription(String(showId))
+    if (existing) return c.json({ subscription: existing })
+
+    let title: string
+    try {
+      title = (await getShowById(showId)).title
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 502)
+    }
+    const sub: Subscription = { id: String(showId), showId, title }
+    store.addSubscription(sub)
+    return c.json({ subscription: sub }, 201)
+  })
+
+  app.delete('/api/subscriptions/:id', (c) => {
+    const id = c.req.param('id')
+    const existing = store.getSubscription(id)
+    if (!existing) return c.json({ error: 'not found' }, 404)
+    store.removeSubscription(id)
+    return c.json({ ok: true })
+  })
+
+  // --- Deploy status (Watchtower) ---
+
+  app.get('/api/deploy-status', async (c) => {
+    let container
+    try {
+      container = await docker.getContainerByName('watchtower')
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 502)
+    }
+    if (!container) return c.json({ state: 'not_found' })
+    if (container.state !== 'running') {
+      return c.json({ state: 'stopped', status: container.status })
+    }
+    let logs = ''
+    try {
+      logs = await docker.getContainerLogs('watchtower', 50)
+    } catch {
+      // Non-fatal: the container is running; we just can't read the last check time.
+    }
+    const lastCheck = parseLastSessionDone(logs)
+    return c.json({
+      state: 'running',
+      status: container.status,
+      lastCheck: lastCheck ? lastCheck.toISOString() : null,
     })
   })
 

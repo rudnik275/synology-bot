@@ -12,7 +12,7 @@ import { createBot } from './bot.ts'
 import { ReachabilityMonitor } from './domain/reachability-monitor.ts'
 import { migrateJsonSubscriptions } from './infra/migration/subscriptions-migration.ts'
 import { runDigest, scheduleDailyDigest } from './domain/digest-scheduler.ts'
-import { getTodayEpisodes } from './infra/myshows/client.ts'
+import { getTodayEpisodes, getShowById } from './infra/myshows/client.ts'
 import { DiskUsageWatcher } from './domain/disk-usage-watcher.ts'
 import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
@@ -145,6 +145,9 @@ export async function startApp(): Promise<void> {
   const server = createServer({
     synology,
     toloka,
+    docker,
+    store,
+    getShowById,
     botToken: config.botToken,
     ownerId: config.ownerChatId,
   })

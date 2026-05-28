@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'bun:test'
-import { createServer } from '../../../src/server/server.ts'
+import { createServer, type SubscriptionStore } from '../../../src/server/server.ts'
 import type { SynologyClient } from '../../../src/infra/synology/client.ts'
 import type { TolokaClient } from '../../../src/infra/toloka/client.ts'
+import type { DockerClient } from '../../../src/infra/docker/client.ts'
 import type { Task } from '../../../src/infra/synology/types.ts'
 import type { TolokaResult } from '../../../src/infra/toloka/types.ts'
+import type { Subscription } from '../../../src/domain/subscription.ts'
 import { buildInitData, TEST_BOT_TOKEN } from '../../helpers/init-data.ts'
 
 const OWNER_ID = 42
@@ -35,8 +37,45 @@ function makeToloka(overrides: Partial<TolokaClient> = {}): TolokaClient {
   return { ...base, ...overrides } as unknown as TolokaClient
 }
 
-function makeApp(synology: SynologyClient = makeSynology(), toloka: TolokaClient = makeToloka()) {
-  return createServer({ synology, toloka, botToken: TEST_BOT_TOKEN, ownerId: OWNER_ID, initDataMaxAgeSeconds: 0 })
+function makeStore(overrides: Partial<SubscriptionStore> = {}): SubscriptionStore {
+  return {
+    listSubscriptions: () => [],
+    getSubscription: () => undefined,
+    addSubscription: () => {},
+    removeSubscription: () => {},
+    ...overrides,
+  }
+}
+
+function makeDocker(overrides: Partial<DockerClient> = {}): DockerClient {
+  const base = {
+    getContainerByName: async () => ({ id: 'c1', state: 'running', status: 'Up 5 minutes', imageId: 'sha' }),
+    getContainerLogs: async () => '',
+  }
+  return { ...base, ...overrides } as unknown as DockerClient
+}
+
+interface AppExtras {
+  store?: SubscriptionStore
+  docker?: DockerClient
+  getShowById?: (showId: number) => Promise<{ title: string }>
+}
+
+function makeApp(
+  synology: SynologyClient = makeSynology(),
+  toloka: TolokaClient = makeToloka(),
+  extra: AppExtras = {}
+) {
+  return createServer({
+    synology,
+    toloka,
+    docker: extra.docker ?? makeDocker(),
+    store: extra.store ?? makeStore(),
+    getShowById: extra.getShowById ?? (async () => ({ title: 'Default Show' })),
+    botToken: TEST_BOT_TOKEN,
+    ownerId: OWNER_ID,
+    initDataMaxAgeSeconds: 0,
+  })
 }
 
 function ownerHeaders() {
@@ -239,5 +278,113 @@ describe('Mini App server — folders & search', () => {
     const res = await app.request('/api/search?q=matrix', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
     expect(await res.json()).toEqual({ error: 'login page' })
+  })
+})
+
+describe('Mini App server — subscriptions', () => {
+  it('GET /api/subscriptions lists subscriptions', async () => {
+    const subs: Subscription[] = [{ id: '1', showId: 1, title: 'Show One' }]
+    const app = makeApp(makeSynology(), makeToloka(), { store: makeStore({ listSubscriptions: () => subs }) })
+    const res = await app.request('/api/subscriptions', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ subscriptions: subs })
+  })
+
+  it('POST /api/subscriptions resolves the title and stores it', async () => {
+    let added: Subscription | undefined
+    const store = makeStore({ addSubscription: (s) => { added = s } })
+    const app = makeApp(makeSynology(), makeToloka(), { store, getShowById: async () => ({ title: 'The Expanse' }) })
+    const res = await app.request('/api/subscriptions', {
+      method: 'POST',
+      headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ showId: 7 }),
+    })
+    expect(res.status).toBe(201)
+    expect(added).toEqual({ id: '7', showId: 7, title: 'The Expanse' })
+    expect(await res.json()).toEqual({ subscription: { id: '7', showId: 7, title: 'The Expanse' } })
+  })
+
+  it('POST /api/subscriptions is idempotent when already subscribed', async () => {
+    const existing: Subscription = { id: '7', showId: 7, title: 'Already' }
+    let addCalled = false
+    const store = makeStore({ getSubscription: () => existing, addSubscription: () => { addCalled = true } })
+    const app = makeApp(makeSynology(), makeToloka(), { store })
+    const res = await app.request('/api/subscriptions', {
+      method: 'POST',
+      headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ showId: 7 }),
+    })
+    expect(res.status).toBe(200)
+    expect(addCalled).toBe(false)
+    expect(await res.json()).toEqual({ subscription: existing })
+  })
+
+  it('POST /api/subscriptions 400 on a non-integer showId', async () => {
+    const res = await makeApp().request('/api/subscriptions', {
+      method: 'POST',
+      headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ showId: 'nope' }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/subscriptions 502 when the show lookup fails', async () => {
+    const app = makeApp(makeSynology(), makeToloka(), { getShowById: async () => { throw new Error('myshows down') } })
+    const res = await app.request('/api/subscriptions', {
+      method: 'POST',
+      headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ showId: 7 }),
+    })
+    expect(res.status).toBe(502)
+  })
+
+  it('DELETE /api/subscriptions/:id removes an existing subscription', async () => {
+    let removedId: string | undefined
+    const store = makeStore({
+      getSubscription: () => ({ id: '7', showId: 7, title: 'X' }),
+      removeSubscription: (id) => { removedId = id },
+    })
+    const app = makeApp(makeSynology(), makeToloka(), { store })
+    const res = await app.request('/api/subscriptions/7', { method: 'DELETE', headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    expect(removedId).toBe('7')
+  })
+
+  it('DELETE /api/subscriptions/:id 404 when not found', async () => {
+    const res = await makeApp().request('/api/subscriptions/99', { method: 'DELETE', headers: ownerHeaders() })
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('Mini App server — deploy status', () => {
+  it('reports running with the last check time', async () => {
+    const docker = makeDocker({
+      getContainerByName: async () => ({ id: 'c1', state: 'running', status: 'Up 2 hours', imageId: 'sha' }),
+      getContainerLogs: async () => '2026-05-28T10:05:00Z time="..." level=info msg="Session done"',
+    })
+    const res = await makeApp(makeSynology(), makeToloka(), { docker }).request('/api/deploy-status', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.state).toBe('running')
+    expect(body.status).toBe('Up 2 hours')
+    expect(body.lastCheck).toBe('2026-05-28T10:05:00.000Z')
+  })
+
+  it('reports not_found when the container is missing', async () => {
+    const docker = makeDocker({ getContainerByName: async () => null })
+    const res = await makeApp(makeSynology(), makeToloka(), { docker }).request('/api/deploy-status', { headers: ownerHeaders() })
+    expect(await res.json()).toEqual({ state: 'not_found' })
+  })
+
+  it('reports stopped when the container is not running', async () => {
+    const docker = makeDocker({ getContainerByName: async () => ({ id: 'c1', state: 'exited', status: 'Exited (0)', imageId: 'sha' }) })
+    const res = await makeApp(makeSynology(), makeToloka(), { docker }).request('/api/deploy-status', { headers: ownerHeaders() })
+    expect(await res.json()).toEqual({ state: 'stopped', status: 'Exited (0)' })
+  })
+
+  it('502 when the Docker socket errors', async () => {
+    const docker = makeDocker({ getContainerByName: async () => { throw new Error('ECONNREFUSED') } })
+    const res = await makeApp(makeSynology(), makeToloka(), { docker }).request('/api/deploy-status', { headers: ownerHeaders() })
+    expect(res.status).toBe(502)
   })
 })

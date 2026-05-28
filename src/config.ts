@@ -47,6 +47,7 @@ export interface Config {
   dashboardAutostopMs: number
   autoCleanerPollMs: number
   autoCleanerRetentionDays: number
+  miniappPort: number
 }
 
 export function loadConfig(): Config {
@@ -78,5 +79,6 @@ export function loadConfig(): Config {
     dashboardAutostopMs: parseInt(optional('DASHBOARD_AUTOSTOP_MS', '120000'), 10),
     autoCleanerPollMs: parseInt(optional('AUTOCLEANER_POLL_MS', '3600000'), 10),
     autoCleanerRetentionDays: parseInt(optional('AUTOCLEANER_RETENTION_DAYS', '7'), 10),
+    miniappPort: parseInt(optional('MINIAPP_PORT', '8080'), 10),
   }
 }

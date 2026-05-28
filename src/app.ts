@@ -17,6 +17,7 @@ import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
 import { buildTaskActionKeyboard } from './handlers/routes/task-actions.ts'
 import { OwnerNotifier } from './infra/notify/owner-notifier.ts'
+import { createServer } from './server/server.ts'
 import { DeployReporter } from './domain/deploy-reporter.ts'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -136,6 +137,16 @@ export async function startApp(): Promise<void> {
     store,
     [stuckDetector, failedDetector]
   )
+
+  // Mini App backend (ADR 0005) — JSON API over the infra layer, bound to
+  // loopback only; reached from outside via a Cloudflare Tunnel on the NAS.
+  const server = createServer({
+    synology,
+    botToken: config.botToken,
+    ownerId: config.ownerChatId,
+  })
+  Bun.serve({ port: config.miniappPort, hostname: '127.0.0.1', fetch: server.fetch })
+  console.log(`[server] Mini App API on http://127.0.0.1:${config.miniappPort}`)
 
   // Start bot first, then begin polling loops
   const botPromise = bot.start()

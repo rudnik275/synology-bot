@@ -15,13 +15,14 @@ import { registerDashboardRoute } from './handlers/routes/dashboard.ts'
 import { registerDashboardActions } from './handlers/routes/dashboard-actions.ts'
 import { LiveDashboard } from './handlers/flows/live-dashboard.ts'
 import { registerTaskActionsRoute } from './handlers/routes/task-actions.ts'
-import { TolokaClient } from './infra/toloka/client.ts'
+import type { TolokaClient } from './infra/toloka/client.ts'
 
 export interface BotDeps {
   config: Config
   store: PersistentStore
   synology: SynologyClient
   docker: DockerClient
+  toloka: TolokaClient
 }
 
 export function createBot(deps: BotDeps): Bot<Context> {
@@ -30,15 +31,7 @@ export function createBot(deps: BotDeps): Bot<Context> {
   // Owner-only guard — all subsequent handlers run only for Owner
   bot.use(createOwnerOnlyMiddleware(deps.config.ownerChatId, deps.store))
 
-  // Toloka client
-  const toloka = new TolokaClient(
-    {
-      username: deps.config.toloka.username,
-      password: deps.config.toloka.password,
-      baseUrl: deps.config.toloka.baseUrl,
-    },
-    deps.store
-  )
+  const toloka = deps.toloka
 
   // LiveDashboard — singleton per chat, in-memory, not persisted
   const liveDashboard = new LiveDashboard(deps.synology, deps.config.dashboardRefreshMs, deps.config.dashboardAutostopMs)

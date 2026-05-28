@@ -2,6 +2,7 @@ import { loadConfig } from './config.ts'
 import { PersistentStore } from './infra/persistence/store.ts'
 import { SynologyClient } from './infra/synology/client.ts'
 import { DockerClient } from './infra/docker/client.ts'
+import { TolokaClient } from './infra/toloka/client.ts'
 import { TaskMonitor } from './domain/task-monitor/task-monitor.ts'
 import { Notifier } from './domain/notifier/notifier.ts'
 import { FinishedDebouncer } from './domain/finished-debouncer.ts'
@@ -26,6 +27,7 @@ export async function startApp(): Promise<void> {
   const store = new PersistentStore(config.dbPath)
   const synology = new SynologyClient(config.synology)
   const docker = new DockerClient({ socketPath: config.dockerSocketPath })
+  const toloka = new TolokaClient(config.toloka, store)
 
   // One-time migration from legacy JSON file
   await migrateJsonSubscriptions(store, './db/data.json')
@@ -44,7 +46,7 @@ export async function startApp(): Promise<void> {
     console.warn('Initial Synology login failed — will retry on demand:', err)
   }
 
-  const bot = createBot({ config, store, synology, docker })
+  const bot = createBot({ config, store, synology, docker, toloka })
 
   // Register bot commands for Telegram UI
   await bot.api.setMyCommands([
@@ -142,6 +144,7 @@ export async function startApp(): Promise<void> {
   // loopback only; reached from outside via a Cloudflare Tunnel on the NAS.
   const server = createServer({
     synology,
+    toloka,
     botToken: config.botToken,
     ownerId: config.ownerChatId,
   })

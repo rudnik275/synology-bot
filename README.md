@@ -49,9 +49,9 @@ Replace:
 
 All other tunables (poll intervals, disk thresholds, dashboard refresh rate, etc.) have sensible defaults baked into the image — see `src/config.ts` if you want to override them.
 
-### Notification topics
+### Notifications
 
-On first start the bot creates four forum topics in your private chat with it — `Торренты`, `Состояние NAS`, `Деплой`, `Подписки` — and routes each notification type into the matching topic. Interactive commands (`/health`, `/dashboard`, `/search`, etc.) still respond in the default (General) thread because *you* initiated them. This needs a Telegram client recent enough to support topics in private chats (Bot API 9.4, February 2026); on older clients `createForumTopic` returns 4xx and the bot silently falls back to a flat DM. Deploy notifications come from the bot itself — it checks its own container image SHA on every boot and posts to `Деплой` when it changed, so no Watchtower shoutrrr config is needed.
+The bot pushes notifications — finished downloads, NAS health (unreachable / disk full / disk temperature), stuck and failed tasks, and the daily subscription digest — straight to the owner's private chat. Deploy notifications come from the bot itself: it checks its own container image SHA on every boot and posts when it changed, so no Watchtower shoutrrr config is needed. (Per-category forum topics were removed in ADR 0005 — everything now lands in the flat owner DM.)
 
 ### 2a. Bot state persists in `./data/`
 
@@ -82,7 +82,7 @@ docker compose up -d
 - The `bot` container runs `rudnik275/synology-bot:latest` with `restart: unless-stopped` — it restarts automatically after a crash or NAS reboot.
 - The `watchtower` container polls Docker Hub every 5 minutes. When a new image is published (e.g. after a new git tag triggers the CI workflow), Watchtower pulls the new image and restarts the bot container.
 - Watchtower only acts on containers with the `com.centurylinklabs.watchtower.enable=true` label, so it won't touch other DSM-managed containers.
-- The bot self-reports successful deploys to the `Деплой` topic by comparing its image SHA across boots. No message means no new image was found — silent on no-op polls. A failed deploy where the bot fails to start cannot self-report; use `/deploy-status` to check Watchtower's health directly.
+- The bot self-reports successful deploys to the owner chat by comparing its image SHA across boots. No message means no new image was found — silent on no-op polls. A failed deploy where the bot fails to start cannot self-report; use `/deploy-status` to check Watchtower's health directly.
 
 ## Run locally
 

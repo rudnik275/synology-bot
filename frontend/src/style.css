@@ -1,0 +1,154 @@
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f3);
+  --text: var(--tg-theme-text-color, #000000);
+  --hint: var(--tg-theme-hint-color, #8a8a8e);
+  --link: var(--tg-theme-link-color, #2481cc);
+  --button: var(--tg-theme-button-color, #2481cc);
+  --button-text: var(--tg-theme-button-text-color, #ffffff);
+  --destructive: var(--tg-theme-destructive-text-color, #e53935);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100vh;
+  padding-bottom: 64px; /* room for the tab bar */
+}
+
+.content {
+  padding: 12px;
+}
+
+.card {
+  background: var(--secondary-bg);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 0 8px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.row .value {
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  color: var(--hint);
+}
+
+.progress {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.25);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--button);
+  transition: width 0.3s ease;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.status-normal {
+  background: #34c759;
+}
+.status-warning {
+  background: #ff9500;
+}
+.status-critical,
+.status-crashed,
+.status-failed {
+  background: var(--destructive);
+}
+
+.state {
+  text-align: center;
+  color: var(--hint);
+  padding: 40px 16px;
+}
+
+.error-banner {
+  background: rgba(229, 57, 53, 0.12);
+  color: var(--destructive);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+button {
+  font: inherit;
+}
+
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: var(--bg);
+  border-top: 1px solid rgba(127, 127, 127, 0.2);
+}
+
+.tabbar button {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--hint);
+  padding: 8px 0 10px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tabbar button.active {
+  color: var(--link);
+}
+
+.tabbar .icon {
+  font-size: 20px;
+  line-height: 1;
+}

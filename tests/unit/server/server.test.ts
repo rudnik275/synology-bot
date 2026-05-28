@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { createServer, type SubscriptionStore } from '../../../src/server/server.ts'
+import { createServer, type SubscriptionStore, type TodayEpisode } from '../../../src/server/server.ts'
 import type { SynologyClient } from '../../../src/infra/synology/client.ts'
 import type { TolokaClient } from '../../../src/infra/toloka/client.ts'
 import type { DockerClient } from '../../../src/infra/docker/client.ts'
@@ -59,6 +59,8 @@ interface AppExtras {
   store?: SubscriptionStore
   docker?: DockerClient
   getShowById?: (showId: number) => Promise<{ title: string }>
+  getTodayEpisodes?: (showId: number) => Promise<TodayEpisode[]>
+  tolokaBaseUrl?: string
 }
 
 function makeApp(
@@ -72,6 +74,8 @@ function makeApp(
     docker: extra.docker ?? makeDocker(),
     store: extra.store ?? makeStore(),
     getShowById: extra.getShowById ?? (async () => ({ title: 'Default Show' })),
+    getTodayEpisodes: extra.getTodayEpisodes ?? (async () => []),
+    tolokaBaseUrl: extra.tolokaBaseUrl ?? 'https://toloka.to',
     botToken: TEST_BOT_TOKEN,
     ownerId: OWNER_ID,
     initDataMaxAgeSeconds: 0,
@@ -97,13 +101,25 @@ describe('Mini App server — health & liveness', () => {
     expect(await res.json()).toEqual({ ok: true })
   })
 
-  it('GET /api/health aggregates sections and reports per-section errors', async () => {
+  it('GET /api/health returns the normalized contract shape', async () => {
+    const res = await makeApp().request('/api/health', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.cpu).toEqual({ userLoad: 1, systemLoad: 2 })
+    expect(body.memory).toEqual({ usedBytes: 307200, totalBytes: 1024000, pct: 30 })
+    expect(body.volumes).toEqual([])
+    expect(body.disks).toEqual([])
+    expect(body.processes).toEqual({ topRam: [], topCpu: [] })
+    expect(body.errors).toEqual([])
+  })
+
+  it('GET /api/health nulls a failed section and reports it in errors', async () => {
     const app = makeApp(makeSynology({ getDiskInfo: async () => ({ ok: false, reason: 'disk api down' }) }))
     const res = await app.request('/api/health', { headers: ownerHeaders() })
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.disks).toBeNull()
-    expect(body.utilization).not.toBeNull()
+    expect(body.cpu).not.toBeNull()
     expect(body.errors).toEqual([{ section: 'disks', reason: 'disk api down' }])
   })
 })
@@ -114,23 +130,61 @@ describe('Mini App server — auth gate', () => {
     expect(res.status).toBe(401)
   })
 
-  it('POST /api/tasks/magnet requires auth', async () => {
-    const res = await makeApp().request('/api/tasks/magnet', {
+  it('POST /api/tasks requires auth', async () => {
+    const res = await makeApp().request('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ magnet: 'magnet:?xt=1', destination: '/v1' }),
+      body: JSON.stringify({ uri: 'magnet:?xt=1', destination: '/v1' }),
     })
     expect(res.status).toBe(401)
   })
 })
 
 describe('Mini App server — tasks: read & actions', () => {
-  it('GET /api/tasks returns the task list for the owner', async () => {
-    const tasks: Task[] = [{ id: 't1', title: 'Movie', status: 'downloading', size: 100 }]
+  it('GET /api/tasks returns the contract shape (pct/speed/downloaded derived)', async () => {
+    const tasks: Task[] = [
+      {
+        id: 't1',
+        title: 'Movie',
+        status: 'downloading',
+        size: 200,
+        additional: { detail: { destination: '/volume1/films' }, transfer: { size_downloaded: 50, speed_download: 10 } },
+      },
+    ]
     const app = makeApp(makeSynology({ listTasks: async () => ({ ok: true, data: tasks }) }))
     const res = await app.request('/api/tasks', { headers: ownerHeaders() })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ tasks })
+    expect(await res.json()).toEqual({
+      tasks: [
+        {
+          id: 't1',
+          title: 'Movie',
+          status: 'downloading',
+          sizeBytes: 200,
+          downloadedBytes: 50,
+          speedBytesPerSec: 10,
+          pct: 25,
+          destination: '/volume1/films',
+        },
+      ],
+    })
+  })
+
+  it('GET /api/tasks tolerates a task with no transfer block', async () => {
+    const tasks: Task[] = [{ id: 't1', title: 'Movie', status: 'waiting', size: 100 }]
+    const app = makeApp(makeSynology({ listTasks: async () => ({ ok: true, data: tasks }) }))
+    const res = await app.request('/api/tasks', { headers: ownerHeaders() })
+    const body = await res.json()
+    expect(body.tasks[0]).toEqual({
+      id: 't1',
+      title: 'Movie',
+      status: 'waiting',
+      sizeBytes: 100,
+      downloadedBytes: 0,
+      speedBytesPerSec: 0,
+      pct: 0,
+      destination: null,
+    })
   })
 
   it('GET /api/tasks returns 502 when Synology fails', async () => {
@@ -180,21 +234,24 @@ describe('Mini App server — tasks: read & actions', () => {
   })
 })
 
-describe('Mini App server — tasks: create', () => {
-  it('POST /api/tasks/magnet creates a download task', async () => {
-    let args: { magnet: string; dest: string } | undefined
-    const app = makeApp(makeSynology({ createDownloadTask: async (magnet, dest) => { args = { magnet, dest }; return { ok: true } } }))
-    const res = await app.request('/api/tasks/magnet', jsonReq({ magnet: 'magnet:?xt=urn:btih:abc', destination: '/volume1/dl' }))
+describe('Mini App server — tasks: create (unified POST /api/tasks)', () => {
+  it('creates from a magnet uri', async () => {
+    let args: { uri: string; dest: string } | undefined
+    const app = makeApp(makeSynology({ createDownloadTask: async (uri, dest) => { args = { uri, dest }; return { ok: true } } }))
+    const res = await app.request('/api/tasks', jsonReq({ uri: 'magnet:?xt=urn:btih:abc', destination: '/volume1/dl' }))
     expect(res.status).toBe(201)
-    expect(args).toEqual({ magnet: 'magnet:?xt=urn:btih:abc', dest: '/volume1/dl' })
+    expect(args).toEqual({ uri: 'magnet:?xt=urn:btih:abc', dest: '/volume1/dl' })
   })
 
-  it('POST /api/tasks/magnet 400 when fields missing', async () => {
-    const res = await makeApp().request('/api/tasks/magnet', jsonReq({ magnet: 'magnet:?xt=1' }))
-    expect(res.status).toBe(400)
+  it('hands a plain (non-Toloka) URL straight to DownloadStation', async () => {
+    let args: { uri: string; dest: string } | undefined
+    const app = makeApp(makeSynology({ createDownloadTask: async (uri, dest) => { args = { uri, dest }; return { ok: true } } }))
+    const res = await app.request('/api/tasks', jsonReq({ uri: 'https://example.com/x.torrent', destination: '/v1' }))
+    expect(res.status).toBe(201)
+    expect(args).toEqual({ uri: 'https://example.com/x.torrent', dest: '/v1' })
   })
 
-  it('POST /api/tasks/toloka downloads then creates from the .torrent', async () => {
+  it('fetches a Toloka URL with auth, then creates from the .torrent', async () => {
     let fileArgs: { name: string; dest: string; len: number } | undefined
     let downloadedUrl: string | undefined
     const synology = makeSynology({
@@ -202,25 +259,30 @@ describe('Mini App server — tasks: create', () => {
     })
     const toloka = makeToloka({ downloadTorrent: async (url) => { downloadedUrl = url; return new Uint8Array([7, 7]) } })
     const res = await makeApp(synology, toloka).request(
-      '/api/tasks/toloka',
-      jsonReq({ downloadUrl: 'https://toloka.to/download.php?id=5', title: 'The Matrix', destination: '/volume1/films' })
+      '/api/tasks',
+      jsonReq({ uri: 'https://toloka.to/download.php?id=5', title: 'The Matrix', destination: '/volume1/films' })
     )
     expect(res.status).toBe(201)
     expect(downloadedUrl).toBe('https://toloka.to/download.php?id=5')
     expect(fileArgs).toEqual({ name: 'The Matrix.torrent', dest: '/volume1/films', len: 2 })
   })
 
-  it('POST /api/tasks/toloka 502 when the download throws', async () => {
+  it('502 when the Toloka download throws', async () => {
     const toloka = makeToloka({ downloadTorrent: async () => { throw new Error('403 forbidden') } })
     const res = await makeApp(makeSynology(), toloka).request(
-      '/api/tasks/toloka',
-      jsonReq({ downloadUrl: 'https://toloka.to/download.php?id=5', destination: '/v1' })
+      '/api/tasks',
+      jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/v1' })
     )
     expect(res.status).toBe(502)
     expect(await res.json()).toEqual({ error: '403 forbidden' })
   })
 
-  it('POST /api/tasks/file accepts a multipart .torrent upload', async () => {
+  it('400 when uri or destination is missing', async () => {
+    const res = await makeApp().request('/api/tasks', jsonReq({ uri: 'magnet:?xt=1' }))
+    expect(res.status).toBe(400)
+  })
+
+  it('accepts a multipart .torrent upload', async () => {
     let fileArgs: { name: string; dest: string; len: number } | undefined
     const app = makeApp(makeSynology({
       createDownloadTaskFromFile: async (bytes, name, dest) => { fileArgs = { name, dest, len: bytes.length }; return { ok: true } },
@@ -228,15 +290,15 @@ describe('Mini App server — tasks: create', () => {
     const fd = new FormData()
     fd.append('destination', '/volume1/dl')
     fd.append('file', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'application/x-bittorrent' }), 'movie.torrent')
-    const res = await app.request('/api/tasks/file', { method: 'POST', headers: ownerHeaders(), body: fd })
+    const res = await app.request('/api/tasks', { method: 'POST', headers: ownerHeaders(), body: fd })
     expect(res.status).toBe(201)
     expect(fileArgs).toEqual({ name: 'movie.torrent', dest: '/volume1/dl', len: 4 })
   })
 
-  it('POST /api/tasks/file 400 without a file', async () => {
+  it('400 on a multipart upload without a file', async () => {
     const fd = new FormData()
     fd.append('destination', '/volume1/dl')
-    const res = await makeApp().request('/api/tasks/file', { method: 'POST', headers: ownerHeaders(), body: fd })
+    const res = await makeApp().request('/api/tasks', { method: 'POST', headers: ownerHeaders(), body: fd })
     expect(res.status).toBe(400)
   })
 })
@@ -258,14 +320,18 @@ describe('Mini App server — folders & search', () => {
     expect(listed).toBe('/volume1')
   })
 
-  it('GET /api/search returns Toloka results', async () => {
+  it('GET /api/search returns the normalized result shape', async () => {
     const results: TolokaResult[] = [
       { id: '5', title: 'The Matrix', downloadUrl: 'https://toloka.to/download.php?id=5', size: '4.7 GB', seeders: 10, leechers: 1, category: 'Кино' },
     ]
     const app = makeApp(makeSynology(), makeToloka({ search: async () => results }))
     const res = await app.request('/api/search?q=matrix', { headers: ownerHeaders() })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ results })
+    expect(await res.json()).toEqual({
+      results: [
+        { id: '5', title: 'The Matrix', size: '4.7 GB', seeders: 10, leechers: 1, downloadUrl: 'https://toloka.to/download.php?id=5', category: 'Кино' },
+      ],
+    })
   })
 
   it('GET /api/search 400 without a query', async () => {
@@ -282,12 +348,34 @@ describe('Mini App server — folders & search', () => {
 })
 
 describe('Mini App server — subscriptions', () => {
-  it('GET /api/subscriptions lists subscriptions', async () => {
-    const subs: Subscription[] = [{ id: '1', showId: 1, title: 'Show One' }]
+  it('GET /api/subscriptions lists subscriptions in the contract shape', async () => {
+    const subs: Subscription[] = [{ id: '1', showId: 1, title: 'Show One', lastNotifiedEpisode: { season: 2, episode: 3 } }]
     const app = makeApp(makeSynology(), makeToloka(), { store: makeStore({ listSubscriptions: () => subs }) })
     const res = await app.request('/api/subscriptions', { headers: ownerHeaders() })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ subscriptions: subs })
+    expect(await res.json()).toEqual({
+      subscriptions: [{ id: '1', showId: 1, title: 'Show One', lastNotifiedEpisode: { season: 2, episode: 3 } }],
+    })
+  })
+
+  it('GET /api/subscriptions/today flattens episodes airing today across shows', async () => {
+    const subs: Subscription[] = [
+      { id: '1', showId: 1, title: 'Show One' },
+      { id: '2', showId: 2, title: 'Show Two' },
+    ]
+    const today: Record<number, TodayEpisode[]> = {
+      1: [{ season: 1, episode: 5, title: 'Ep', airTime: '2026-05-28T20:00:00Z' }],
+      2: [],
+    }
+    const app = makeApp(makeSynology(), makeToloka(), {
+      store: makeStore({ listSubscriptions: () => subs }),
+      getTodayEpisodes: async (showId) => today[showId] ?? [],
+    })
+    const res = await app.request('/api/subscriptions/today', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      episodes: [{ showId: 1, title: 'Show One', season: 1, episode: 5, airTime: '2026-05-28T20:00:00Z' }],
+    })
   })
 
   it('POST /api/subscriptions resolves the title and stores it', async () => {
@@ -301,7 +389,7 @@ describe('Mini App server — subscriptions', () => {
     })
     expect(res.status).toBe(201)
     expect(added).toEqual({ id: '7', showId: 7, title: 'The Expanse' })
-    expect(await res.json()).toEqual({ subscription: { id: '7', showId: 7, title: 'The Expanse' } })
+    expect(await res.json()).toEqual({ subscription: { id: '7', showId: 7, title: 'The Expanse', lastNotifiedEpisode: null } })
   })
 
   it('POST /api/subscriptions is idempotent when already subscribed', async () => {
@@ -316,7 +404,7 @@ describe('Mini App server — subscriptions', () => {
     })
     expect(res.status).toBe(200)
     expect(addCalled).toBe(false)
-    expect(await res.json()).toEqual({ subscription: existing })
+    expect(await res.json()).toEqual({ subscription: { id: '7', showId: 7, title: 'Already', lastNotifiedEpisode: null } })
   })
 
   it('POST /api/subscriptions 400 on a non-integer showId', async () => {

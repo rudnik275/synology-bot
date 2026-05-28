@@ -54,7 +54,7 @@ export async function getShowById(showId: number): Promise<MyShowsShowDetailed> 
  */
 export async function getTodayEpisodes(
   showId: number
-): Promise<Array<{ season: number; episode: number; title: string }>> {
+): Promise<Array<{ season: number; episode: number; title: string; airTime: string }>> {
   let show: MyShowsShowDetailed
   try {
     show = await getShowById(showId)
@@ -71,5 +71,6 @@ export async function getTodayEpisodes(
       season: ep.seasonNumber,
       episode: ep.episodeNumber,
       title: ep.title,
+      airTime: ep.airDateUTC,
     }))
 }

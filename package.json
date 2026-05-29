@@ -6,7 +6,9 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "test": "bun test",
-    "typecheck": "bun tsc --noEmit"
+    "typecheck": "bun tsc --noEmit && bun run typecheck:frontend",
+    "typecheck:frontend": "cd frontend && bun run typecheck",
+    "build:frontend": "cd frontend && bun run build"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

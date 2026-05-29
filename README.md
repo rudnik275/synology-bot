@@ -91,3 +91,19 @@ Prereqs: Bun ≥ 1.2, 1Password CLI signed in, Owner's secrets stored in 1Passwo
 ```sh
 ./scripts/with-secrets.sh bun run dev
 ```
+
+## Develop & test
+
+The backend and the Vue Mini App (`frontend/`) share one test run. Install both
+dependency sets once (`bun install` at the root and inside `frontend/`), then:
+
+```sh
+bun test            # backend + frontend component tests (one runner)
+bun run typecheck   # backend tsc + frontend vue-tsc
+bun run build:frontend   # vite build of the Mini App SPA
+```
+
+Frontend component tests use `@vue/test-utils` on happy-dom. A preload
+(`frontend/test-setup.ts`, wired via `bunfig.toml`) registers happy-dom and a
+`.vue` SFC loader so `bun test` can mount components — see
+`frontend/test/harness.test.ts` for the worked example.

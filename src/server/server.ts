@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { serveStatic } from 'hono/bun'
 import type { SynologyClient } from '../infra/synology/client.ts'
 import type { TolokaClient } from '../infra/toloka/client.ts'
 import type { DockerClient } from '../infra/docker/client.ts'
@@ -47,6 +48,13 @@ export interface ServerDeps {
   ownerId: number
   /** Max initData age in seconds; 0 disables the freshness check. */
   initDataMaxAgeSeconds?: number
+  /**
+   * Filesystem root of the built Vue SPA (Vite `dist`), resolved relative to
+   * the process CWD. The API and /healthz are registered first and win; any
+   * other path falls back to index.html for client-side routing. Defaults to
+   * the production layout; tests point it at a fixture.
+   */
+  staticRoot?: string
 }
 
 function errorMessage(err: unknown): string {
@@ -292,6 +300,14 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       lastCheck: lastCheck ? lastCheck.toISOString() : null,
     })
   })
+
+  // --- Static SPA (Phase 3) ---
+  // Registered last so /api and /healthz keep priority. Built assets are
+  // served from `staticRoot`; every other (non-API) path falls back to
+  // index.html for client-side routing.
+  const staticRoot = deps.staticRoot ?? './frontend/dist'
+  app.use('/assets/*', serveStatic({ root: staticRoot }))
+  app.get('*', serveStatic({ path: `${staticRoot}/index.html` }))
 
   return app
 }

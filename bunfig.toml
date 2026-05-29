@@ -1,0 +1,5 @@
+# `bun test` (backend + frontend together) preloads the frontend harness:
+# happy-dom global DOM + a .vue SFC loader. See frontend/test-setup.ts.
+# Imports inside the preload resolve from frontend/node_modules (vue, etc.).
+[test]
+preload = ["./frontend/test-setup.ts"]

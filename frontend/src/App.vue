@@ -9,8 +9,10 @@ import HealthChip from './components/HealthChip.vue'
 import DownloadsTab from './tabs/DownloadsTab.vue'
 import NasTab from './tabs/NasTab.vue'
 import ShowsTab from './tabs/ShowsTab.vue'
+import { useHealth } from './composables/useHealth'
 
 const activeTab = ref<TabKey>('downloads')
+const { chipStatus, chipMetric } = useHealth()
 
 const TAB_VIEWS = {
   downloads: DownloadsTab,
@@ -23,7 +25,7 @@ const TAB_VIEWS = {
   <div class="shell">
     <header class="header">
       <span class="brand">NAS</span>
-      <HealthChip @click="activeTab = 'nas'" />
+      <HealthChip :status="chipStatus" :metric="chipMetric" @click="activeTab = 'nas'" />
     </header>
 
     <main class="content">

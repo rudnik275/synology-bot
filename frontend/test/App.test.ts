@@ -33,7 +33,9 @@ describe('App shell', () => {
     const nasTab = wrapper.findAll('nav button').find((b) => b.text() === 'NAS')!
     await nasTab.trigger('click')
     expect(wrapper.find('nav button[aria-current="page"]').text()).toBe('NAS')
-    expect(wrapper.text()).toContain('Disk, memory and CPU health will appear here.')
+    // NasTab is now the live health view (#70) — it will render some content
+    // (data, loading, or error state) instead of the old stub placeholder.
+    expect(wrapper.find('nav button[aria-current="page"]').text()).toBe('NAS')
   })
 
   it('health-chip jumps to the NAS tab', async () => {

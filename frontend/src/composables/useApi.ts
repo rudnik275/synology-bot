@@ -17,11 +17,20 @@ export interface UseApiOptions {
   pollMs?: number
 }
 
+export interface RefetchOptions {
+  /**
+   * When true the fetch runs silently: loading is not toggled, error is not
+   * cleared/set, and stale data is preserved on failure. Used by the poll
+   * timer so background ticks don't cause skeleton/empty-state flicker.
+   */
+  background?: boolean
+}
+
 export interface UseApi<T> {
   data: Ref<T | null>
   loading: Ref<boolean>
   error: Ref<string | null>
-  refetch: () => Promise<void>
+  refetch: (opts?: RefetchOptions) => Promise<void>
 }
 
 export function useApi<T>(path: string, options: UseApiOptions = {}): UseApi<T> {
@@ -31,9 +40,12 @@ export function useApi<T>(path: string, options: UseApiOptions = {}): UseApi<T> 
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  async function refetch(): Promise<void> {
-    loading.value = true
-    error.value = null
+  async function refetch(opts?: RefetchOptions): Promise<void> {
+    const background = opts?.background ?? false
+    if (!background) {
+      loading.value = true
+      error.value = null
+    }
     try {
       const res = await fetch(`/api${path}`, {
         headers: { Authorization: `tma ${initData}` },
@@ -44,9 +56,14 @@ export function useApi<T>(path: string, options: UseApiOptions = {}): UseApi<T> 
       }
       data.value = (await res.json()) as T
     } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e)
+      if (!background) {
+        error.value = e instanceof Error ? e.message : String(e)
+      }
+      // Background failure: keep stale data and prior error state intact
     } finally {
-      loading.value = false
+      if (!background) {
+        loading.value = false
+      }
     }
   }
 
@@ -57,7 +74,7 @@ export function useApi<T>(path: string, options: UseApiOptions = {}): UseApi<T> 
 
     onMounted(() => {
       if (immediate) void refetch()
-      if (pollMs > 0) timer = setInterval(() => void refetch(), pollMs)
+      if (pollMs > 0) timer = setInterval(() => void refetch({ background: true }), pollMs)
     })
 
     onUnmounted(() => {

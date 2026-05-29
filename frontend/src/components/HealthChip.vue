@@ -20,7 +20,10 @@ defineEmits<{ click: [] }>()
 <template>
   <button type="button" class="chip" :class="`status-${status}`" aria-label="NAS health" @click="$emit('click')">
     <span class="dot" :class="{ pulse: status !== 'unknown' }" />
-    <span class="metric">{{ metric }}</span>
+    <!-- Keyed crossfade: metric text fades smoothly when the value changes. -->
+    <Transition name="chip-metric" mode="out-in">
+      <span :key="metric" class="metric">{{ metric }}</span>
+    </Transition>
   </button>
 </template>
 
@@ -79,5 +82,15 @@ defineEmits<{ click: [] }>()
   50% {
     opacity: 0.45;
   }
+}
+
+/* Metric text crossfade when the value changes (polling updates, etc.). */
+.chip-metric-enter-active,
+.chip-metric-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.chip-metric-enter-from,
+.chip-metric-leave-to {
+  opacity: 0;
 }
 </style>

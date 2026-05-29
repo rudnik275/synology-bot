@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 import { Notifier } from '../../../../src/domain/notifier/notifier.ts'
 import { OwnerNotifier, type LowLevelSend } from '../../../../src/infra/notify/owner-notifier.ts'
+import { openMiniAppButton } from '../../../../src/infra/notify/miniapp-link.ts'
 import type { Task } from '../../../../src/infra/synology/types.ts'
 
 function makeTask(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
@@ -18,7 +19,7 @@ interface TestHarness {
   kv: Map<string, string>
 }
 
-function makeHarness(ownerChatId?: string): TestHarness {
+function makeHarness(ownerChatId?: string, miniappUrl = ''): TestHarness {
   const kv = new Map<string, string>()
   if (ownerChatId) kv.set('owner_chat_id', ownerChatId)
   const sent: Array<Parameters<LowLevelSend>[0]> = []
@@ -26,7 +27,8 @@ function makeHarness(ownerChatId?: string): TestHarness {
     { getKv: (key) => kv.get(key) },
     async (p) => { sent.push(p) }
   )
-  return { notifier: new Notifier(owner), sent, kv }
+  const notifier = new Notifier(owner, () => openMiniAppButton(miniappUrl, 'downloads'))
+  return { notifier, sent, kv }
 }
 
 describe('Notifier', () => {
@@ -87,5 +89,30 @@ describe('Notifier', () => {
     const cb = h.notifier.asCallback()
     await cb(makeTask({ id: 'task-1', title: 'Callback Movie' }))
     expect(h.sent[0].text).toContain('Callback Movie')
+  })
+
+  it('finished push carries no Открыть button when MINIAPP_URL unset', async () => {
+    const h = makeHarness('12345') // empty miniappUrl
+    await h.notifier.notify(makeTask({ id: 'task-1', title: 'My Movie' }))
+    expect(h.sent[0].replyMarkup).toBeUndefined()
+  })
+
+  it('finished push carries an Открыть(downloads) web_app button when MINIAPP_URL set', async () => {
+    const h = makeHarness('12345', 'https://nas.example.com')
+    await h.notifier.notify(makeTask({ id: 'task-1', title: 'My Movie' }))
+    const markup = h.sent[0].replyMarkup
+    expect(markup).toBeDefined()
+    const btn = markup!.inline_keyboard[0][0] as { text: string; web_app: { url: string } }
+    expect(btn.text).toBe('Открыть')
+    expect(btn.web_app.url).toContain('tgWebAppStartParam=downloads')
+  })
+
+  it('grouped finished push carries the Открыть(downloads) button when set', async () => {
+    const h = makeHarness('12345', 'https://nas.example.com')
+    await h.notifier.notifyFinishedGrouped([makeTask({ id: '1', title: 'A' })])
+    const markup = h.sent[0].replyMarkup
+    expect(markup).toBeDefined()
+    const btn = markup!.inline_keyboard[0][0] as { web_app: { url: string } }
+    expect(btn.web_app.url).toContain('tgWebAppStartParam=downloads')
   })
 })

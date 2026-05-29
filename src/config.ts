@@ -46,6 +46,7 @@ export interface Config {
   autoCleanerPollMs: number
   autoCleanerRetentionDays: number
   miniappPort: number
+  miniappUrl: string
 }
 
 export function loadConfig(): Config {
@@ -76,5 +77,6 @@ export function loadConfig(): Config {
     autoCleanerPollMs: parseInt(optional('AUTOCLEANER_POLL_MS', '3600000'), 10),
     autoCleanerRetentionDays: parseInt(optional('AUTOCLEANER_RETENTION_DAYS', '7'), 10),
     miniappPort: parseInt(optional('MINIAPP_PORT', '8080'), 10),
+    miniappUrl: optional('MINIAPP_URL', ''),
   }
 }

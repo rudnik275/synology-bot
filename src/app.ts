@@ -18,6 +18,7 @@ import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
 import { buildTaskActionKeyboard } from './handlers/routes/task-actions.ts'
 import { OwnerNotifier } from './infra/notify/owner-notifier.ts'
+import { openMiniAppButton, miniAppTabUrl } from './infra/notify/miniapp-link.ts'
 import { createServer } from './server/server.ts'
 import { DeployReporter } from './domain/deploy-reporter.ts'
 import pkg from '../package.json' with { type: 'json' }
@@ -60,6 +61,14 @@ export async function startApp(): Promise<void> {
     { command: 'unsubscribe', description: 'Отписаться от шоу' },
   ])
 
+  // Chat menu button → opens the Mini App (ADR 0006). Only when configured;
+  // with MINIAPP_URL unset we leave the default menu button untouched.
+  if (config.miniappUrl) {
+    await bot.api.setChatMenuButton({
+      menu_button: { type: 'web_app', text: 'NAS', web_app: { url: config.miniappUrl } },
+    })
+  }
+
   // Single notification surface — all owner-bound push messages go here.
   const ownerNotifier = new OwnerNotifier(store, async ({ chatId, text, replyMarkup }) => {
     await bot.api.sendMessage(chatId, text, {
@@ -74,7 +83,7 @@ export async function startApp(): Promise<void> {
 
   // One-shot deploy reporter: detects if our image SHA changed since last
   // boot (i.e. Watchtower just deployed us) and posts to #deploy.
-  await runDeployReporter({ docker, store, ownerNotifier })
+  await runDeployReporter({ docker, store, ownerNotifier, miniappUrl: config.miniappUrl })
 
   // Schedule daily 9 AM digest
   scheduleDailyDigest(async () => {
@@ -85,7 +94,9 @@ export async function startApp(): Promise<void> {
       ownerChatId,
       fetchTodayEpisodes: getTodayEpisodes,
       sendMessage: async (_chatId, message) => {
-        await ownerNotifier.send('subscriptions', message)
+        await ownerNotifier.send('subscriptions', message, {
+          replyMarkup: openMiniAppButton(config.miniappUrl, 'shows'),
+        })
       },
       onSubscriptionUpdated: async (updated) => {
         store.addSubscription(updated)
@@ -93,8 +104,11 @@ export async function startApp(): Promise<void> {
     })
   })
 
-  // TaskMonitor + Notifier + detectors — background polling loop
-  const notifier = new Notifier(ownerNotifier)
+  // TaskMonitor + Notifier + detectors — background polling loop. Finished
+  // pushes carry an Открыть(downloads) deep-link when the Mini App is configured.
+  const notifier = new Notifier(ownerNotifier, () =>
+    openMiniAppButton(config.miniappUrl, 'downloads')
+  )
 
   const debouncer = new FinishedDebouncer({
     windowMs: config.finishedDebounceMs,
@@ -111,12 +125,21 @@ export async function startApp(): Promise<void> {
     return result.data
   }
 
+  // Task-action keyboard + an Открыть(downloads) deep-link row appended when the
+  // Mini App is configured (button-less otherwise — guard keeps prior behavior).
+  const taskAlertKeyboard = (taskId: string) => {
+    const kb = buildTaskActionKeyboard(taskId)
+    const url = miniAppTabUrl(config.miniappUrl, 'downloads')
+    if (url) kb.row().webApp('Открыть', url)
+    return kb
+  }
+
   const stuckDetector = new StuckDetector({
     zeroSpeedThresholdMs: 5 * 60 * 1000,
     store,
     sendAlert: async ({ text, taskId }) => {
       await ownerNotifier.send('torrents', text, {
-        replyMarkup: buildTaskActionKeyboard(taskId),
+        replyMarkup: taskAlertKeyboard(taskId),
       })
     },
   })
@@ -125,7 +148,7 @@ export async function startApp(): Promise<void> {
     store,
     sendAlert: async ({ text, taskId }) => {
       await ownerNotifier.send('torrents', text, {
-        replyMarkup: buildTaskActionKeyboard(taskId),
+        replyMarkup: taskAlertKeyboard(taskId),
       })
     },
   })
@@ -183,11 +206,12 @@ function startReachabilityWatcher({ config, store, synology, ownerNotifier }: Wa
     {
       checkReachability: () => synology.isReachable(),
       onEvent: async (event, reason) => {
+        const open = { replyMarkup: openMiniAppButton(config.miniappUrl, 'nas') }
         if (event === 'nas.down') {
-          await ownerNotifier.send('health', `❌ NAS недоступен${reason ? ` — ${reason}` : ''}`)
+          await ownerNotifier.send('health', `❌ NAS недоступен${reason ? ` — ${reason}` : ''}`, open)
           store.markHealthFired('nas_down', 'nas')
         } else if (event === 'nas.recovered') {
-          await ownerNotifier.send('health', '✅ NAS снова доступен')
+          await ownerNotifier.send('health', '✅ NAS снова доступен', open)
           store.clearHealthFired('nas_down', 'nas')
         }
       },
@@ -217,7 +241,9 @@ function startDiskUsageWatcher({ config, store, synology, ownerNotifier }: Watch
     isVolumeWarned: async (volumeId) => store.wasHealthFired('disk_full', volumeId),
     markWarned: async (volumeId) => store.markHealthFired('disk_full', volumeId),
     clearWarned: async (volumeId) => store.clearHealthFired('disk_full', volumeId),
-    notify: (message) => ownerNotifier.send('health', message),
+    notify: (message) => ownerNotifier.send('health', message, {
+      replyMarkup: openMiniAppButton(config.miniappUrl, 'nas'),
+    }),
     highPct: config.diskFullHighPct,
     lowPct: config.diskFullLowPct,
   })
@@ -250,7 +276,9 @@ function startDiskHealthWatcher({ config, store, synology, ownerNotifier }: Watc
       if (state === 'ok') store.clearHealthFired(event, resourceId)
       else store.markHealthFired(event, resourceId)
     },
-    notify: (message) => ownerNotifier.send('health', message),
+    notify: (message) => ownerNotifier.send('health', message, {
+      replyMarkup: openMiniAppButton(config.miniappUrl, 'nas'),
+    }),
   })
 
   const pollIntervalMs = config.diskHealthPollMs
@@ -268,7 +296,9 @@ function startAutoCleaner({ config, store, synology, ownerNotifier }: WatcherDep
     getCompleted: (cutoffMs) => Promise.resolve(store.getCompletedBefore(cutoffMs)),
     deleteTask: (taskId) => synology.deleteTask(taskId),
     removeCompletion: (taskId) => { store.removeCompletion(taskId); return Promise.resolve() },
-    notify: (message) => ownerNotifier.send('torrents', message),
+    notify: (message) => ownerNotifier.send('torrents', message, {
+      replyMarkup: openMiniAppButton(config.miniappUrl, 'downloads'),
+    }),
     retentionDays: config.autoCleanerRetentionDays,
     now: () => Date.now(),
   })
@@ -292,10 +322,12 @@ async function runDeployReporter({
   docker,
   store,
   ownerNotifier,
+  miniappUrl,
 }: {
   docker: DockerClient
   store: PersistentStore
   ownerNotifier: OwnerNotifier
+  miniappUrl: string
 }): Promise<void> {
   const reporter = new DeployReporter({
     getOwnImageId: async () => {
@@ -305,7 +337,9 @@ async function runDeployReporter({
     getLastImageId: () => store.getKv('bot_image_sha'),
     setLastImageId: (sha) => store.setKv('bot_image_sha', sha),
     version: pkg.version,
-    notify: (message) => ownerNotifier.send('deploy', message),
+    notify: (message) => ownerNotifier.send('deploy', message, {
+      replyMarkup: openMiniAppButton(miniappUrl, 'nas'),
+    }),
   })
   await reporter.report()
 }

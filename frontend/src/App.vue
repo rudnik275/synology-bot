@@ -11,8 +11,10 @@ import NasTab from './tabs/NasTab.vue'
 import ShowsTab from './tabs/ShowsTab.vue'
 import { useHealth } from './composables/useHealth'
 import AddFlow from './components/AddFlow.vue'
+import { startParam } from './telegram'
+import { resolveStartTab } from './startTab'
 
-const activeTab = ref<TabKey>('downloads')
+const activeTab = ref<TabKey>(resolveStartTab(startParam))
 const { chipStatus, chipMetric } = useHealth()
 
 const TAB_VIEWS = {

@@ -1,3 +1,4 @@
+import type { InlineKeyboard } from 'grammy'
 import type { Task } from '../../infra/synology/types.ts'
 import type { OwnerNotifier } from '../../infra/notify/owner-notifier.ts'
 
@@ -9,14 +10,24 @@ import type { OwnerNotifier } from '../../infra/notify/owner-notifier.ts'
  * is the OwnerNotifier's job.
  */
 export class Notifier {
-  constructor(private readonly owner: OwnerNotifier) {}
+  /**
+   * @param owner       the single owner-bound send surface.
+   * @param openButton  optional factory for the "Открыть" deep-link button
+   *                    (downloads tab). Returns `undefined` when MINIAPP_URL is
+   *                    unset, so finished pushes stay button-less — unchanged
+   *                    behavior when the Mini App is not configured.
+   */
+  constructor(
+    private readonly owner: OwnerNotifier,
+    private readonly openButton?: () => InlineKeyboard | undefined
+  ) {}
 
   /** Build and send the "finished" push for a single task. */
   async notify(task: Task): Promise<void> {
     const lines = [`✅ Скачано: ${task.title}`]
     const destination = task.additional?.detail?.destination
     if (destination) lines.push(`Папка: ${destination}`)
-    await this.owner.send('torrents', lines.join('\n'))
+    await this.owner.send('torrents', lines.join('\n'), { replyMarkup: this.openButton?.() })
   }
 
   /**
@@ -33,7 +44,7 @@ export class Notifier {
     for (const task of displayed) lines.push(`• ${task.title}`)
     if (remaining > 0) lines.push(`...и ещё ${remaining}`)
 
-    await this.owner.send('torrents', lines.join('\n'))
+    await this.owner.send('torrents', lines.join('\n'), { replyMarkup: this.openButton?.() })
   }
 
   /** Returns a bound function suitable for passing to TaskMonitor. */

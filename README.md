@@ -125,7 +125,7 @@ FAB → bottom sheet → Search (Toloka) / magnet link / .torrent upload → fol
 Prereqs: Bun ≥ 1.2, 1Password CLI signed in, Owner's secrets stored in 1Password under the paths in `.env.1password`.
 
 ```sh
-./scripts/with-secrets.sh bun run dev
+with-secrets bun run dev
 ```
 
 ## Develop & test

@@ -2,7 +2,7 @@
  * capture-toloka-fixtures.ts
  *
  * One-shot script to capture real Toloka HTML pages for use as test fixtures.
- * Run via: ./scripts/with-secrets.sh bun run scripts/capture-toloka-fixtures.ts
+ * Run via: with-secrets bun run scripts/capture-toloka-fixtures.ts
  *
  * Requires env vars: TOLOKA_USERNAME, TOLOKA_PASSWORD
  * Optional: TOLOKA_BASE_URL (default: https://toloka.to)

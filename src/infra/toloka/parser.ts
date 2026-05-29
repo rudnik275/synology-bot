@@ -1,47 +1,57 @@
 import * as cheerio from 'cheerio'
 import type { TolokaResult } from './types.ts'
 
+const SIZE_RE = /\d+(?:[.,]\d+)?\s*(?:[KMGT]i?B|B)\b/i
+
 /**
- * Parses Toloka tracker search results page HTML into TolokaResult[].
- * Tolerant parser: skips malformed rows rather than crashing.
+ * Parses a Toloka (Hurtom) tracker search-results page into TolokaResult[].
+ *
+ * Real markup (verified live): each result is a <tr> with class-tagged cells —
+ * `td.topictitle` (title link), an `a[href^="download.php"]` link (the .torrent),
+ * `td.seedmed` / `td.leechmed` (seeders/leechers), and a `td.gensmall` holding the
+ * size. Selectors are class-based, not column-index based, so layout shuffles
+ * don't silently break parsing. Tolerant: skips rows it can't fully parse.
  */
 export function parseSearchPage(html: string, baseUrl: string): TolokaResult[] {
   const $ = cheerio.load(html)
   const results: TolokaResult[] = []
 
-  // Each result row has a .topictitle link and a download.php link
   $('tr').each((_i, row) => {
     try {
       const $row = $(row)
-      const titleEl = $row.find('a.topictitle')
-      if (!titleEl.length) return
 
-      const title = titleEl.text().trim()
-      if (!title) return
+      // Match only genuine result rows: exactly one title cell. Outer/wrapper
+      // <tr>s contain many `td.topictitle` (one per result) — without this guard
+      // their `.find()` aggregates every row's cells (e.g. all seeders concatenated
+      // into one giant number), producing a garbage phantom result.
+      const titleCells = $row.find('td.topictitle')
+      if (titleCells.length !== 1) return
 
+      // A real result row always has a download.php link; bail early otherwise.
       const downloadEl = $row.find('a[href^="download.php"]')
       if (!downloadEl.length) return
 
       const downloadHref = downloadEl.attr('href') ?? ''
-      const idMatch = downloadHref.match(/[?&]id=(\d+)/)
-      const id = idMatch?.[1] ?? ''
+      const id = downloadHref.match(/[?&]id=(\d+)/)?.[1] ?? ''
       if (!id) return
 
+      const title = titleCells.text().trim()
+      if (!title) return
+
       const downloadUrl = `${baseUrl}/${downloadHref}`
-
-      // Columns (1-indexed): category, author, title, replies, views, date, size, seeders, leechers, download
-      const cells = $row.find('td')
-      const category = cells.eq(0).text().trim()
-      const size = cells.eq(6).text().trim()
-      const seedersText = cells.eq(7).text().trim()
-      const leechersText = cells.eq(8).text().trim()
-
-      const seeders = parseInt(seedersText, 10) || 0
-      const leechers = parseInt(leechersText, 10) || 0
+      const category = $row.find('a[href^="tracker.php?f="]').first().text().trim()
+      const size = $row
+        .find('td.gensmall')
+        .filter((_j, el) => SIZE_RE.test($(el).text()))
+        .first()
+        .text()
+        .trim()
+      const seeders = parseInt($row.find('td.seedmed').text().trim(), 10) || 0
+      const leechers = parseInt($row.find('td.leechmed').text().trim(), 10) || 0
 
       results.push({ id, title, downloadUrl, size, seeders, leechers, category })
     } catch {
-      // Skip malformed rows
+      // Skip malformed rows rather than failing the whole search.
     }
   })
 

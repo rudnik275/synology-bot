@@ -71,9 +71,14 @@ describe('TolokaClient', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe(`${BASE_URL}/login.php`)
     expect(init.method).toBe('POST')
-    expect(String(init.body)).toContain('username=testuser')
-    expect(String(init.body)).toContain('password=testpass')
-    expect(String(init.body)).toContain('entry=login')
+    const params = new URLSearchParams(String(init.body))
+    expect(params.get('username')).toBe('testuser')
+    expect(params.get('password')).toBe('testpass')
+    // Toloka's login is triggered by the form's submit button field `login`
+    // (value "Вхід"); there is no `entry` field. Sending `entry=login` (the old
+    // bug) left the session a guest, so every tracker.php search returned empty.
+    expect(params.get('login')).toBe('Вхід')
+    expect(params.has('entry')).toBe(false)
   })
 
   it('login() persists captured cookie to store under toloka_cookie key', async () => {
@@ -179,6 +184,28 @@ describe('TolokaClient', () => {
 
     const client = new TolokaClient(CONFIG, store)
     await expect(client.search('ubuntu')).rejects.toThrow('auth failed')
+  })
+
+  it('search() re-logins when tracker page has no login form but is not authenticated (stale guest session)', async () => {
+    // The real-world bug: a guest session on tracker.php returns an empty page
+    // with NO login form and NO logout link — isLoginPage() is false, so the
+    // old code returned [] instead of re-authenticating.
+    const guestPage =
+      '<html><body><span class="gen">За пошуком нічого не знайдено</span></body></html>'
+    let callCount = 0
+    fetchMock.mockImplementation(() => {
+      callCount++
+      if (callCount === 1) return Promise.resolve(makeHtmlResponse(guestPage))
+      if (callCount === 2)
+        return Promise.resolve(makeHtmlResponse('<html>ok</html>', 302, ['PHPSESSID=new; Path=/']))
+      return Promise.resolve(makeHtmlResponse(readFixture('search-results.html')))
+    })
+
+    const client = new TolokaClient(CONFIG, store)
+    const results = await client.search('ubuntu')
+
+    expect(callCount).toBe(3)
+    expect(results.length).toBe(3)
   })
 
   // -------------------------------------------------------------------------

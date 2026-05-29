@@ -1,6 +1,6 @@
 import type { PersistentStore } from '../persistence/store.ts'
 import type { TolokaResult, TolokaClientConfig } from './types.ts'
-import { parseSearchPage, isLoginPage } from './parser.ts'
+import { parseSearchPage, isLoginPage, isAuthenticated } from './parser.ts'
 
 const COOKIE_KEY = 'toloka_cookie'
 
@@ -34,12 +34,17 @@ export class TolokaClient {
   async login(): Promise<void> {
     const { baseUrl, username, password } = this.config
 
+    // Toloka's login.php form submits its `login` button field (value "Вхід")
+    // plus a `redirect` hidden field — there is NO `entry` field. Sending the
+    // wrong fields makes login.php return a guest session (HTTP 200, no real
+    // auth), so every tracker.php search then yields zero results.
     const body = new URLSearchParams({
-      entry: 'login',
       username,
       password,
       autologin: 'on',
       ssl: 'on',
+      redirect: '',
+      login: 'Вхід',
     })
 
     const res = await fetch(`${baseUrl}/login.php`, {
@@ -73,14 +78,17 @@ export class TolokaClient {
     const res = await this.fetchWithAuth(url)
     const html = await res.text()
 
-    // Session expired → re-login once and retry
-    if (isLoginPage(html)) {
+    // Stale/guest session → re-login once and retry. Toloka signals this in two
+    // ways: the login form (isLoginPage), OR — on tracker.php — an empty page
+    // with no login form AND no logout link (!isAuthenticated). The latter is
+    // why a bad session silently returned zero results before.
+    if (isLoginPage(html) || !isAuthenticated(html)) {
       await this.login()
       const retryRes = await this.fetchWithAuth(url)
       const retryHtml = await retryRes.text()
 
-      if (isLoginPage(retryHtml)) {
-        throw new Error('Toloka auth failed: still showing login page after re-login')
+      if (isLoginPage(retryHtml) || !isAuthenticated(retryHtml)) {
+        throw new Error('Toloka auth failed: still not authenticated after re-login')
       }
 
       return parseSearchPage(retryHtml, this.config.baseUrl)

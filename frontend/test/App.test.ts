@@ -17,8 +17,10 @@ describe('App shell', () => {
     const active = wrapper.find('nav button[aria-current="page"]')
     expect(active.exists()).toBe(true)
     expect(active.text()).toBe('Downloads')
-    // and the Downloads body is the one rendered
-    expect(wrapper.text()).toContain('Active downloads will appear here.')
+    // and the Downloads tab body is the one rendered (stub replaced by #61)
+    // Loading state or empty state shows — either way the NAS/Shows stubs are absent
+    expect(wrapper.text()).not.toContain('Disk, memory and CPU health will appear here.')
+    expect(wrapper.text()).not.toContain('Active shows will appear here.')
   })
 
   it('renders the header health-chip', () => {

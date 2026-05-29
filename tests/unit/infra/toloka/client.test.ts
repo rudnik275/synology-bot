@@ -289,6 +289,34 @@ describe('TolokaClient', () => {
     ).rejects.toThrow('404')
   })
 
+  it('downloadTorrent() uses redirect: follow so a 302 torrent redirect is followed', async () => {
+    // Regression test for #92: download.php returns 302 → real .torrent URL.
+    // The fetch mock controls the response directly, so we verify the OPTIONS
+    // passed to fetch include redirect:'follow' and the cookie header is sent,
+    // then return a 200 bytes response to confirm the result is a Uint8Array.
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'redir-sess' }))
+    const fakeBytes = new Uint8Array([100, 58, 55])
+
+    // Simulate fetch following the redirect: fetchMock returns 200 bytes directly
+    // (the redirect following is done by the browser/fetch runtime, not the mock).
+    fetchMock.mockImplementation(() => Promise.resolve(makeBytesResponse(fakeBytes)))
+
+    const client = new TolokaClient(CONFIG, store)
+    const result = await client.downloadTorrent(`${BASE_URL}/download.php?id=5050`)
+
+    // Assert the result is the torrent bytes
+    expect(result).toBeInstanceOf(Uint8Array)
+    expect(Array.from(result)).toEqual([100, 58, 55])
+
+    // The key regression check: fetch MUST be called with redirect:'follow'
+    const [_url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect((init as { redirect?: string }).redirect).toBe('follow')
+
+    // Cookie header must still be sent on the download request
+    const cookieHeader = (init.headers as Record<string, string>)['Cookie']
+    expect(cookieHeader).toContain('PHPSESSID=redir-sess')
+  })
+
   // -------------------------------------------------------------------------
   // getDownloadUrl
   // -------------------------------------------------------------------------

@@ -106,7 +106,17 @@ export class TolokaClient {
   }
 
   async downloadTorrent(downloadUrl: string): Promise<Uint8Array> {
-    const res = await this.fetchWithAuth(downloadUrl)
+    // Use redirect:'follow' so Toloka's download.php 3xx redirect to the actual
+    // .torrent file is followed automatically. fetchWithAuth uses redirect:'manual'
+    // (needed for login Set-Cookie capture and stale-session detection on search),
+    // so we issue a dedicated fetch here. See fix for #92.
+    const res = await fetch(downloadUrl, {
+      headers: {
+        Cookie: this.serializeCookies(),
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      redirect: 'follow',
+    })
 
     if (!res.ok) {
       throw new Error(`Failed to download torrent: HTTP ${res.status}`)

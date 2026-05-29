@@ -41,7 +41,7 @@ const TAB_VIEWS = {
 }
 .content {
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom));
   min-height: 100dvh;
 }
 

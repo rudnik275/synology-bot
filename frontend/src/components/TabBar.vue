@@ -55,8 +55,8 @@ const TABS: { key: TabKey; label: string }[] = [
   bottom: 0;
   z-index: var(--z-tabbar);
   display: flex;
-  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  height: calc(var(--tabbar-h) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
   background: var(--cream);
   border-top: var(--border-strong);
 }

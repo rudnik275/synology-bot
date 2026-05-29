@@ -23,7 +23,7 @@ defineEmits<{ click: [] }>()
 .fab {
   position: fixed;
   right: var(--space-4);
-  bottom: calc(var(--tabbar-h) + var(--space-4) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + var(--space-4) + var(--safe-bottom));
   z-index: var(--z-fab);
   display: inline-flex;
   align-items: center;

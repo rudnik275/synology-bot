@@ -47,9 +47,10 @@ export async function startApp(): Promise<void> {
     console.warn('Initial Synology login failed — will retry on demand:', err)
   }
 
-  const bot = createBot({ config, store, synology, docker, toloka })
+  const bot = createBot({ config, store, synology, docker })
 
-  // Register bot commands for Telegram UI
+  // Register bot commands for Telegram UI. Reduced notifier set (ADR 0005):
+  // task management (search / dashboard) lives in the Mini App now.
   await bot.api.setMyCommands([
     { command: 'start', description: 'Запустить бота' },
     { command: 'ping_nas', description: 'Проверить связь с NAS' },
@@ -58,7 +59,6 @@ export async function startApp(): Promise<void> {
     { command: 'subscribe', description: 'Подписаться на шоу' },
     { command: 'subscriptions', description: 'Список подписок' },
     { command: 'unsubscribe', description: 'Отписаться от шоу' },
-    { command: 'dashboard', description: 'Активные задачи (авто-обновление)' },
   ])
 
   // Single notification surface — all owner-bound push messages go here.

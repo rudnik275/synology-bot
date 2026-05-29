@@ -1,4 +1,8 @@
-// Tests for AddFlow component (#63): FAB → Sheet → mode switcher → FolderPicker → create.
+// Tests for AddFlow wizard (#95): FAB → fullscreen Sheet → 4-step wizard.
+// Step 1: Choose source (Search default, Magnet, Torrent)
+// Step 2: Input for selected source
+// Step 3: FolderPicker
+// Step 4: Confirm summary + Add button
 import { describe, it, expect, afterEach, beforeEach } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import AddFlow from '../src/components/AddFlow.vue'
@@ -37,84 +41,393 @@ afterEach(() => {
 })
 
 describe('AddFlow', () => {
+  // ─── Basic rendering ────────────────────────────────────────────────
   it('renders a FAB button', () => {
     const wrapper = mount(AddFlow)
     expect(wrapper.find('button.fab').exists()).toBe(true)
+    wrapper.unmount()
   })
 
-  it('opens the sheet when FAB is clicked', async () => {
+  it('opens the fullscreen sheet when FAB is clicked', async () => {
     const wrapper = mount(AddFlow)
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
-    // Sheet teleports to body; check document
     const dialog = document.querySelector('[role="dialog"]')
     expect(dialog).not.toBeNull()
     wrapper.unmount()
   })
 
-  it('shows magnet input in magnet mode (default)', async () => {
+  // ─── Step 1: Source picker ────────────────────────────────────────────────
+  it('step 1: shows source cards — Search selected by default', async () => {
     const wrapper = mount(AddFlow)
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
     const dialog = document.querySelector('[role="dialog"]')!
-    // Magnet mode should be active — there should be a text input
-    const magnetInput = dialog.querySelector('[data-testid="magnet-input"]')
-    expect(magnetInput).not.toBeNull()
+    // All three source cards visible
+    expect(dialog.querySelector('[data-testid="mode-search"]')).not.toBeNull()
+    expect(dialog.querySelector('[data-testid="mode-magnet"]')).not.toBeNull()
+    expect(dialog.querySelector('[data-testid="mode-torrent"]')).not.toBeNull()
+    // Search is default selected
+    const searchCard = dialog.querySelector('[data-testid="mode-search"]') as HTMLElement
+    const ariaPressed = searchCard.getAttribute('aria-pressed')
+    const isSelected = ariaPressed === 'true' || searchCard.className.includes('selected')
+    expect(isSelected).toBe(true)
     wrapper.unmount()
   })
 
-  it('shows file input when .torrent mode is selected', async () => {
+  it('step 1: clicking a source card selects it', async () => {
     const wrapper = mount(AddFlow)
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
-    // Click the .torrent mode button
-    const modeBtn = document.querySelector('[data-testid="mode-torrent"]') as HTMLButtonElement
-    expect(modeBtn).not.toBeNull()
-    modeBtn.click()
+    const magnetCard = document.querySelector('[data-testid="mode-magnet"]') as HTMLButtonElement
+    magnetCard.click()
+    await flushPromises()
+
+    const magnetAriaPressed = magnetCard.getAttribute('aria-pressed')
+    const magnetIsSelected = magnetAriaPressed === 'true' || magnetCard.className.includes('selected')
+    expect(magnetIsSelected).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('step 1: Next button advances to step 2', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
+    expect(nextBtn).not.toBeNull()
+    nextBtn.click()
+    await flushPromises()
+
+    // Step 2: search input should appear (search is default)
+    expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('step 1: Next is always enabled (source already selected by default)', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
+    expect(nextBtn.disabled).toBe(false)
+    wrapper.unmount()
+  })
+
+  // ─── Step 2: Input ────────────────────────────────────────────────
+  it('step 2 magnet: shows magnet input and Next is disabled until value entered', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Select magnet
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-magnet"]')!.click()
+    await flushPromises()
+    // Advance to step 2
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const magnetInput = document.querySelector('[data-testid="magnet-input"]')
+    expect(magnetInput).not.toBeNull()
+
+    // Next should be disabled with empty input
+    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
+    expect(nextBtn.disabled).toBe(true)
+
+    // Enter a value
+    const inputEl = magnetInput as HTMLTextAreaElement
+    inputEl.value = 'magnet:?xt=urn:btih:abc123'
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    // Now Next should be enabled
+    expect(nextBtn.disabled).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('step 2 torrent: shows styled file input and Next disabled until file selected', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Select torrent
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-torrent"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
     const fileInput = document.querySelector('[data-testid="torrent-input"]')
     expect(fileInput).not.toBeNull()
+
+    // Next should be disabled until file selected
+    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
+    expect(nextBtn.disabled).toBe(true)
+
+    // Simulate file selection
+    const testFile = new File(['torrent-content'], 'test.torrent', { type: 'application/x-bittorrent' })
+    Object.defineProperty(fileInput, 'files', {
+      value: { 0: testFile, length: 1, item: (i: number) => i === 0 ? testFile : null },
+      configurable: true,
+    })
+    fileInput!.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+
+    expect(nextBtn.disabled).toBe(false)
     wrapper.unmount()
   })
 
-  it('search mode button is enabled and switches to search mode', async () => {
+  it('step 2 search: shows search input, search button, results; Next disabled until result selected', async () => {
+    const searchResults = [
+      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
     const wrapper = mount(AddFlow)
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
-    const searchBtn = document.querySelector('[data-testid="mode-search"]') as HTMLButtonElement
+    // Search is default, advance to step 2
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    expect(queryInput).not.toBeNull()
+    const searchBtn = document.querySelector('[data-testid="search-btn"]') as HTMLButtonElement
     expect(searchBtn).not.toBeNull()
-    expect(searchBtn.disabled).toBe(false)
+
+    // Next disabled until result selected
+    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
+    expect(nextBtn.disabled).toBe(true)
+
+    // Run search
+    queryInput.value = 'Movie'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
     searchBtn.click()
     await flushPromises()
 
-    // Query input should now be visible
-    const queryInput = document.querySelector('[data-testid="search-query"]')
-    expect(queryInput).not.toBeNull()
+    // Result cards rendered
+    expect(document.querySelector('[data-testid="result-r1"]')).not.toBeNull()
+
+    // Still disabled until result is clicked
+    expect(nextBtn.disabled).toBe(true)
+
+    // Click result
+    document.querySelector<HTMLButtonElement>('[data-testid="result-r1"]')!.click()
+    await flushPromises()
+
+    // Now Next enabled
+    expect(nextBtn.disabled).toBe(false)
     wrapper.unmount()
   })
 
-  it('posts JSON with uri+destination for magnet create', async () => {
+  it('step 2: search shows loading indicator during search', async () => {
+    let resolveSearch!: (v: Response) => void
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return new Promise<Response>((res) => { resolveSearch = res })
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
     const wrapper = mount(AddFlow)
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
-    // Fill magnet input
-    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLInputElement
+    // Advance to step 2 (search default)
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Test'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await Promise.resolve()
+
+    expect(document.querySelector('[data-testid="search-loading"]')).not.toBeNull()
+
+    resolveSearch(jsonResponse({ results: [] }))
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="search-loading"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('step 2: search shows "Ничего не найдено" for empty results', async () => {
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: [] }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Unknown title'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    const emptyEl = document.querySelector('[data-testid="search-empty"]')
+    expect(emptyEl).not.toBeNull()
+    expect(emptyEl!.textContent).toContain('Ничего не найдено')
+    wrapper.unmount()
+  })
+
+  it('step 2: search shows error message when /api/search fails', async () => {
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ error: 'search failed' }, 500))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'query'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    const errorEl = document.querySelector('[data-testid="search-error"]')
+    expect(errorEl).not.toBeNull()
+    expect(errorEl!.textContent).toContain('search failed')
+    wrapper.unmount()
+  })
+
+  // ─── Step 3: Folder ────────────────────────────────────────────────
+  it('step 3: shows FolderPicker; Next disabled until folder picked', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Step 1 → Next (search default)
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Step 2: enter magnet or pick to advance — but we're on search...
+    // Let's use magnet instead for a simpler path
+    // Actually we need to go back to step 1 first — use Back
+    const backBtn = document.querySelector('[data-testid="wizard-back"]') as HTMLButtonElement
+    expect(backBtn).not.toBeNull()
+    backBtn.click()
+    await flushPromises()
+
+    // Now select Magnet
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-magnet"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Step 2: enter magnet
+    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLTextAreaElement
     magnetInput.value = 'magnet:?xt=urn:btih:abc123'
     magnetInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
-
-    // Folder picker is rendered — pick the available folder
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
+
+    // Now on step 3: folder picker
+    expect(document.querySelector('[data-testid="pick-btn"]')).not.toBeNull()
+    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
+    expect(nextBtn.disabled).toBe(true)
+
+    // Pick folder
+    const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
+    pickBtn.click()
+    await flushPromises()
+
+    expect(nextBtn.disabled).toBe(false)
+    wrapper.unmount()
+  })
+
+  // ─── Step 4: Confirm ────────────────────────────────────────────────
+  it('step 4 (magnet): shows confirm summary with source/destination and Add button', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Select Magnet
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-magnet"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Enter magnet
+    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLTextAreaElement
+    magnetInput.value = 'magnet:?xt=urn:btih:abc123'
+    magnetInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Pick folder
+    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Step 4: confirm
+    const createBtn = document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement
+    expect(createBtn).not.toBeNull()
+    expect(createBtn.textContent).toMatch(/add/i)
+    wrapper.unmount()
+  })
+
+  // ─── Full happy paths ────────────────────────────────────────────────
+  it('magnet path: posts JSON with uri+destination for magnet create', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Select magnet
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-magnet"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Fill magnet input
+    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLTextAreaElement
+    magnetInput.value = 'magnet:?xt=urn:btih:abc123'
+    magnetInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Pick folder
     const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
     if (pickBtn) {
       pickBtn.click()
       await flushPromises()
     }
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
 
     // Submit
     const createBtn = document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement
@@ -134,36 +447,40 @@ describe('AddFlow', () => {
     wrapper.unmount()
   })
 
-  it('posts multipart FormData for .torrent create', async () => {
+  it('torrent path: posts multipart FormData for .torrent create', async () => {
     const wrapper = mount(AddFlow)
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
-    // Switch to .torrent mode
-    const modeBtn = document.querySelector('[data-testid="mode-torrent"]') as HTMLButtonElement
-    modeBtn.click()
+    // Select torrent
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-torrent"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
-    // Pick a folder
-    await flushPromises()
-    const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
-    if (pickBtn) {
-      pickBtn.click()
-      await flushPromises()
-    }
-
-    // Simulate file selection by triggering a change event on the file input
+    // Select file
     const fileInput = document.querySelector('[data-testid="torrent-input"]') as HTMLInputElement
     expect(fileInput).not.toBeNull()
     const testFile = new File(['torrent-content'], 'test.torrent', { type: 'application/x-bittorrent' })
-    // Set the files property on the input (requires Object.defineProperty in happy-dom)
     Object.defineProperty(fileInput, 'files', {
       value: { 0: testFile, length: 1, item: (i: number) => i === 0 ? testFile : null },
       configurable: true,
     })
     fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
 
+    // Pick folder
+    const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
+    if (pickBtn) {
+      pickBtn.click()
+      await flushPromises()
+    }
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Submit
     const createBtn = document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement
     expect(createBtn).not.toBeNull()
     createBtn.click()
@@ -176,6 +493,65 @@ describe('AddFlow', () => {
     expect(headers['Content-Type']).toBeUndefined()
     // Body should be FormData
     expect(taskCall!.init?.body).toBeInstanceOf(FormData)
+    wrapper.unmount()
+  })
+
+  it('search path: full happy path posts the result downloadUrl', async () => {
+    const searchResults = [
+      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Search is default, advance to step 2
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Search
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Movie'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    // Pick result
+    const resultCard = document.querySelector('[data-testid="result-r1"]') as HTMLButtonElement
+    expect(resultCard).not.toBeNull()
+    resultCard.click()
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Pick folder
+    const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
+    if (pickBtn) {
+      pickBtn.click()
+      await flushPromises()
+    }
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Click Add
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    const taskCall = fetchCalls.find((c) => c.url === '/api/tasks')
+    expect(taskCall).toBeTruthy()
+    expect(taskCall!.init?.method).toBe('POST')
+    const body = JSON.parse(taskCall!.init?.body as string)
+    expect(body.uri).toBe('https://example.com/movie1.torrent')
+    expect(body.destination).toBeTruthy()
     wrapper.unmount()
   })
 
@@ -194,18 +570,26 @@ describe('AddFlow', () => {
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
-    // Type a magnet URI
-    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLInputElement
+    // Go through magnet path to confirm step
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-magnet"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLTextAreaElement
     magnetInput.value = 'magnet:?xt=urn:btih:abc123'
     magnetInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
 
-    // Pick a folder so we can submit
     const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
     if (pickBtn) {
       pickBtn.click()
       await flushPromises()
     }
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
 
     const createBtn = document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement
     createBtn.click()
@@ -223,9 +607,17 @@ describe('AddFlow', () => {
 
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
 
-    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLInputElement
+    // Go through magnet path
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-magnet"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLTextAreaElement
     magnetInput.value = 'magnet:?xt=urn:btih:abc123'
     magnetInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
     const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
@@ -233,215 +625,14 @@ describe('AddFlow', () => {
       pickBtn.click()
       await flushPromises()
     }
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
 
-    const createBtn = document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement
-    createBtn.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
     await flushPromises()
 
     // Sheet should be closed after success
     expect(document.querySelector('[role="dialog"]')).toBeNull()
-    wrapper.unmount()
-  })
-
-  // ─── Search mode ────────────────────────────────────────────────
-
-  it('search: submitting a query calls /api/search and renders result cards', async () => {
-    const searchResults = [
-      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
-      { id: 'r2', title: 'Movie Two', size: '1.5 GB', seeders: 5, leechers: 1, downloadUrl: 'https://example.com/movie2.torrent', category: 'movies' },
-    ]
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      fetchCalls.push({ url, init })
-      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
-      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
-      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
-      return Promise.resolve(jsonResponse({ folders: [] }))
-    }) as typeof fetch
-
-    const wrapper = mount(AddFlow)
-    await wrapper.find('button.fab').trigger('click')
-    await flushPromises()
-
-    // Switch to search mode
-    const searchModeBtn = document.querySelector('[data-testid="mode-search"]') as HTMLButtonElement
-    searchModeBtn.click()
-    await flushPromises()
-
-    // Type a query and submit
-    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
-    queryInput.value = 'Movie'
-    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-
-    const searchBtn = document.querySelector('[data-testid="search-btn"]') as HTMLButtonElement
-    searchBtn.click()
-    await flushPromises()
-
-    // Check the API was called correctly
-    const searchCall = fetchCalls.find((c) => (c.url as string).includes('/api/search'))
-    expect(searchCall).toBeTruthy()
-    expect(searchCall!.url).toContain('q=Movie')
-
-    // Two result cards should render
-    const resultCards = document.querySelectorAll('.result-card')
-    expect(resultCards.length).toBe(2)
-
-    // Check card content
-    const titles = document.querySelectorAll('[data-testid="result-title"]')
-    expect(titles[0]?.textContent).toContain('Movie One')
-    expect(titles[1]?.textContent).toContain('Movie Two')
-
-    wrapper.unmount()
-  })
-
-  it('search: shows loading state during search', async () => {
-    let resolveSearch!: (v: Response) => void
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      fetchCalls.push({ url, init })
-      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
-      if ((url as string).includes('/api/search')) return new Promise<Response>((res) => { resolveSearch = res })
-      return Promise.resolve(jsonResponse({ folders: [] }))
-    }) as typeof fetch
-
-    const wrapper = mount(AddFlow)
-    await wrapper.find('button.fab').trigger('click')
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
-    await flushPromises()
-
-    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
-    queryInput.value = 'Test'
-    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
-    // Do NOT flush — loading should be visible right now
-    await Promise.resolve()
-
-    expect(document.querySelector('[data-testid="search-loading"]')).not.toBeNull()
-
-    // Resolve the search
-    resolveSearch(jsonResponse({ results: [] }))
-    await flushPromises()
-
-    expect(document.querySelector('[data-testid="search-loading"]')).toBeNull()
-
-    wrapper.unmount()
-  })
-
-  it('search: shows "Ничего не найдено" for empty results', async () => {
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      fetchCalls.push({ url, init })
-      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
-      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: [] }))
-      return Promise.resolve(jsonResponse({ folders: [] }))
-    }) as typeof fetch
-
-    const wrapper = mount(AddFlow)
-    await wrapper.find('button.fab').trigger('click')
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
-    await flushPromises()
-
-    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
-    queryInput.value = 'Unknown title'
-    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
-    await flushPromises()
-
-    const emptyEl = document.querySelector('[data-testid="search-empty"]')
-    expect(emptyEl).not.toBeNull()
-    expect(emptyEl!.textContent).toContain('Ничего не найдено')
-
-    wrapper.unmount()
-  })
-
-  it('search: shows error message when /api/search fails', async () => {
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      fetchCalls.push({ url, init })
-      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
-      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ error: 'search failed' }, 500))
-      return Promise.resolve(jsonResponse({ folders: [] }))
-    }) as typeof fetch
-
-    const wrapper = mount(AddFlow)
-    await wrapper.find('button.fab').trigger('click')
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
-    await flushPromises()
-
-    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
-    queryInput.value = 'query'
-    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
-    await flushPromises()
-
-    const errorEl = document.querySelector('[data-testid="search-error"]')
-    expect(errorEl).not.toBeNull()
-    expect(errorEl!.textContent).toContain('search failed')
-
-    wrapper.unmount()
-  })
-
-  it('search: picking a result + destination then Add posts JSON {uri: downloadUrl, destination}', async () => {
-    const searchResults = [
-      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
-    ]
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      fetchCalls.push({ url, init })
-      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
-      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
-      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
-      return Promise.resolve(jsonResponse({ folders: [] }))
-    }) as typeof fetch
-
-    const wrapper = mount(AddFlow)
-    await wrapper.find('button.fab').trigger('click')
-    await flushPromises()
-
-    // Switch to search mode
-    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
-    await flushPromises()
-
-    // Search
-    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
-    queryInput.value = 'Movie'
-    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
-    await flushPromises()
-
-    // Pick a result
-    const resultCard = document.querySelector('[data-testid="result-r1"]') as HTMLButtonElement
-    expect(resultCard).not.toBeNull()
-    resultCard.click()
-    await flushPromises()
-
-    // Pick a destination
-    const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
-    if (pickBtn) {
-      pickBtn.click()
-      await flushPromises()
-    }
-
-    // Click Add
-    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
-    await flushPromises()
-
-    const taskCall = fetchCalls.find((c) => c.url === '/api/tasks')
-    expect(taskCall).toBeTruthy()
-    expect(taskCall!.init?.method).toBe('POST')
-    const body = JSON.parse(taskCall!.init?.body as string)
-    expect(body.uri).toBe('https://example.com/movie1.torrent')
-    expect(body.destination).toBeTruthy()
-
     wrapper.unmount()
   })
 
@@ -461,7 +652,8 @@ describe('AddFlow', () => {
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
-    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
+    // Search default → step 2
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
     const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
@@ -474,17 +666,140 @@ describe('AddFlow', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="result-r1"]')!.click()
     await flushPromises()
 
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
     const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
     if (pickBtn) {
       pickBtn.click()
       await flushPromises()
     }
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
 
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
     await flushPromises()
 
     // Sheet should be closed
     expect(document.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  // ─── Navigation ────────────────────────────────────────────────
+  it('Back returns to previous step and preserves input', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Select Magnet in step 1
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-magnet"]')!.click()
+    await flushPromises()
+
+    // Advance to step 2
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Enter magnet
+    const magnetInput = document.querySelector('[data-testid="magnet-input"]') as HTMLTextAreaElement
+    magnetInput.value = 'magnet:?xt=urn:btih:abc123'
+    magnetInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    // Go back to step 1
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-back"]')!.click()
+    await flushPromises()
+
+    // Still on step 1 — source cards visible
+    expect(document.querySelector('[data-testid="mode-magnet"]')).not.toBeNull()
+
+    // Advance to step 2 again
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Input preserved
+    const magnetInputAgain = document.querySelector('[data-testid="magnet-input"]') as HTMLTextAreaElement
+    expect(magnetInputAgain.value).toBe('magnet:?xt=urn:btih:abc123')
+    wrapper.unmount()
+  })
+
+  it('reopening the wizard resets to step 1', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Advance to step 2
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
+
+    // Close the sheet
+    const closeBtn = document.querySelector('.sheet-close') as HTMLButtonElement
+    if (closeBtn) {
+      closeBtn.click()
+      await flushPromises()
+    }
+
+    // Reopen
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Should be back at step 1 with source cards
+    expect(document.querySelector('[data-testid="mode-search"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="search-query"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('step 1: no Back button on first step', async () => {
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // On step 1, Back should not exist or be hidden
+    const backBtn = document.querySelector('[data-testid="wizard-back"]')
+    expect(!backBtn || (backBtn as HTMLButtonElement).disabled || backBtn.getAttribute('style')?.includes('display: none') || backBtn.hasAttribute('hidden')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('result cards render title, size, seeders, leechers, category', async () => {
+    const searchResults = [
+      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
+      { id: 'r2', title: 'Movie Two', size: '1.5 GB', seeders: 5, leechers: 1, downloadUrl: 'https://example.com/movie2.torrent', category: 'movies' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Advance to step 2 (search default)
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Movie'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    const resultCards = document.querySelectorAll('.result-card')
+    expect(resultCards.length).toBe(2)
+
+    const titles = document.querySelectorAll('[data-testid="result-title"]')
+    expect(titles[0]?.textContent).toContain('Movie One')
+    expect(titles[1]?.textContent).toContain('Movie Two')
+
+    const sizes = document.querySelectorAll('[data-testid="result-size"]')
+    expect(sizes[0]?.textContent).toContain('2.1 GB')
+
+    const seeders = document.querySelectorAll('[data-testid="result-seeders"]')
+    expect(seeders[0]?.textContent).toContain('10')
 
     wrapper.unmount()
   })

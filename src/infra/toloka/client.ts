@@ -131,13 +131,15 @@ export class TolokaClient {
   }
 
   private extractSetCookieHeaders(res: Response): string[] {
-    const cookieHeaders: string[] = []
-    res.headers.forEach((value, key) => {
-      if (key.toLowerCase() === 'set-cookie') {
-        cookieHeaders.push(value)
-      }
-    })
-    return cookieHeaders
+    // `Headers.forEach`/iteration COMBINES multiple Set-Cookie headers into one
+    // comma-joined string (undici/Bun behavior). Splitting that by ';' keeps only
+    // the first cookie and drops the session cookie (toloka_sid) — so the login
+    // looked successful but every search ran as a guest. `getSetCookie()` returns
+    // each Set-Cookie header separately, which is what we need.
+    const all = res.headers.getSetCookie?.()
+    if (all && all.length > 0) return all
+    const single = res.headers.get('set-cookie')
+    return single ? [single] : []
   }
 
   private parseCookies(setCookieHeaders: string[]): void {

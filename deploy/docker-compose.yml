@@ -9,6 +9,23 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /volume1/docker/synology-bot/data:/usr/src/app/data
+  # Cloudflare Tunnel — exposes the Mini App over public HTTPS for Telegram's
+  # webview without opening any inbound port (ADR 0005, infra slice #59).
+  # `network_mode: service:bot` shares the bot's network namespace, so the tunnel
+  # reaches the Hono server on its loopback `localhost:${MINIAPP_PORT}` (the server
+  # binds 127.0.0.1 — see src/app.ts). Route the public hostname to
+  # `http://localhost:8080` in the Cloudflare dashboard. TUNNEL_TOKEN is
+  # interpolated from CF_TUNNEL_TOKEN in the same-directory .env.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: synology-cloudflared
+    restart: unless-stopped
+    network_mode: "service:bot"
+    depends_on:
+      - bot
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
   watchtower:
     image: containrrr/watchtower:latest
     container_name: watchtower

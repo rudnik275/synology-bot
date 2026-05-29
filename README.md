@@ -15,7 +15,7 @@ Architecture rationale: [ADR 0005](docs/adr/0005-mini-app-for-pull-thin-bot-for-
 - Docker Hub published image: `rudnik275/synology-bot:latest`
 - A Telegram bot token (from [@BotFather](https://t.me/BotFather))
 - Your Telegram chat ID (the owner chat that will receive notifications)
-- A **Cloudflare Tunnel** on the NAS pointed at `localhost:MINIAPP_PORT` — Telegram Mini App webviews require public HTTPS; the tunnel provides it with zero open ports (infra slice #59, set up separately)
+- A **Cloudflare Tunnel** — Telegram Mini App webviews require public HTTPS; the tunnel provides it with zero open ports (infra slice #59). The `cloudflared` container is already in `deploy/docker-compose.yml` (it shares the bot's network namespace and reaches the Hono server on `localhost:MINIAPP_PORT`); you only create the tunnel in the Cloudflare dashboard, route its public hostname to `http://localhost:8080`, and put its token in `CF_TUNNEL_TOKEN` (below).
 
 ### 1. Copy the compose file to the NAS
 
@@ -44,6 +44,7 @@ SYNOLOGY_PASSWORD=<dsm-user-password>
 # Mini App (required for the UI surface)
 MINIAPP_PORT=8080
 MINIAPP_URL=https://<your-cloudflare-tunnel-domain>
+CF_TUNNEL_TOKEN=<cloudflare-tunnel-token>
 
 # Toloka (optional — without these, free-text search is disabled; .torrent upload and magnet links still work)
 TOLOKA_USERNAME=<toloka-username>
@@ -57,6 +58,7 @@ Replace:
 - `<dsm-user-*>` — a DSM user with permission to use DownloadStation (preferably a dedicated low-privilege user, not an admin)
 - `MINIAPP_PORT` — loopback port the Hono server listens on (default 8080); the Cloudflare Tunnel must point here
 - `MINIAPP_URL` — public HTTPS URL of the Cloudflare Tunnel; used as the Mini App URL in the bot's chat menu button and deep-link buttons
+- `CF_TUNNEL_TOKEN` — the token from the Cloudflare tunnel you create (Zero Trust → Networks → Tunnels); consumed by the `cloudflared` service in the compose. Keep it secret.
 - `<toloka-*>` — credentials for [toloka.to](https://toloka.to) if you want free-text torrent search
 
 All other tunables (poll intervals, disk thresholds, etc.) have sensible defaults baked into the image — see `src/config.ts` if you want to override them.

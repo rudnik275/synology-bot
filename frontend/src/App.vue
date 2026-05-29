@@ -1,22 +1,19 @@
 <script setup lang="ts">
-// Neo-Brutalism app shell (ADR 0006): fixed header with title + ambient health
-// chip, a swappable tab body, and the 3-tab bottom bar. Default tab = Downloads.
-// No tab data here — the three tab bodies are stubs filled by #61/#70/#64; the
-// Add-flow FAB+sheet overlay is mounted separately by #63.
+// Neo-Brutalism app shell (ADR 0006): a swappable tab body and the 3-tab
+// bottom bar. Default tab = Downloads. No tab data here — the three tab
+// bodies are stubs filled by #61/#70/#64; the Add-flow FAB+sheet overlay is
+// mounted separately by #63.
 import { ref } from 'vue'
 import TabBar from './components/TabBar.vue'
 import type { TabKey } from './components/tabs'
-import HealthChip from './components/HealthChip.vue'
 import DownloadsTab from './tabs/DownloadsTab.vue'
 import NasTab from './tabs/NasTab.vue'
 import ShowsTab from './tabs/ShowsTab.vue'
-import { useHealth } from './composables/useHealth'
 import AddFlow from './components/AddFlow.vue'
 import { startParam } from './telegram'
 import { resolveStartTab } from './startTab'
 
 const activeTab = ref<TabKey>(resolveStartTab(startParam))
-const { chipStatus, chipMetric } = useHealth()
 
 const TAB_VIEWS = {
   downloads: DownloadsTab,
@@ -27,11 +24,6 @@ const TAB_VIEWS = {
 
 <template>
   <div class="shell">
-    <header class="header">
-      <span class="brand">NAS</span>
-      <HealthChip :status="chipStatus" :metric="chipMetric" @click="activeTab = 'nas'" />
-    </header>
-
     <main class="content">
       <Transition name="tab" mode="out-in">
         <component :is="TAB_VIEWS[activeTab]" :key="activeTab" />
@@ -47,27 +39,8 @@ const TAB_VIEWS = {
 .shell {
   min-height: 100dvh;
 }
-.header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: var(--z-tabbar);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
-  padding: env(safe-area-inset-top, 0px) var(--space-4) 0;
-  background: var(--cream);
-  border-bottom: var(--border-strong);
-}
-.brand {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
-  letter-spacing: 0.06em;
-}
 .content {
-  padding-top: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
   min-height: 100dvh;
 }

@@ -1,6 +1,5 @@
 // Shell render tests for the Neo-Brutalism foundation (#60): the 3-tab bar is
-// present, Downloads is the default tab, the header health-chip is present, and
-// tapping a tab swaps the body.
+// present, Downloads is the default tab, and tapping a tab swaps the body.
 import { describe, it, expect } from 'bun:test'
 import { mount } from '@vue/test-utils'
 import App from '../src/App.vue'
@@ -23,11 +22,6 @@ describe('App shell', () => {
     expect(wrapper.text()).not.toContain('Active shows will appear here.')
   })
 
-  it('renders the header health-chip', () => {
-    const wrapper = mount(App)
-    expect(wrapper.find('button[aria-label="NAS health"]').exists()).toBe(true)
-  })
-
   it('swaps the body when another tab is tapped', async () => {
     const wrapper = mount(App)
     const nasTab = wrapper.findAll('nav button').find((b) => b.text() === 'NAS')!
@@ -35,12 +29,6 @@ describe('App shell', () => {
     expect(wrapper.find('nav button[aria-current="page"]').text()).toBe('NAS')
     // NasTab is now the live health view (#70) — it will render some content
     // (data, loading, or error state) instead of the old stub placeholder.
-    expect(wrapper.find('nav button[aria-current="page"]').text()).toBe('NAS')
-  })
-
-  it('health-chip jumps to the NAS tab', async () => {
-    const wrapper = mount(App)
-    await wrapper.find('button[aria-label="NAS health"]').trigger('click')
     expect(wrapper.find('nav button[aria-current="page"]').text()).toBe('NAS')
   })
 })

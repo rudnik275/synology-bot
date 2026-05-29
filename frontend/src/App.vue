@@ -10,6 +10,7 @@ import DownloadsTab from './tabs/DownloadsTab.vue'
 import NasTab from './tabs/NasTab.vue'
 import ShowsTab from './tabs/ShowsTab.vue'
 import { useHealth } from './composables/useHealth'
+import AddFlow from './components/AddFlow.vue'
 
 const activeTab = ref<TabKey>('downloads')
 const { chipStatus, chipMetric } = useHealth()
@@ -34,6 +35,7 @@ const TAB_VIEWS = {
       </Transition>
     </main>
 
+    <AddFlow v-if="activeTab === 'downloads'" />
     <TabBar v-model="activeTab" />
   </div>
 </template>

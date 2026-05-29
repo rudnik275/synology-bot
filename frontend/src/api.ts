@@ -30,6 +30,13 @@ export const api = {
     request<{ ok: true }>(`/tasks/${encodeURIComponent(id)}?deleteFiles=${deleteFiles}`, { method: 'DELETE' }),
   createTask: (uri: string, destination: string, title?: string) =>
     request<{ ok: true }>('/tasks', jsonBody({ uri, destination, title })),
+  createTaskFromFile: (file: File, destination: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('destination', destination)
+    // Do NOT set Content-Type — browser sets it with the multipart boundary.
+    return request<{ ok: true }>('/tasks', { method: 'POST', body: form })
+  },
 
   search: (q: string) => request<{ results: SearchResultView[] }>(`/search?q=${encodeURIComponent(q)}`).then((r) => r.results),
 

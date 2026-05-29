@@ -1,28 +1,56 @@
 # synology-bot
 
-Telegram-бот для одного владельца (owner-only) — карманный пульт к Synology NAS. Две основные обязанности: (1) управлять торрент-задачами в DownloadStation, (2) наблюдать за состоянием NAS и проактивно сигналить о проблемах. Подписки на сериалы — побочная функция, живёт изолированно. **Не** библиотека, **не** медиа-плеер, **не** файловый менеджер.
+Owner-only Telegram-based NAS tool. Two surfaces:
+
+1. **Telegram Mini App** (pull) — rich UI for browsing and managing everything. Stack: Hono (Bun) + Vue 3 + Vite, served as a static SPA on a loopback port, reached in production via a Cloudflare Tunnel. Auth: Telegram `initData` HMAC-SHA256, owner-only.
+2. **Thin notifier bot** (push) — owner DM alerts only. Pushes carry an **Открыть** deep-link button and the bot exposes a chat menu button (`MINIAPP_URL` env) that opens the Mini App directly.
+
+Architecture split rationale: ADR 0005 ([`docs/adr/0005-mini-app-for-pull-thin-bot-for-push.md`](./docs/adr/0005-mini-app-for-pull-thin-bot-for-push.md)).
 
 ## Language
 
 **Download Task**:
-Активная единица скачивания в Synology DownloadStation. Создаётся ботом (через поиск Toloka, через .torrent-файл, через magnet-ссылку), живёт в Synology до завершения или удаления. Бот её только наблюдает и редактирует (pause/resume/delete) — не хранит её состояние у себя. После завершения и истечения retention-окна задача автоматически вычищается.
+Active download unit in Synology DownloadStation. Created from the Mini App (via Toloka search, .torrent upload, or magnet link through the unified Add flow), lives in Synology until completion or deletion. The backend only observes and edits it (pause/resume/delete) — it does not store task state locally. Completed tasks are auto-cleaned after the retention window.
 _Avoid:_ Download, torrent, job, item
 
 **NAS Health**:
-Системное состояние самого NAS (а не задач): использование диска, температуры, статус сервисов, uptime. Бот опрашивает Synology через системные API и сигналит owner-у при превышении порогов или падении сервиса. Доступно on-demand через `/health` команду.
+System state of the NAS itself (not tasks): disk usage, temperatures, service status, uptime. The backend polls Synology via system APIs and alerts the owner when thresholds are exceeded or a service goes down. Available on-demand via the NAS tab in the Mini App and via `/health` bot command.
 _Avoid:_ NAS status, system info, health check
 
 **Subscription**:
-Сериал, за выходом серий которого следит owner. Хранится в persistent state, метаданные берутся из myshows.me. Бот ежедневно проверяет подписки и уведомляет когда серия выходит сегодня. Скачивание серий — **не** автоматизировано, owner запускает руками через обычный поиск.
+A TV show the owner is tracking for new episodes. Stored in persistent state; metadata from myshows.me. The backend checks subscriptions daily and notifies when an episode airs today. Download is **not** automated — the owner triggers it through the Add flow.
 _Avoid:_ Show, tracked show, watchlist item
 
 **Owner**:
-Единственный пользователь, имеющий доступ к боту. Идентифицируется по Telegram username, сверяется с конфигурируемым значением. Все остальные получают отказ. Бот — однопользовательский по дизайну.
+The sole user with access. Identified by Telegram user ID, checked against `OWNER_CHAT_ID`. Everyone else receives a rejection. The system is single-user by design.
 _Avoid:_ User, admin, allowed user
+
+## Mini App IA
+
+Three bottom tabs — **Downloads / NAS / Shows** (default: Downloads). Every screen shows an ambient **health-chip** in the header (green/amber/red dot + one metric) that taps through to the NAS tab.
+
+**Add flow** — the only entry point for adding a download: FAB → bottom sheet → three modes (Toloka search / magnet / .torrent upload) → folder-picker → confirm. Search is not a separate tab; it is one of the three modes in the unified Add flow.
+
+Design system: ADR 0006 ([`docs/adr/0006-mini-app-design-system-neo-brutalism.md`](./docs/adr/0006-mini-app-design-system-neo-brutalism.md)) — Neo-Brutalism, single light mode, Space Grotesk, hard offset shadows, first-class motion.
+
+## Frontend state architecture
+
+State is managed through **composables** (`useApi`, `useHealth`, `useTasks`, `useSubscriptions`). **Pinia is not used** — this is a single-user mini-app; an extra state-management dependency was not warranted. Each composable owns its reactive state and exposes actions; components import composables directly.
+
+## Architecture decisions
+
+| ADR | Decision |
+|-----|----------|
+| [0001](./docs/adr/0001-owner-only-single-user.md) | Owner-only single-user |
+| [0002](./docs/adr/0002-telegram-bot-primary-surface.md) | Bot as primary surface (superseded by 0005 for management UI) |
+| [0003](./docs/adr/0003-in-flight-only-domain-boundary.md) | Domain boundary — in-flight downloads only |
+| [0004](./docs/adr/0004-topics-and-centralized-notifier.md) | Centralized OwnerNotifier (topics superseded by 0005) |
+| [0005](./docs/adr/0005-mini-app-for-pull-thin-bot-for-push.md) | Mini App for management (pull), thin bot for notifications (push) |
+| [0006](./docs/adr/0006-mini-app-design-system-neo-brutalism.md) | Mini App design system — Neo-Brutalism, jobs-first IA |
 
 ## Domain boundary
 
-Бот живёт в момент **активной задачи** и **активного NAS**. Как только файл лёг в папку назначения — что с ним дальше (Plex, Jellyfin, ручной просмотр) **не наша забота**. Как только NAS офлайн дольше N минут — бот может только сигналить «не достучался», но не пытаться сам что-то чинить.
+The backend lives at the moment of an **active task** and an **active NAS**. Once a file lands in the destination folder — what happens next (Plex, Jellyfin, manual viewing) is out of scope. Once the NAS goes offline longer than N minutes — the backend can only signal "unreachable" but not attempt self-repair.
 
 ## Engineering lessons
 

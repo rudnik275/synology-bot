@@ -1,6 +1,11 @@
 # synology-bot
 
-Telegram bot for managing torrents on Synology NAS.
+Telegram-based NAS management tool for a single owner. Two surfaces working in tandem:
+
+- **Telegram Mini App** (pull) — browse and manage: 3-tab UI (Downloads / NAS / Shows), a unified Add flow, ambient health-chip. Runs inside Telegram, no separate login.
+- **Thin notifier bot** (push) — owner DM alerts for finished downloads, NAS health events, stuck/failed tasks, daily subscription digest, and deploy confirmations. Also exposes a chat menu button that opens the Mini App directly.
+
+Architecture rationale: [ADR 0005](docs/adr/0005-mini-app-for-pull-thin-bot-for-push.md).
 
 ## Deploy to your NAS
 
@@ -9,7 +14,8 @@ Telegram bot for managing torrents on Synology NAS.
 - Synology NAS running DSM 7 with Container Manager installed
 - Docker Hub published image: `rudnik275/synology-bot:latest`
 - A Telegram bot token (from [@BotFather](https://t.me/BotFather))
-- Your Telegram chat ID (the owner chat that will receive deploy notifications)
+- Your Telegram chat ID (the owner chat that will receive notifications)
+- A **Cloudflare Tunnel** on the NAS pointed at `localhost:MINIAPP_PORT` — Telegram Mini App webviews require public HTTPS; the tunnel provides it with zero open ports (infra slice #59, set up separately)
 
 ### 1. Copy the compose file to the NAS
 
@@ -35,7 +41,11 @@ SYNOLOGY_HOST=https://<nas-host>:5001
 SYNOLOGY_USER=<dsm-user-with-downloadstation-access>
 SYNOLOGY_PASSWORD=<dsm-user-password>
 
-# Toloka (optional — without these, free-text search is disabled; .torrent upload still works)
+# Mini App (required for the UI surface)
+MINIAPP_PORT=8080
+MINIAPP_URL=https://<your-cloudflare-tunnel-domain>
+
+# Toloka (optional — without these, free-text search is disabled; .torrent upload and magnet links still work)
 TOLOKA_USERNAME=<toloka-username>
 TOLOKA_PASSWORD=<toloka-password>
 ```
@@ -45,13 +55,15 @@ Replace:
 - `<your-numeric-chat-id>` — your numeric Telegram chat ID (get it by messaging [@userinfobot](https://t.me/userinfobot)). Used to identify the bot owner; the bot self-reports deploys to this chat after each image upgrade.
 - `<nas-host>` — same hostname/IP you use to reach DSM (port 5001 = DSM HTTPS)
 - `<dsm-user-*>` — a DSM user with permission to use DownloadStation (preferably a dedicated low-privilege user, not an admin)
+- `MINIAPP_PORT` — loopback port the Hono server listens on (default 8080); the Cloudflare Tunnel must point here
+- `MINIAPP_URL` — public HTTPS URL of the Cloudflare Tunnel; used as the Mini App URL in the bot's chat menu button and deep-link buttons
 - `<toloka-*>` — credentials for [toloka.to](https://toloka.to) if you want free-text torrent search
 
-All other tunables (poll intervals, disk thresholds, dashboard refresh rate, etc.) have sensible defaults baked into the image — see `src/config.ts` if you want to override them.
+All other tunables (poll intervals, disk thresholds, etc.) have sensible defaults baked into the image — see `src/config.ts` if you want to override them.
 
 ### Notifications
 
-The bot pushes notifications — finished downloads, NAS health (unreachable / disk full / disk temperature), stuck and failed tasks, and the daily subscription digest — straight to the owner's private chat. Deploy notifications come from the bot itself: it checks its own container image SHA on every boot and posts when it changed, so no Watchtower shoutrrr config is needed. (Per-category forum topics were removed in ADR 0005 — everything now lands in the flat owner DM.)
+The bot pushes notifications — finished downloads, NAS health (unreachable / disk full / disk temperature), stuck and failed tasks, and the daily subscription digest — straight to the owner's private chat. Each notification carries an **Открыть** deep-link button that opens the Mini App at the relevant context. Deploy notifications come from the bot itself: it checks its own container image SHA on every boot and posts when it changed, so no Watchtower shoutrrr config is needed. (Per-category forum topics were removed in ADR 0005 — everything now lands in the flat owner DM.)
 
 ### 2a. Bot state persists in `./data/`
 
@@ -80,9 +92,31 @@ docker compose up -d
 ### 4. How it works
 
 - The `bot` container runs `rudnik275/synology-bot:latest` with `restart: unless-stopped` — it restarts automatically after a crash or NAS reboot.
+- The Hono server inside the same process serves the Mini App SPA on `MINIAPP_PORT` (loopback). The Cloudflare Tunnel makes it reachable by Telegram's webview over public HTTPS.
 - The `watchtower` container polls Docker Hub every 5 minutes. When a new image is published (e.g. after a new git tag triggers the CI workflow), Watchtower pulls the new image and restarts the bot container.
 - Watchtower only acts on containers with the `com.centurylinklabs.watchtower.enable=true` label, so it won't touch other DSM-managed containers.
 - The bot self-reports successful deploys to the owner chat by comparing its image SHA across boots. No message means no new image was found — silent on no-op polls. A failed deploy where the bot fails to start cannot self-report; use `/deploy-status` to check Watchtower's health directly.
+
+## Mini App
+
+The Mini App is a **Vue 3 + Vite SPA** served as static assets by the **Hono (Bun) backend** on a loopback port. Design system: [ADR 0006](docs/adr/0006-mini-app-design-system-neo-brutalism.md) — Neo-Brutalism, single light mode, Space Grotesk.
+
+**Information architecture — 3 tabs:**
+
+| Tab | Default | Purpose |
+|-----|---------|---------|
+| Downloads | ✓ | Active download tasks — pause/resume/delete, progress, status badges |
+| NAS | | NAS health details — disk usage, temperatures, uptime |
+| Shows | | Subscription list — tracked series with episode-release status |
+
+Every tab shows an ambient **health-chip** in the header (green/amber/red dot + one metric) that taps through to the NAS tab.
+
+**Add flow** — single unified entry point for all three ways to add a download:
+FAB → bottom sheet → Search (Toloka) / magnet link / .torrent upload → folder-picker → confirm.
+
+**Auth** — Telegram `initData` HMAC-SHA256, owner-only. Anyone else who knows the URL receives HTTP 401.
+
+**Frontend state** — composables (`useApi`, `useHealth`, `useTasks`, `useSubscriptions`). No Pinia — single-user mini-app; the extra dependency was not warranted.
 
 ## Run locally
 

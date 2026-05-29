@@ -2,7 +2,7 @@
 // Bottom 3-tab bar — Downloads / NAS / Shows (ADR 0006 jobs-first IA). Default
 // tab is Downloads (set by the shell, not here). Active tab is highlighted; each
 // item carries icon + label (icon-only nav harms discoverability).
-export type TabKey = 'downloads' | 'nas' | 'shows'
+import type { TabKey } from './tabs'
 
 defineProps<{ modelValue: TabKey }>()
 defineEmits<{ 'update:modelValue': [TabKey] }>()

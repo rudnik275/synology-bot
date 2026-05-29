@@ -1,4 +1,4 @@
-import type { TabKey } from './components/TabBar.vue'
+import type { TabKey } from './components/tabs'
 
 const TABS: readonly TabKey[] = ['downloads', 'nas', 'shows']
 

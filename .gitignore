@@ -4,3 +4,4 @@ db/
 data/
 *.log
 frontend/dist/
+.playwright-mcp/

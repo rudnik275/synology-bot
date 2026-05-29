@@ -21,3 +21,4 @@
 | [0003](./0003-in-flight-only-domain-boundary.md) | Domain boundary — in-flight downloads, not a library |
 | [0004](./0004-topics-and-centralized-notifier.md) | Centralized OwnerNotifier; per-category private-chat forum topics _(topics superseded by 0005)_ |
 | [0005](./0005-mini-app-for-pull-thin-bot-for-push.md) | Mini App for management (pull), thin bot for notifications (push) |
+| [0006](./0006-mini-app-design-system-neo-brutalism.md) | Mini App design system — Neo-Brutalism, single light mode, jobs-first IA |

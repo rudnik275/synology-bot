@@ -803,4 +803,236 @@ describe('AddFlow', () => {
 
     wrapper.unmount()
   })
+
+  // ─── Search history (#98) ────────────────────────────────────────────────
+  const HISTORY_KEY = 'nas-bot:search-history'
+
+  function clearSearchHistory() {
+    localStorage.removeItem(HISTORY_KEY)
+  }
+
+  it('search: successful search records the query into history', async () => {
+    clearSearchHistory()
+    const searchResults = [
+      { id: 'r1', title: 'Sopranos S1', size: '2 GB', seeders: 5, leechers: 1, downloadUrl: 'https://example.com/s1.torrent', category: 'tv' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Sopranos'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+    expect(stored).toContain('Sopranos')
+
+    clearSearchHistory()
+    wrapper.unmount()
+  })
+
+  it('search: focusing the search input shows the history dropdown with prior queries', async () => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(['Lost', 'Dexter']))
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: [] }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // Dropdown should not be visible before focus
+    expect(document.querySelector('[data-testid="search-history"]')).toBeNull()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.dispatchEvent(new Event('focus', { bubbles: true }))
+    await flushPromises()
+
+    const dropdown = document.querySelector('[data-testid="search-history"]')
+    expect(dropdown).not.toBeNull()
+
+    const items = document.querySelectorAll('[data-testid="history-item"]')
+    expect(items.length).toBe(2)
+    expect(items[0]?.textContent?.trim()).toBe('Lost')
+    expect(items[1]?.textContent?.trim()).toBe('Dexter')
+
+    clearSearchHistory()
+    wrapper.unmount()
+  })
+
+  it('search: typing filters the history dropdown to matching items', async () => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(['Breaking Bad', 'Better Call Saul', 'Lost']))
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: [] }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.dispatchEvent(new Event('focus', { bubbles: true }))
+    await flushPromises()
+
+    // Type 'break' — should filter to 'Breaking Bad' only
+    queryInput.value = 'break'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const items = document.querySelectorAll('[data-testid="history-item"]')
+    expect(items.length).toBe(1)
+    expect(items[0]?.textContent?.trim()).toBe('Breaking Bad')
+
+    clearSearchHistory()
+    wrapper.unmount()
+  })
+
+  it('search: clicking a history item sets the query and triggers search', async () => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(['House M.D.']))
+    const searchResults = [
+      { id: 'h1', title: 'House M.D. S01', size: '1 GB', seeders: 8, leechers: 1, downloadUrl: 'https://example.com/house.torrent', category: 'tv' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.dispatchEvent(new Event('focus', { bubbles: true }))
+    await flushPromises()
+
+    const historyItem = document.querySelector('[data-testid="history-item"]') as HTMLElement
+    expect(historyItem).not.toBeNull()
+
+    // Use mousedown.prevent pattern (prevents blur before click)
+    historyItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    historyItem.click()
+    await flushPromises()
+
+    // The query input should now have the history item's text
+    const updatedInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    expect(updatedInput.value).toBe('House M.D.')
+
+    // And search results should appear (search was triggered)
+    expect(document.querySelector('[data-testid="result-h1"]')).not.toBeNull()
+
+    clearSearchHistory()
+    wrapper.unmount()
+  })
+
+  it('search: "Clear history" affordance empties the dropdown', async () => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(['Mindhunter', 'Ozark']))
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: [] }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.dispatchEvent(new Event('focus', { bubbles: true }))
+    await flushPromises()
+
+    // Dropdown visible with 2 items
+    expect(document.querySelectorAll('[data-testid="history-item"]').length).toBe(2)
+
+    const clearBtn = document.querySelector('[data-testid="search-history-clear"]') as HTMLElement
+    expect(clearBtn).not.toBeNull()
+    clearBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    clearBtn.click()
+    await flushPromises()
+
+    // Items should be gone
+    expect(document.querySelectorAll('[data-testid="history-item"]').length).toBe(0)
+    expect(localStorage.getItem(HISTORY_KEY)).toBeNull()
+
+    clearSearchHistory()
+    wrapper.unmount()
+  })
+
+  it('resetForm (close + reopen wizard) does NOT wipe search history', async () => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(['Succession']))
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Close the sheet (triggers resetForm)
+    const closeBtn = document.querySelector('.sheet-close') as HTMLButtonElement
+    if (closeBtn) {
+      closeBtn.click()
+      await flushPromises()
+    }
+
+    // History key must still exist in localStorage
+    const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+    expect(stored).toContain('Succession')
+
+    // Reopen and go to step 2 — history should still be accessible
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.dispatchEvent(new Event('focus', { bubbles: true }))
+    await flushPromises()
+
+    const items = document.querySelectorAll('[data-testid="history-item"]')
+    expect(items.length).toBe(1)
+    expect(items[0]?.textContent?.trim()).toBe('Succession')
+
+    clearSearchHistory()
+    wrapper.unmount()
+  })
 })

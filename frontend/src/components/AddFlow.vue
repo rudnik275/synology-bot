@@ -12,12 +12,14 @@ import FolderPicker from './FolderPicker.vue'
 import { api } from '../api'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
+import { useSearchHistory } from '../composables/useSearchHistory'
 import type { SearchResultView } from '../types'
 
 type Mode = 'magnet' | 'torrent' | 'search'
 
 const { prefersReducedMotion } = usePrefersReducedMotion()
 const { lastFolder, recordRecent } = useFolderShortcuts()
+const { history: searchHistory, recordQuery, clearHistory: clearSearchHistory } = useSearchHistory()
 
 const open = ref(false)
 const step = ref<1 | 2 | 3 | 4>(1)
@@ -43,6 +45,15 @@ const searchLoading = ref(false)
 const searchError = ref<string | null>(null)
 const searchQueried = ref(false)
 const selectedResult = ref<SearchResultView | null>(null)
+
+// Search history dropdown
+const searchHistoryVisible = ref(false)
+
+const filteredHistory = computed<string[]>(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return searchHistory.value
+  return searchHistory.value.filter((item) => item.toLowerCase().includes(q))
+})
 
 // ─── Navigation gating ────────────────────────────────────────────────
 
@@ -105,11 +116,30 @@ async function runSearch(): Promise<void> {
   try {
     searchResults.value = await api.search(q)
     searchQueried.value = true
+    recordQuery(q)
   } catch (e) {
     searchError.value = e instanceof Error ? e.message : String(e)
   } finally {
     searchLoading.value = false
   }
+}
+
+function onSearchFocus(): void {
+  searchHistoryVisible.value = true
+}
+
+function onSearchBlur(): void {
+  searchHistoryVisible.value = false
+}
+
+function selectHistoryItem(item: string): void {
+  searchQuery.value = item
+  searchHistoryVisible.value = false
+  runSearch()
+}
+
+function onClearHistory(): void {
+  clearSearchHistory()
 }
 
 function onFileChange(e: Event): void {
@@ -246,7 +276,7 @@ async function create(): Promise<void> {
           <!-- Search -->
           <div v-else-if="mode === 'search'" class="field search-field">
             <label class="field-label" for="search-query">Search</label>
-            <div class="search-row">
+            <div class="search-row" style="position: relative;">
               <input
                 id="search-query"
                 v-model="searchQuery"
@@ -256,6 +286,8 @@ async function create(): Promise<void> {
                 autocomplete="off"
                 data-testid="search-query"
                 @keydown.enter="runSearch"
+                @focus="onSearchFocus"
+                @blur="onSearchBlur"
               />
               <button
                 type="button"
@@ -266,6 +298,36 @@ async function create(): Promise<void> {
               >
                 {{ searchLoading ? '…' : 'Search' }}
               </button>
+              <!-- History dropdown -->
+              <div
+                v-if="searchHistoryVisible && (filteredHistory.length > 0 || searchHistory.length > 0)"
+                class="search-history-dropdown"
+                data-testid="search-history"
+              >
+                <div class="search-history-header">
+                  <span class="search-history-label">Recent</span>
+                  <button
+                    type="button"
+                    class="search-history-clear"
+                    data-testid="search-history-clear"
+                    @mousedown.prevent="onClearHistory"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <ul class="search-history-list" role="listbox">
+                  <li
+                    v-for="item in filteredHistory"
+                    :key="item"
+                    class="search-history-item"
+                    data-testid="history-item"
+                    role="option"
+                    @mousedown.prevent="selectHistoryItem(item)"
+                  >
+                    {{ item }}
+                  </li>
+                </ul>
+              </div>
             </div>
 
             <!-- Loading -->
@@ -710,6 +772,71 @@ async function create(): Promise<void> {
   border-radius: var(--radius);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+}
+
+/* Search history dropdown */
+.search-history-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 48px; /* leave room for Search button */
+  background: var(--paper);
+  border: var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.search-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: var(--border);
+}
+
+.search-history-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.5;
+}
+
+.search-history-clear {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  color: var(--ink);
+}
+.search-history-clear:hover {
+  opacity: 1;
+}
+
+.search-history-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+}
+
+.search-history-item {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-history-item:hover {
+  background: var(--yellow);
 }
 
 .search-results {

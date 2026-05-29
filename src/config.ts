@@ -43,8 +43,6 @@ export interface Config {
   diskHealthPollMs: number
   finishedDebounceMs: number
   finishedGroupThreshold: number
-  dashboardRefreshMs: number
-  dashboardAutostopMs: number
   autoCleanerPollMs: number
   autoCleanerRetentionDays: number
   miniappPort: number
@@ -75,8 +73,6 @@ export function loadConfig(): Config {
     diskHealthPollMs: parseInt(optional('DISK_HEALTH_POLL_MS', '600000'), 10),
     finishedDebounceMs: parseInt(optional('FINISHED_DEBOUNCE_MS', '60000'), 10),
     finishedGroupThreshold: parseInt(optional('FINISHED_GROUP_THRESHOLD', '3'), 10),
-    dashboardRefreshMs: parseInt(optional('DASHBOARD_REFRESH_MS', '5000'), 10),
-    dashboardAutostopMs: parseInt(optional('DASHBOARD_AUTOSTOP_MS', '120000'), 10),
     autoCleanerPollMs: parseInt(optional('AUTOCLEANER_POLL_MS', '3600000'), 10),
     autoCleanerRetentionDays: parseInt(optional('AUTOCLEANER_RETENTION_DAYS', '7'), 10),
     miniappPort: parseInt(optional('MINIAPP_PORT', '8080'), 10),

@@ -9,32 +9,23 @@ import { registerPingNasRoute } from './handlers/routes/ping-nas.ts'
 import { registerHealthRoute } from './handlers/routes/health.ts'
 import { registerDeployStatusRoute } from './handlers/routes/deploy-status.ts'
 import { registerSubscriptionRoutes } from './handlers/routes/subscriptions.ts'
-import { registerInputRouter } from './handlers/input-router.ts'
-import { registerSearchRoute } from './handlers/routes/search.ts'
-import { registerDashboardRoute } from './handlers/routes/dashboard.ts'
-import { registerDashboardActions } from './handlers/routes/dashboard-actions.ts'
-import { LiveDashboard } from './handlers/flows/live-dashboard.ts'
 import { registerTaskActionsRoute } from './handlers/routes/task-actions.ts'
-import type { TolokaClient } from './infra/toloka/client.ts'
 
 export interface BotDeps {
   config: Config
   store: PersistentStore
   synology: SynologyClient
   docker: DockerClient
-  toloka: TolokaClient
 }
 
+// Thin notifier bot (ADR 0005): keeps /start + diagnostic commands + push-alert
+// action buttons (task-actions). Management (search, dashboard, folder picker,
+// magnet/.torrent intake) moved to the Mini App; those chat surfaces were removed.
 export function createBot(deps: BotDeps): Bot<Context> {
   const bot = new Bot<Context>(deps.config.botToken)
 
   // Owner-only guard — all subsequent handlers run only for Owner
   bot.use(createOwnerOnlyMiddleware(deps.config.ownerChatId, deps.store))
-
-  const toloka = deps.toloka
-
-  // LiveDashboard — singleton per chat, in-memory, not persisted
-  const liveDashboard = new LiveDashboard(deps.synology, deps.config.dashboardRefreshMs, deps.config.dashboardAutostopMs)
 
   // Routes
   registerStartRoute(bot)
@@ -42,10 +33,6 @@ export function createBot(deps: BotDeps): Bot<Context> {
   registerHealthRoute(bot, deps.synology)
   registerDeployStatusRoute(bot, deps.docker)
   registerSubscriptionRoutes(bot, deps.store)
-  registerInputRouter(bot, deps.synology, toloka)
-  registerSearchRoute(bot, toloka, deps.synology)
-  registerDashboardRoute(bot, liveDashboard)
-  registerDashboardActions(bot, deps.synology, liveDashboard)
   registerTaskActionsRoute(bot, deps.synology)
 
   return bot

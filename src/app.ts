@@ -19,7 +19,6 @@ import { AutoCleaner } from './domain/auto-cleaner.ts'
 import { buildTaskActionKeyboard } from './handlers/routes/task-actions.ts'
 import { OwnerNotifier } from './infra/notify/owner-notifier.ts'
 import { createServer } from './server/server.ts'
-import { serveStatic } from 'hono/bun'
 import { DeployReporter } from './domain/deploy-reporter.ts'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -154,11 +153,8 @@ export async function startApp(): Promise<void> {
     botToken: config.botToken,
     ownerId: config.ownerChatId,
   })
-  // Serve the built Vue SPA (Phase 3). Registered after the API routes so /api
-  // and /healthz win; unknown paths fall through to index.html for client-side routing.
-  server.use('/assets/*', serveStatic({ root: './frontend/dist' }))
-  server.get('/', serveStatic({ path: './frontend/dist/index.html' }))
-  server.get('*', serveStatic({ path: './frontend/dist/index.html' }))
+  // createServer also serves the built Vue SPA from ./frontend/dist (the
+  // default staticRoot) with an index.html fallback — see server.ts.
 
   Bun.serve({ port: config.miniappPort, hostname: '127.0.0.1', fetch: server.fetch })
   console.log(`[server] Mini App API on http://127.0.0.1:${config.miniappPort}`)

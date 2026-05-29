@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    name: Typecheck, test & build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v6
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install backend dependencies
+        run: bun install --frozen-lockfile
+
+      # Frontend deps must be present before `bun test`: the test preload
+      # (frontend/test-setup.ts) and component tests resolve vue / @vue/test-utils
+      # / @vue/compiler-sfc / happy-dom from frontend/node_modules.
+      - name: Install frontend dependencies
+        run: cd frontend && bun install --frozen-lockfile
+
+      - name: Typecheck (backend + frontend)
+        run: bun run typecheck
+
+      - name: Test (backend + frontend)
+        run: bun test
+
+      - name: Build frontend
+        run: bun run build:frontend

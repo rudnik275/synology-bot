@@ -205,8 +205,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  max-height: 240px;
-  overflow-y: auto;
 }
 
 .folder-item {

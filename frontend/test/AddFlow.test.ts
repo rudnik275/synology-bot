@@ -80,14 +80,20 @@ describe('AddFlow', () => {
     wrapper.unmount()
   })
 
-  it('has a disabled "search" mode button labeled "soon"', async () => {
+  it('search mode button is enabled and switches to search mode', async () => {
     const wrapper = mount(AddFlow)
     await wrapper.find('button.fab').trigger('click')
     await flushPromises()
 
     const searchBtn = document.querySelector('[data-testid="mode-search"]') as HTMLButtonElement
     expect(searchBtn).not.toBeNull()
-    expect(searchBtn.disabled).toBe(true)
+    expect(searchBtn.disabled).toBe(false)
+    searchBtn.click()
+    await flushPromises()
+
+    // Query input should now be visible
+    const queryInput = document.querySelector('[data-testid="search-query"]')
+    expect(queryInput).not.toBeNull()
     wrapper.unmount()
   })
 
@@ -234,6 +240,252 @@ describe('AddFlow', () => {
 
     // Sheet should be closed after success
     expect(document.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  // ─── Search mode ────────────────────────────────────────────────
+
+  it('search: submitting a query calls /api/search and renders result cards', async () => {
+    const searchResults = [
+      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
+      { id: 'r2', title: 'Movie Two', size: '1.5 GB', seeders: 5, leechers: 1, downloadUrl: 'https://example.com/movie2.torrent', category: 'movies' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Switch to search mode
+    const searchModeBtn = document.querySelector('[data-testid="mode-search"]') as HTMLButtonElement
+    searchModeBtn.click()
+    await flushPromises()
+
+    // Type a query and submit
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Movie'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const searchBtn = document.querySelector('[data-testid="search-btn"]') as HTMLButtonElement
+    searchBtn.click()
+    await flushPromises()
+
+    // Check the API was called correctly
+    const searchCall = fetchCalls.find((c) => (c.url as string).includes('/api/search'))
+    expect(searchCall).toBeTruthy()
+    expect(searchCall!.url).toContain('q=Movie')
+
+    // Two result cards should render
+    const resultCards = document.querySelectorAll('.result-card')
+    expect(resultCards.length).toBe(2)
+
+    // Check card content
+    const titles = document.querySelectorAll('[data-testid="result-title"]')
+    expect(titles[0]?.textContent).toContain('Movie One')
+    expect(titles[1]?.textContent).toContain('Movie Two')
+
+    wrapper.unmount()
+  })
+
+  it('search: shows loading state during search', async () => {
+    let resolveSearch!: (v: Response) => void
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return new Promise<Response>((res) => { resolveSearch = res })
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Test'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    // Do NOT flush — loading should be visible right now
+    await Promise.resolve()
+
+    expect(document.querySelector('[data-testid="search-loading"]')).not.toBeNull()
+
+    // Resolve the search
+    resolveSearch(jsonResponse({ results: [] }))
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="search-loading"]')).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('search: shows "Ничего не найдено" for empty results', async () => {
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: [] }))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Unknown title'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    const emptyEl = document.querySelector('[data-testid="search-empty"]')
+    expect(emptyEl).not.toBeNull()
+    expect(emptyEl!.textContent).toContain('Ничего не найдено')
+
+    wrapper.unmount()
+  })
+
+  it('search: shows error message when /api/search fails', async () => {
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ error: 'search failed' }, 500))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'query'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    const errorEl = document.querySelector('[data-testid="search-error"]')
+    expect(errorEl).not.toBeNull()
+    expect(errorEl!.textContent).toContain('search failed')
+
+    wrapper.unmount()
+  })
+
+  it('search: picking a result + destination then Add posts JSON {uri: downloadUrl, destination}', async () => {
+    const searchResults = [
+      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    // Switch to search mode
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
+    await flushPromises()
+
+    // Search
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Movie'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    // Pick a result
+    const resultCard = document.querySelector('[data-testid="result-r1"]') as HTMLButtonElement
+    expect(resultCard).not.toBeNull()
+    resultCard.click()
+    await flushPromises()
+
+    // Pick a destination
+    const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
+    if (pickBtn) {
+      pickBtn.click()
+      await flushPromises()
+    }
+
+    // Click Add
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    const taskCall = fetchCalls.find((c) => c.url === '/api/tasks')
+    expect(taskCall).toBeTruthy()
+    expect(taskCall!.init?.method).toBe('POST')
+    const body = JSON.parse(taskCall!.init?.body as string)
+    expect(body.uri).toBe('https://example.com/movie1.torrent')
+    expect(body.destination).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('search: success closes the sheet', async () => {
+    const searchResults = [
+      { id: 'r1', title: 'Movie One', size: '2.1 GB', seeders: 10, leechers: 2, downloadUrl: 'https://example.com/movie1.torrent', category: 'movies' },
+    ]
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: searchResults }))
+      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ ok: true }, 201))
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = mount(AddFlow)
+    await wrapper.find('button.fab').trigger('click')
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="mode-search"]')!.click()
+    await flushPromises()
+
+    const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    queryInput.value = 'Movie'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="result-r1"]')!.click()
+    await flushPromises()
+
+    const pickBtn = document.querySelector('[data-testid="pick-btn"]') as HTMLButtonElement
+    if (pickBtn) {
+      pickBtn.click()
+      await flushPromises()
+    }
+
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    // Sheet should be closed
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
     wrapper.unmount()
   })
 })

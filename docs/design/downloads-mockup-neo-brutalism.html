@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v1 neo-brutalism</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FFFDF5; --fg:#09090B; --muted:#5A5A6E; --white:#FFFFFF;
+  --red:#FF6B6B; --violet:#B5A8FF; --yellow:#FFD93D; --green:#A7E8BD; --orange:#FFB088;
+  --border:3px solid var(--fg); --border-strong:5px solid var(--fg);
+  --sh-sm:4px 4px 0 var(--fg); --sh-md:6px 6px 0 var(--fg); --sh-lg:10px 10px 0 var(--fg);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  width:390px;height:844px;background:var(--bg);color:var(--fg);
+  font-family:'Space Grotesk',system-ui,sans-serif;letter-spacing:-0.005em;
+  position:relative;overflow:hidden;-webkit-font-smoothing:antialiased;
+}
+body::before{content:"";position:fixed;inset:0;z-index:0;
+  background-image:radial-gradient(circle at 1px 1px, rgba(9,9,11,.12) 1.4px, transparent 0);
+  background-size:24px 24px;opacity:.55;pointer-events:none;
+  -webkit-mask-image:radial-gradient(ellipse 90% 80% at 50% 50%, black 30%, transparent 95%);}
+.wrap{position:relative;z-index:1;height:100%;display:flex;flex-direction:column}
+svg{display:block}
+/* health chip header */
+.chip{display:flex;align-items:center;gap:10px;margin:16px 16px 6px;padding:12px 14px;
+  background:var(--green);border:var(--border);box-shadow:var(--sh-sm);border-radius:14px}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--fg);flex:none}
+.chip .t{font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:.04em}
+.chip .m{margin-left:auto;font-weight:700;font-size:13px}
+.chip .chev{transform:rotate(0);opacity:.7}
+/* title */
+.h1{font-size:30px;font-weight:700;text-transform:uppercase;margin:14px 16px 2px;letter-spacing:-.02em}
+.sub{margin:0 16px 12px;color:var(--muted);font-weight:600;font-size:13px}
+/* list */
+.list{padding:0 16px;display:flex;flex-direction:column;gap:16px;overflow:auto;flex:1}
+.card{position:relative;background:var(--white);border:var(--border);border-radius:14px;
+  padding:14px;box-shadow:var(--sh-sm)}
+.card.new{background:var(--yellow)}
+.row{display:flex;align-items:center;gap:8px}
+.name{font-weight:700;font-size:15px;line-height:1.2;flex:1;word-break:break-word}
+.badge{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  border:2.5px solid var(--fg);border-radius:6px;padding:3px 7px;box-shadow:2px 2px 0 var(--fg)}
+.b-dl{background:var(--violet)} .b-done{background:var(--green)} .b-pause{background:var(--orange)}
+.meta{display:flex;gap:10px;margin-top:8px;font-size:12px;font-weight:600;color:var(--muted)}
+.meta b{color:var(--fg);font-variant-numeric:tabular-nums}
+.bar{height:12px;background:#fff;border:2.5px solid var(--fg);border-radius:0;margin-top:10px;overflow:hidden}
+.bar>span{display:block;height:100%;background:var(--red)}
+.bar.done>span{background:var(--green)} .bar.pause>span{background:var(--orange)}
+.acts{display:flex;gap:8px;margin-top:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-weight:700;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg);background:#fff;
+  border:2.5px solid var(--fg);border-radius:999px;padding:8px 12px;box-shadow:3px 3px 0 var(--fg)}
+.btn.danger{background:var(--red)}
+.sticker{position:absolute;top:-12px;right:-6px;background:var(--red);color:#fff;
+  border:2.5px solid var(--fg);border-radius:6px;padding:3px 8px;font-size:9px;font-weight:700;
+  letter-spacing:.12em;transform:rotate(-6deg);box-shadow:2px 2px 0 var(--fg)}
+/* FAB */
+.fab{position:absolute;right:18px;bottom:96px;width:64px;height:64px;border-radius:50%;
+  background:var(--red);border:var(--border-strong);box-shadow:var(--sh-lg);
+  display:flex;align-items:center;justify-content:center;z-index:3}
+.fab svg{width:30px;height:30px}
+.fab::after{content:"ADD";position:absolute;bottom:-10px;background:var(--yellow);color:var(--fg);
+  border:2.5px solid var(--fg);border-radius:999px;padding:2px 8px;font-size:9px;font-weight:700;
+  letter-spacing:.12em;transform:rotate(8deg);box-shadow:2px 2px 0 var(--fg)}
+/* tabbar */
+.tabs{display:flex;border-top:var(--border);background:var(--white)}
+.tabs button{flex:1;background:none;border:none;font-family:inherit;font-weight:700;
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  padding:12px 0 16px;display:flex;flex-direction:column;align-items:center;gap:5px}
+.tabs button.on{color:var(--fg)}
+.tabs button.on svg{stroke:var(--fg)}
+.tabs svg{width:24px;height:24px;stroke:var(--muted);stroke-width:2.2;fill:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="chip">
+    <span class="dot"></span>
+    <span class="t">NAS healthy</span>
+    <span class="m">vol1 72%</span>
+    <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#09090B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+  </div>
+
+  <div class="h1">Downloads</div>
+  <p class="sub">2 active · 1 done</p>
+
+  <div class="list">
+    <div class="card">
+      <div class="row">
+        <div class="name">ubuntu-24.04.1-desktop-amd64.iso</div>
+        <span class="badge b-dl">DL</span>
+      </div>
+      <div class="meta"><span><b>64%</b></span><span>↓ <b>12.4 MB/s</b></span><span><b>3.2</b> / 5.0 GB</span></div>
+      <div class="bar"><span style="width:64%"></span></div>
+      <div class="acts">
+        <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#09090B" stroke-width="2.4"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>Pause</button>
+        <button class="btn danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#09090B" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>Delete</button>
+      </div>
+    </div>
+
+    <div class="card new">
+      <span class="sticker">DONE</span>
+      <div class="row">
+        <div class="name">The.Expanse.S01E03.1080p.WEB</div>
+        <span class="badge b-done">OK</span>
+      </div>
+      <div class="meta"><span><b>100%</b></span><span><b>1.4 GB</b></span><span>Movies/Shows</span></div>
+      <div class="bar done"><span style="width:100%"></span></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="name">Dune.Part.Two.2024.2160p</div>
+        <span class="badge b-pause">PAUSE</span>
+      </div>
+      <div class="meta"><span><b>31%</b></span><span>paused</span><span><b>4.1</b> / 13 GB</span></div>
+      <div class="bar pause"><span style="width:31%"></span></div>
+      <div class="acts">
+        <button class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#09090B" stroke-width="2.4" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>Resume</button>
+        <button class="btn danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#09090B" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="fab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#09090B" stroke-width="3.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </div>
+
+  <nav class="tabs">
+    <button class="on"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Downloads</button>
+    <button><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="7" rx="1.5"/><rect x="2" y="13" width="20" height="7" rx="1.5"/><line x1="6" y1="7.5" x2="6.01" y2="7.5"/><line x1="6" y1="16.5" x2="6.01" y2="16.5"/></svg>NAS</button>
+    <button><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><polyline points="8 3 12 7 16 3"/></svg>Shows</button>
+  </nav>
+</div>
+</body>
+</html>

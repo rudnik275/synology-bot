@@ -7,6 +7,7 @@ import Sheet from './Sheet.vue'
 import FAB from './FAB.vue'
 import FolderPicker from './FolderPicker.vue'
 import { api } from '../api'
+import type { SearchResultView } from '../types'
 
 type Mode = 'magnet' | 'torrent' | 'search'
 
@@ -26,6 +27,14 @@ const destination = ref('')
 const submitting = ref(false)
 const errorMsg = ref<string | null>(null)
 
+// Search mode state
+const searchQuery = ref('')
+const searchResults = ref<SearchResultView[]>([])
+const searchLoading = ref(false)
+const searchError = ref<string | null>(null)
+const searchQueried = ref(false)
+const selectedResult = ref<SearchResultView | null>(null)
+
 function openSheet(): void {
   open.value = true
   resetForm()
@@ -37,6 +46,31 @@ function resetForm(): void {
   selectedFile.value = null
   destination.value = ''
   errorMsg.value = null
+  // Reset search state
+  searchQuery.value = ''
+  searchResults.value = []
+  searchLoading.value = false
+  searchError.value = null
+  searchQueried.value = false
+  selectedResult.value = null
+}
+
+async function runSearch(): Promise<void> {
+  const q = searchQuery.value.trim()
+  if (!q) return
+  searchLoading.value = true
+  searchError.value = null
+  searchQueried.value = false
+  searchResults.value = []
+  selectedResult.value = null
+  try {
+    searchResults.value = await api.search(q)
+    searchQueried.value = true
+  } catch (e) {
+    searchError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    searchLoading.value = false
+  }
 }
 
 function onFileChange(e: Event): void {
@@ -61,6 +95,12 @@ async function create(): Promise<void> {
         return
       }
       await api.createTaskFromFile(selectedFile.value, destination.value)
+    } else if (mode.value === 'search') {
+      if (!selectedResult.value) {
+        errorMsg.value = 'Please select a search result.'
+        return
+      }
+      await api.createTask(selectedResult.value.downloadUrl, destination.value)
     } else {
       if (!magnetUri.value.trim()) {
         errorMsg.value = 'Please enter a magnet link or URL.'
@@ -107,12 +147,12 @@ async function create(): Promise<void> {
       </button>
       <button
         type="button"
-        class="mode-btn mode-btn--soon"
+        class="mode-btn"
+        :class="{ active: mode === 'search' }"
         data-testid="mode-search"
-        disabled
-        aria-label="Search — coming soon"
+        @click="mode = 'search'"
       >
-        Search <span class="soon-label">soon</span>
+        Search
       </button>
     </div>
 
@@ -142,6 +182,74 @@ async function create(): Promise<void> {
         data-testid="torrent-input"
         @change="onFileChange"
       />
+    </div>
+
+    <!-- Search mode -->
+    <div v-if="mode === 'search'" class="field search-field">
+      <label class="field-label" for="search-query">Search</label>
+      <div class="search-row">
+        <input
+          id="search-query"
+          v-model="searchQuery"
+          type="text"
+          class="field-input"
+          placeholder="Enter title…"
+          autocomplete="off"
+          data-testid="search-query"
+          @keydown.enter="runSearch"
+        />
+        <button
+          type="button"
+          class="search-btn"
+          data-testid="search-btn"
+          :disabled="searchLoading"
+          @click="runSearch"
+        >
+          {{ searchLoading ? '…' : 'Search' }}
+        </button>
+      </div>
+
+      <!-- Loading -->
+      <div v-if="searchLoading" class="search-loading" data-testid="search-loading">
+        Loading…
+      </div>
+
+      <!-- Error -->
+      <div v-else-if="searchError" class="search-error" role="alert" data-testid="search-error">
+        {{ searchError }}
+      </div>
+
+      <!-- Empty results -->
+      <div v-else-if="searchQueried && searchResults.length === 0" class="search-empty" data-testid="search-empty">
+        Ничего не найдено
+      </div>
+
+      <!-- Results -->
+      <ul v-else-if="searchResults.length > 0" class="search-results" role="list" data-testid="search-results">
+        <li
+          v-for="result in searchResults"
+          :key="result.id"
+        >
+          <button
+            type="button"
+            class="result-card"
+            :class="{ 'result-card--selected': selectedResult?.id === result.id }"
+            :data-testid="`result-${result.id}`"
+            @click="selectedResult = result"
+          >
+            <span class="result-title" data-testid="result-title">{{ result.title }}</span>
+            <span class="result-meta">
+              <span data-testid="result-size">{{ result.size }}</span>
+              <span class="result-sep">·</span>
+              <span>S: <span data-testid="result-seeders">{{ result.seeders }}</span></span>
+              <span class="result-sep">·</span>
+              <span>L: <span data-testid="result-leechers">{{ result.leechers }}</span></span>
+              <span class="result-sep">·</span>
+              <span data-testid="result-category">{{ result.category }}</span>
+            </span>
+          </button>
+        </li>
+      </ul>
     </div>
 
     <!-- Destination picker -->
@@ -313,5 +421,125 @@ async function create(): Promise<void> {
 .create-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Search mode */
+.search-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.search-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.search-row .field-input {
+  flex: 1;
+  min-height: 44px;
+  resize: none;
+}
+
+.search-btn {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--ink);
+  color: var(--cream);
+  border: var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition:
+    transform var(--dur-press) var(--ease-mechanical),
+    box-shadow var(--dur-press) var(--ease-mechanical);
+}
+.search-btn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: var(--shadow-none);
+}
+.search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-loading,
+.search-empty {
+  padding: var(--space-3);
+  text-align: center;
+  font-size: var(--fs-sm);
+  opacity: 0.7;
+}
+
+.search-error {
+  padding: var(--space-2) var(--space-3);
+  background: var(--red);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.result-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font);
+  transition:
+    transform var(--dur-press) var(--ease-mechanical),
+    box-shadow var(--dur-press) var(--ease-mechanical);
+}
+.result-card:active {
+  transform: translate(3px, 3px);
+  box-shadow: var(--shadow-none);
+}
+.result-card--selected {
+  border-color: var(--ink);
+  border-width: var(--border-thick);
+  background: var(--yellow);
+  box-shadow: var(--shadow-md);
+}
+
+.result-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  line-height: 1.3;
+}
+
+.result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}
+
+.result-sep {
+  opacity: 0.4;
 }
 </style>

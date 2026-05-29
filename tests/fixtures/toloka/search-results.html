@@ -2,60 +2,61 @@
 <html>
 <head><title>toloka.to :: Пошук</title></head>
 <body>
+<!-- logged-in marker: Toloka renders the logout link only when authenticated -->
 <a href="/login.php?logout=true&amp;sid=testsid" rel="nofollow">Вихід [ testuser ]</a>
-<table class="forumline tablesorter">
-<thead>
-<tr>
-  <th>Категорія</th>
-  <th>Автор</th>
-  <th>Назва</th>
-  <th>Відповідей</th>
-  <th>Переглядів</th>
-  <th>Дата</th>
-  <th>Розмір</th>
-  <th>Сідери</th>
-  <th>Лічери</th>
-  <th>Завантажити</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-  <td class="row1"><a href="viewforum.php?f=1">Фільми</a></td>
-  <td class="row1">user1</td>
-  <td class="row1"><a class="topictitle" href="viewtopic.php?t=1001">Ubuntu 24.04 LTS Desktop amd64</a></td>
-  <td class="row1">10</td>
-  <td class="row1">5000</td>
-  <td class="row1">2024-01-01</td>
-  <td class="row1">4.7 GB</td>
-  <td class="row1 seedmed">1200</td>
-  <td class="row1">87</td>
-  <td class="row1"><a href="download.php?id=1001"><img src="dl.gif"/></a></td>
-</tr>
-<tr>
-  <td class="row2"><a href="viewforum.php?f=2">Програми</a></td>
-  <td class="row2">user2</td>
-  <td class="row2"><a class="topictitle" href="viewtopic.php?t=1002">Ubuntu 24.04 Server amd64</a></td>
-  <td class="row2">5</td>
-  <td class="row2">3000</td>
-  <td class="row2">2024-01-02</td>
-  <td class="row2">1.2 GB</td>
-  <td class="row2 seedmed">540</td>
-  <td class="row2">12</td>
-  <td class="row2"><a href="download.php?id=1002"><img src="dl.gif"/></a></td>
-</tr>
-<tr>
-  <td class="row1"><a href="viewforum.php?f=1">Фільми</a></td>
-  <td class="row1">user3</td>
-  <td class="row1"><a class="topictitle" href="viewtopic.php?t=1003">Ubuntu 22.04 LTS Desktop</a></td>
-  <td class="row1">3</td>
-  <td class="row1">2000</td>
-  <td class="row1">2024-01-03</td>
-  <td class="row1">3.8 GB</td>
-  <td class="row1 seedmed">320</td>
-  <td class="row1">45</td>
-  <td class="row1"><a href="download.php?id=1003"><img src="dl.gif"/></a></td>
-</tr>
-</tbody>
+<script type="text/javascript">
+$(function() { $(".topictitle").highlight(["ubuntu"]); });
+</script>
+<table class="forumline" width="100%" cellspacing="1" cellpadding="4" border="0">
+  <tr>
+    <th>&nbsp;</th><th>Форум</th><th>Назва</th><th>Автор</th><th>Стат</th>
+    <th>Пер</th><th>Посил</th><th>Розмір</th><th>Ст</th><th>С</th><th>S</th><th>L</th><th>R</th><th>Додано</th>
+  </tr>
+  <tr class="prow1">
+    <td align="center"><img src="x.gif" width="12" height="9"></td>
+    <td align="center" class="gen"><a class="gen" href="tracker.php?f=10">Дистрибутиви</a></td>
+    <td title="" class="topictitle genmed"><a class="genmed" href="t1001"><b>Ubuntu 24.04 LTS Desktop amd64</b></a></td>
+    <td align="center" class="genmed"><a class="genmed" href="tracker.php?pid=1">user1</a></td>
+    <td align="center" class="genmed" title="Перевірено"><span style="color:green;">+</span></td>
+    <td align="center" class="genmed" nowrap="nowrap" style="cursor: pointer" onClick="window.location.href='download.php?id=1001'"><a class="genmed" href="download.php?id=1001">[ <span class="bold">DL</span> ]</a></td>
+    <td align="center" title="" nowrap="nowrap" class="gensmall">4.7 GB</td>
+    <td align="center" class="gensmall"><span style="color:white;"> - </span></td>
+    <td align="center" class="gensmall">?</td>
+    <td align="center" title="Seeders" class="seedmed"><b>1200</b></td>
+    <td align="center" title="Завантажують" class="leechmed"><b>87</b></td>
+    <td align="center" class="gensmall">3400</td>
+    <td align="center" nowrap="nowrap" class="gensmall">2024-04-25</td>
+  </tr>
+  <tr class="prow2">
+    <td align="center"><img src="x.gif" width="12" height="9"></td>
+    <td align="center" class="gen"><a class="gen" href="tracker.php?f=10">Дистрибутиви</a></td>
+    <td title="" class="topictitle genmed"><a class="genmed" href="t1002"><b>Ubuntu 24.04 Server amd64</b></a></td>
+    <td align="center" class="genmed"><a class="genmed" href="tracker.php?pid=2">user2</a></td>
+    <td align="center" class="genmed" title="Перевірено"><span style="color:green;">+</span></td>
+    <td align="center" class="genmed" nowrap="nowrap" style="cursor: pointer" onClick="window.location.href='download.php?id=1002'"><a class="genmed" href="download.php?id=1002">[ <span class="bold">DL</span> ]</a></td>
+    <td align="center" title="" nowrap="nowrap" class="gensmall">1.2 GB</td>
+    <td align="center" class="gensmall"><span style="color:white;"> - </span></td>
+    <td align="center" class="gensmall">?</td>
+    <td align="center" title="Seeders" class="seedmed"><b>540</b></td>
+    <td align="center" title="Завантажують" class="leechmed"><b>12</b></td>
+    <td align="center" class="gensmall">900</td>
+    <td align="center" nowrap="nowrap" class="gensmall">2024-04-25</td>
+  </tr>
+  <tr class="prow1">
+    <td align="center"><img src="x.gif" width="12" height="9"></td>
+    <td align="center" class="gen"><a class="gen" href="tracker.php?f=11">Дистрибутиви</a></td>
+    <td title="" class="topictitle genmed"><a class="genmed" href="t1003"><b>Kubuntu 24.04 LTS</b></a></td>
+    <td align="center" class="genmed"><a class="genmed" href="tracker.php?pid=3">user3</a></td>
+    <td align="center" class="genmed" title="Перевірено"><span style="color:green;">+</span></td>
+    <td align="center" class="genmed" nowrap="nowrap" style="cursor: pointer" onClick="window.location.href='download.php?id=1003'"><a class="genmed" href="download.php?id=1003">[ <span class="bold">DL</span> ]</a></td>
+    <td align="center" title="" nowrap="nowrap" class="gensmall">5.1 GB</td>
+    <td align="center" class="gensmall"><span style="color:white;"> - </span></td>
+    <td align="center" class="gensmall">?</td>
+    <td align="center" title="Seeders" class="seedmed"><b>10</b></td>
+    <td align="center" title="Завантажують" class="leechmed"><b>1</b></td>
+    <td align="center" class="gensmall">120</td>
+    <td align="center" nowrap="nowrap" class="gensmall">2024-04-25</td>
+  </tr>
 </table>
 </body>
 </html>

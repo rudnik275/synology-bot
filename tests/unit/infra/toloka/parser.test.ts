@@ -46,20 +46,20 @@ describe('TolokaResultParser', () => {
     expect(results).toEqual([])
   })
 
-  it('parses single result from search-results.html (subset check)', () => {
-    // Create a minimal HTML with exactly 1 result row
+  it('parses single result from real-markup row (subset check)', () => {
+    // Mirrors real Toloka markup: title in td.topictitle, download.php link,
+    // td.gensmall size, td.seedmed / td.leechmed counts.
     const singleResultHtml = `
       <html><body>
       <table><tbody>
       <tr>
-        <td>Фільми</td>
-        <td>user</td>
-        <td><a class="topictitle" href="viewtopic.php?t=5000">Single Movie</a></td>
-        <td>1</td><td>100</td><td>2024-01-01</td>
-        <td>2.1 GB</td>
-        <td>99</td>
-        <td>3</td>
-        <td><a href="download.php?id=5000"><img/></a></td>
+        <td class="gen"><a href="tracker.php?f=10">Фільми</a></td>
+        <td title="" class="topictitle genmed"><a class="genmed" href="t5000"><b>Single Movie</b></a></td>
+        <td class="genmed"><a href="tracker.php?pid=9">user</a></td>
+        <td class="genmed" onClick="window.location.href='download.php?id=5000'"><a class="genmed" href="download.php?id=5000">[ DL ]</a></td>
+        <td class="gensmall">2.1 GB</td>
+        <td class="seedmed"><b>99</b></td>
+        <td class="leechmed"><b>3</b></td>
       </tr>
       </tbody></table>
       </body></html>
@@ -67,24 +67,24 @@ describe('TolokaResultParser', () => {
     const results = parseSearchPage(singleResultHtml, BASE_URL)
     expect(results.length).toBe(1)
     expect(results[0]!.title).toBe('Single Movie')
+    expect(results[0]!.size).toBe('2.1 GB')
     expect(results[0]!.seeders).toBe(99)
+    expect(results[0]!.leechers).toBe(3)
+    expect(results[0]!.downloadUrl).toBe(`${BASE_URL}/download.php?id=5000`)
   })
 
-  it('skips malformed rows and continues parsing', () => {
+  it('skips rows without a download link and continues parsing', () => {
     const htmlWithBadRow = `
       <html><body>
       <table><tbody>
       <tr>
-        <td>Cat</td><td>u</td>
-        <td><a class="topictitle" href="#">Missing download link</a></td>
-        <td></td><td></td><td></td><td>1 GB</td><td>10</td><td>2</td>
-        <!-- no download.php link -->
+        <td title="" class="topictitle genmed"><a href="t1"><b>No download link</b></a></td>
+        <td class="gensmall">1 GB</td><td class="seedmed">10</td><td class="leechmed">2</td>
       </tr>
       <tr>
-        <td>Cat</td><td>u</td>
-        <td><a class="topictitle" href="#">Valid Result</a></td>
-        <td></td><td></td><td></td><td>3 GB</td><td>50</td><td>5</td>
-        <td><a href="download.php?id=9999"><img/></a></td>
+        <td title="" class="topictitle genmed"><a href="t9999"><b>Valid Result</b></a></td>
+        <td class="genmed"><a href="download.php?id=9999">[ DL ]</a></td>
+        <td class="gensmall">3 GB</td><td class="seedmed">50</td><td class="leechmed">5</td>
       </tr>
       </tbody></table>
       </body></html>
@@ -92,6 +92,7 @@ describe('TolokaResultParser', () => {
     const results = parseSearchPage(htmlWithBadRow, BASE_URL)
     expect(results.length).toBe(1)
     expect(results[0]!.title).toBe('Valid Result')
+    expect(results[0]!.seeders).toBe(50)
   })
 
   it('returns empty array for completely invalid HTML', () => {

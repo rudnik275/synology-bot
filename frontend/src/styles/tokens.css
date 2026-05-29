@@ -63,6 +63,7 @@
 
   /* --- Layout --- */
   --tabbar-h: 64px;
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--space-2));
   --z-fab: 40;
   --z-tabbar: 50;
   --z-sheet: 100;

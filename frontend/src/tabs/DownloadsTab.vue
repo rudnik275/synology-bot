@@ -180,7 +180,7 @@ async function onDelete(id: string): Promise<void> {
 <style scoped>
 .downloads-tab {
   padding: var(--space-4);
-  padding-bottom: calc(var(--tabbar-h) + var(--space-4));
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom));
 }
 
 .task-list {

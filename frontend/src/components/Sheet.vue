@@ -88,7 +88,7 @@ onUnmounted(() => {
   border-right: var(--border-strong);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: var(--space-4);
-  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--space-4) + var(--safe-bottom));
 }
 .sheet--fullscreen {
   max-width: 100%;

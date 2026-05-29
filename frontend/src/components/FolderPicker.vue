@@ -2,8 +2,10 @@
 // Drill-down destination folder picker. Used by AddFlow (#63); #71 will reuse it.
 // Starts from shared-folder roots (no path), clicking drills into children.
 // Emits the chosen path via v-model.
-import { ref, watch, onMounted } from 'vue'
+// #96: remembers last-used folder + shows recent/favorite chips row.
+import { ref, computed, watch, onMounted } from 'vue'
 import { api } from '../api'
+import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import type { FolderView } from '../types'
 
 const props = defineProps<{
@@ -13,6 +15,16 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [string]
 }>()
+
+const { recents, favorites, lastFolder, clearLastIfMissing } = useFolderShortcuts()
+
+// Chips: favorites first (pinned), then recents (deduped), cap 6 total
+const chips = computed<string[]>(() => {
+  const favSet = new Set(favorites.value)
+  const favs = favorites.value.slice()
+  const recentOnly = recents.value.filter((p) => !favSet.has(p))
+  return [...favs, ...recentOnly].slice(0, 6)
+})
 
 // Breadcrumb stack: each entry is { name, path } of the folder we entered.
 // Empty = at root.
@@ -34,8 +46,76 @@ async function loadFolders(path?: string): Promise<void> {
   }
 }
 
-onMounted(() => {
-  void loadFolders()
+/** Reconstruct the breadcrumb stack for an absolute path by drilling level by level.
+ *
+ * NAS shared folder paths look like /volume1/downloads/subfolder.
+ * The api.folders() root listing returns entries whose paths ARE the first-level
+ * absolute paths (e.g. /volume1/downloads). So we build a sequence of path prefixes
+ * to match against each level's listing.
+ */
+async function restoreStack(absPath: string): Promise<boolean> {
+  // Build an ordered list of ancestor paths from root to target.
+  // e.g. '/volume1/downloads/torrents' → ['/volume1/downloads', '/volume1/downloads/torrents']
+  // We need to find which root entry is a prefix of absPath, then drill down.
+  if (!absPath || absPath === '/') return false
+
+  const newStack: FolderView[] = []
+
+  // Fetch root level
+  let levelFolders: FolderView[]
+  try {
+    levelFolders = await api.folders()
+  } catch {
+    return false
+  }
+
+  // Find the root entry that is a prefix of (or equal to) absPath
+  let currentPath = ''
+  while (true) {
+    // Find a folder in the current level that is either the exact target
+    // or a proper path-prefix of the target
+    const match = levelFolders.find((f) => {
+      return f.path === absPath || absPath.startsWith(f.path + '/')
+    })
+
+    if (!match) return false
+
+    newStack.push(match)
+    currentPath = match.path
+
+    if (currentPath === absPath) {
+      // We've reached the target — load its children
+      let children: FolderView[]
+      try {
+        children = await api.folders(currentPath)
+      } catch {
+        children = []
+      }
+      stack.value = newStack
+      folders.value = children
+      return true
+    }
+
+    // Drill deeper
+    try {
+      levelFolders = await api.folders(currentPath)
+    } catch {
+      return false
+    }
+  }
+}
+
+onMounted(async () => {
+  const saved = lastFolder.value
+  if (saved) {
+    const ok = await restoreStack(saved)
+    if (!ok) {
+      clearLastIfMissing()
+      await loadFolders()
+    }
+  } else {
+    await loadFolders()
+  }
 })
 
 async function drillInto(folder: FolderView): Promise<void> {
@@ -53,6 +133,10 @@ function pickCurrent(): void {
   if (path) emit('update:modelValue', path)
 }
 
+function pickChip(path: string): void {
+  emit('update:modelValue', path)
+}
+
 // Expose current folder path for display purposes
 const selectedPath = ref(props.modelValue)
 watch(
@@ -65,6 +149,23 @@ watch(
 
 <template>
   <div class="folder-picker">
+    <!-- Quick-access chips: favorites (pinned) first, then recents. Only shown when non-empty. -->
+    <div v-if="chips.length > 0" class="folder-chips" data-testid="folder-chips">
+      <button
+        v-for="chipPath in chips"
+        :key="chipPath"
+        type="button"
+        class="folder-chip"
+        :class="{ 'folder-chip--favorite': favorites.includes(chipPath) }"
+        data-testid="folder-chip"
+        :title="chipPath"
+        @click="pickChip(chipPath)"
+      >
+        <span v-if="favorites.includes(chipPath)" class="chip-pin" aria-label="Favorite">★</span>
+        {{ chipPath.split('/').filter(Boolean).pop() ?? chipPath }}
+      </button>
+    </div>
+
     <!-- Breadcrumb / navigation row -->
     <div class="picker-nav">
       <button
@@ -146,6 +247,48 @@ watch(
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+/* ── Chips row (#96) ── */
+.folder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
+.folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 var(--space-2);
+  background: var(--cream);
+  border: var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    transform var(--dur-press) var(--ease-mechanical),
+    box-shadow var(--dur-press) var(--ease-mechanical);
+}
+.folder-chip:active {
+  transform: translate(2px, 2px);
+  box-shadow: var(--shadow-none);
+}
+.folder-chip--favorite {
+  background: var(--yellow);
+  border-color: var(--ink);
+}
+.chip-pin {
+  font-size: 10px;
+  flex-shrink: 0;
 }
 
 .picker-nav {

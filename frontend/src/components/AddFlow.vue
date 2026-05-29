@@ -11,11 +11,13 @@ import FAB from './FAB.vue'
 import FolderPicker from './FolderPicker.vue'
 import { api } from '../api'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
+import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import type { SearchResultView } from '../types'
 
 type Mode = 'magnet' | 'torrent' | 'search'
 
 const { prefersReducedMotion } = usePrefersReducedMotion()
+const { lastFolder, recordRecent } = useFolderShortcuts()
 
 const open = ref(false)
 const step = ref<1 | 2 | 3 | 4>(1)
@@ -61,6 +63,11 @@ const canAdvance = computed<boolean>(() => {
 function openSheet(): void {
   open.value = true
   resetForm()
+  // Pre-populate destination from last-used folder so the confirm step shows it.
+  // FolderPicker will also open into this folder via its own onMounted logic.
+  if (lastFolder.value) {
+    destination.value = lastFolder.value
+  }
 }
 
 function resetForm(): void {
@@ -134,7 +141,9 @@ async function create(): Promise<void> {
       }
       await api.createTask(magnetUri.value.trim(), destination.value)
     }
-    // Success: close the sheet; the Downloads list refreshes on its own poll.
+    // Success: record the destination as a recent BEFORE resetForm clears it.
+    if (destination.value) recordRecent(destination.value)
+    // Close the sheet; the Downloads list refreshes on its own poll.
     open.value = false
     resetForm()
   } catch (e) {

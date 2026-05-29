@@ -4,7 +4,8 @@
 // No tab data here — the three tab bodies are stubs filled by #61/#70/#64; the
 // Add-flow FAB+sheet overlay is mounted separately by #63.
 import { ref } from 'vue'
-import TabBar, { type TabKey } from './components/TabBar.vue'
+import TabBar from './components/TabBar.vue'
+import type { TabKey } from './components/tabs'
 import HealthChip from './components/HealthChip.vue'
 import DownloadsTab from './tabs/DownloadsTab.vue'
 import NasTab from './tabs/NasTab.vue'

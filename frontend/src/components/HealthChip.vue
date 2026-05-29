@@ -3,7 +3,7 @@
 // present on every tab; tap jumps to the NAS tab. This slice ships the visual
 // scaffold only — real status/metric are wired by #70 (useHealth). Default
 // status is `unknown` (grey) until that lands.
-export type HealthStatus = 'ok' | 'warn' | 'bad' | 'unknown'
+import type { HealthStatus } from './health'
 
 withDefaults(
   defineProps<{

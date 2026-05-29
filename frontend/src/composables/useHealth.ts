@@ -13,7 +13,7 @@
 import { computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useApi } from './useApi'
 import type { HealthView } from '../types'
-import type { HealthStatus } from '../components/HealthChip.vue'
+import type { HealthStatus } from '../components/health'
 
 const POLL_MS = 15000
 

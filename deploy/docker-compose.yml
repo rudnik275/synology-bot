@@ -16,6 +16,12 @@ services:
   # binds 127.0.0.1 — see src/app.ts). Route the public hostname to
   # `http://localhost:8080` in the Cloudflare dashboard. TUNNEL_TOKEN is
   # interpolated from CF_TUNNEL_TOKEN in the same-directory .env.
+  #
+  # Watchtower labels: because cloudflared shares the bot's network namespace,
+  # recreating the bot (on every image update) tears down cloudflared's netns and
+  # the tunnel goes Down. `depends-on=synology-bot` makes Watchtower recreate
+  # cloudflared right after it updates the bot, so the tunnel auto-recovers on
+  # every deploy; `enable=true` puts cloudflared in Watchtower's monitored set.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: synology-cloudflared
@@ -24,6 +30,9 @@ services:
     depends_on:
       - bot
     command: tunnel run
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.depends-on=synology-bot"
     environment:
       TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
   watchtower:

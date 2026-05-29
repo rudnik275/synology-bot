@@ -113,20 +113,25 @@ async function onDelete(id: string): Promise<void> {
     </EmptyState>
 
     <!-- Task list -->
-    <div v-else class="task-list">
+    <TransitionGroup v-else tag="div" name="task-list" class="task-list">
       <Card
-        v-for="task in tasks"
+        v-for="(task, index) in tasks"
         :key="task.id"
         :tone="cardToneForStatus(task.status)"
         class="task-card"
+        :style="{ '--stagger-index': index }"
       >
         <!-- Header row: title + badge -->
         <div class="task-header">
           <h3 class="task-title">{{ task.title }}</h3>
-          <StickerBadge
-            :tone="badgeForStatus(task.status).tone"
-            :rotate="-2"
-          >{{ badgeForStatus(task.status).text }}</StickerBadge>
+          <!-- Keyed <Transition> so a status change (DL→DONE→PAUSED) pops the badge. -->
+          <Transition name="badge-pop" mode="out-in">
+            <StickerBadge
+              :key="badgeForStatus(task.status).text"
+              :tone="badgeForStatus(task.status).tone"
+              :rotate="-2"
+            >{{ badgeForStatus(task.status).text }}</StickerBadge>
+          </Transition>
         </div>
 
         <!-- Progress bar -->
@@ -168,7 +173,7 @@ async function onDelete(id: string): Promise<void> {
           >Delete</button>
         </div>
       </Card>
-    </div>
+    </TransitionGroup>
   </div>
 </template>
 
@@ -281,6 +286,62 @@ async function onDelete(id: string): Promise<void> {
 
 .btn-delete {
   background: var(--red);
+}
+
+/*
+ * Status-badge pop when DL→DONE→PAUSED→ERR changes.
+ * out-in mode: old badge scales down + fades out, new one springs in.
+ */
+.badge-pop-enter-active {
+  transition:
+    opacity var(--dur-badge-pop) var(--ease-pop),
+    transform var(--dur-badge-pop) var(--ease-pop);
+}
+.badge-pop-leave-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in);
+}
+.badge-pop-enter-from {
+  opacity: 0;
+  transform: rotate(-2deg) scale(0.7);
+}
+.badge-pop-leave-to {
+  opacity: 0;
+  transform: rotate(-2deg) scale(0.8);
+}
+
+/*
+ * Task list TransitionGroup (FLIP-capable).
+ * Enter: ease-out slide-up + fade, staggered by --stagger-index.
+ * Leave: ease-in slide-down + fade, shorter duration (--dur-list-leave).
+ * Move (FLIP reorder): smooth translate via --dur-enter ease-out.
+ * transform/opacity only — no layout thrashing.
+ */
+.task-list-enter-active {
+  transition:
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
+  transition-delay: calc(var(--stagger-index, 0) * var(--stagger-step));
+}
+.task-list-leave-active {
+  transition:
+    opacity var(--dur-list-leave) var(--ease-in),
+    transform var(--dur-list-leave) var(--ease-in);
+  /* Leaving items must not participate in FLIP layout — pull out of flow. */
+  position: absolute;
+  width: 100%;
+}
+.task-list-move {
+  transition: transform var(--dur-enter) var(--ease-out);
+}
+.task-list-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.task-list-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 /* Skeleton loading cards */

@@ -97,8 +97,8 @@ async function handleRemove(id: string) {
     <!-- Subscriptions list -->
     <section v-if="subscriptions.length > 0" class="subs-section">
       <h2 class="section-title">Subscriptions</h2>
-      <ul class="subs-list">
-        <li v-for="sub in subscriptions" :key="sub.id" class="sub-item">
+      <TransitionGroup tag="ul" name="sub-list" class="subs-list">
+        <li v-for="(sub, index) in subscriptions" :key="sub.id" class="sub-item" :style="{ '--stagger-index': index }">
           <Card>
             <div class="sub-row">
               <span class="sub-title">{{ sub.title }}</span>
@@ -116,7 +116,7 @@ async function handleRemove(id: string) {
             </div>
           </Card>
         </li>
-      </ul>
+      </TransitionGroup>
     </section>
   </div>
 </template>
@@ -254,6 +254,36 @@ async function handleRemove(id: string) {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  position: relative; /* needed for leaving items pulled to absolute */
+}
+
+/*
+ * Subscriptions TransitionGroup (FLIP-capable).
+ * Same recipe as the Downloads task list for visual consistency.
+ */
+.sub-list-enter-active {
+  transition:
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
+  transition-delay: calc(var(--stagger-index, 0) * var(--stagger-step));
+}
+.sub-list-leave-active {
+  transition:
+    opacity var(--dur-list-leave) var(--ease-in),
+    transform var(--dur-list-leave) var(--ease-in);
+  position: absolute;
+  width: 100%;
+}
+.sub-list-move {
+  transition: transform var(--dur-enter) var(--ease-out);
+}
+.sub-list-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.sub-list-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 .sub-row {

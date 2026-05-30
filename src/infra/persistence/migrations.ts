@@ -35,6 +35,20 @@ export const MIGRATIONS: Migration[] = [
       )`)
     },
   },
+  {
+    // #99 — short-lived stash for .torrent files forwarded to the bot, handed
+    // to the Mini App by token via a deep-link. Binary payload + own expiry, so
+    // it gets a dedicated table rather than the TEXT-only kv store.
+    version: 2,
+    up: (db) => {
+      db.run(`CREATE TABLE IF NOT EXISTS torrent_stash (
+        token TEXT PRIMARY KEY,
+        file_name TEXT NOT NULL,
+        data BLOB NOT NULL,
+        expires_at INTEGER NOT NULL
+      )`)
+    },
+  },
 ]
 
 export function runMigrations(db: Database): void {

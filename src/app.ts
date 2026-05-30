@@ -175,6 +175,7 @@ export async function startApp(): Promise<void> {
     tolokaBaseUrl: config.toloka.baseUrl,
     botToken: config.botToken,
     ownerId: config.ownerChatId,
+    torrentStash: store,
   })
   // createServer also serves the built Vue SPA from ./frontend/dist (the
   // default staticRoot) with an index.html fallback — see server.ts.

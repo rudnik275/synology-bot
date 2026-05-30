@@ -5,18 +5,26 @@
 // Step 3: FolderPicker (destination)
 // Step 4: Confirm summary + Add button
 // Mounted by App.vue as a fixed overlay on the Downloads surface.
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import Sheet from './Sheet.vue'
 import FAB from './FAB.vue'
 import Button from './Button.vue'
 import FolderPicker from './FolderPicker.vue'
 import { api } from '../api'
+import { torrentToken as deepLinkToken } from '../telegram'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import type { SearchResultView } from '../types'
 
 type Mode = 'magnet' | 'torrent' | 'search'
+
+// `deepLinkToken` injection seam: defaults to the token parsed from the Telegram
+// start_param (#99); overridable so the auto-open path is testable without a
+// global module mock.
+const props = withDefaults(defineProps<{ torrentToken?: string }>(), {
+  torrentToken: () => deepLinkToken,
+})
 
 const { prefersReducedMotion } = usePrefersReducedMotion()
 const { lastFolder, recordRecent } = useFolderShortcuts()
@@ -147,6 +155,38 @@ function onFileChange(e: Event): void {
   const input = e.target as HTMLInputElement
   selectedFile.value = input.files?.[0] ?? null
 }
+
+/** Rebuild a File from the base64 payload the bot stashed (#99). */
+function base64ToFile(base64: string, name: string): File {
+  const bin = atob(base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new File([bytes], name, { type: 'application/x-bittorrent' })
+}
+
+/**
+ * Deep-link entry (#99): the bot forwarded a .torrent and opened the Mini App
+ * with a stash token. Open the wizard in torrent mode with the file already
+ * loaded, jumping straight to the folder step. On failure fall back to the
+ * file-input step so the user can pick the file manually.
+ */
+async function startFromStashedTorrent(token: string): Promise<void> {
+  open.value = true
+  mode.value = 'torrent'
+  if (lastFolder.value) destination.value = lastFolder.value
+  try {
+    const { name, base64 } = await api.torrentStash(token)
+    selectedFile.value = base64ToFile(base64, name)
+    step.value = 3
+  } catch (e) {
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+    step.value = 2
+  }
+}
+
+onMounted(() => {
+  if (props.torrentToken) void startFromStashedTorrent(props.torrentToken)
+})
 
 async function create(): Promise<void> {
   errorMsg.value = null

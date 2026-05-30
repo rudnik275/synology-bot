@@ -10,6 +10,7 @@ import { registerHealthRoute } from './handlers/routes/health.ts'
 import { registerDeployStatusRoute } from './handlers/routes/deploy-status.ts'
 import { registerSubscriptionRoutes } from './handlers/routes/subscriptions.ts'
 import { registerTaskActionsRoute } from './handlers/routes/task-actions.ts'
+import { registerTorrentIntakeRoute } from './handlers/routes/torrent-intake.ts'
 
 export interface BotDeps {
   config: Config
@@ -34,6 +35,12 @@ export function createBot(deps: BotDeps): Bot<Context> {
   registerDeployStatusRoute(bot, deps.docker)
   registerSubscriptionRoutes(bot, deps.store)
   registerTaskActionsRoute(bot, deps.synology)
+  // #99 — accept a forwarded .torrent and hand it to the Mini App by token.
+  registerTorrentIntakeRoute(bot, {
+    store: deps.store,
+    botToken: deps.config.botToken,
+    miniappUrl: deps.config.miniappUrl,
+  })
 
   return bot
 }

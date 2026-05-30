@@ -27,6 +27,40 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path
 }
 
+/**
+ * Per-item health severity (#102). The header chip aggregates these into one
+ * status; NasTab maps each to a tone so the screen colours individual volumes
+ * and disks. Extracted from the old inline chipStatus logic so the two cannot
+ * drift — same thresholds, one source.
+ */
+export type Severity = 'ok' | 'warn' | 'bad'
+
+function statusIsBad(status: string): boolean {
+  const s = status.toLowerCase()
+  return s === 'failure' || s === 'failed' || s === 'bad'
+}
+
+/** Volume severity: bad at ≥90% or failed status, warn at ≥80%. */
+export function volumeSeverity(vol: { pct: number; status: string }): Severity {
+  if (vol.pct >= 90 || statusIsBad(vol.status)) return 'bad'
+  if (vol.pct >= 80) return 'warn'
+  return 'ok'
+}
+
+/** Disk severity: bad on failed status/SMART, warn on elevated temperature. */
+export function diskSeverity(disk: { tempStatus: string; status: string; smart: string }): Severity {
+  if (statusIsBad(disk.status) || statusIsBad(disk.smart)) return 'bad'
+  if (disk.tempStatus.toLowerCase() === 'elevated') return 'warn'
+  return 'ok'
+}
+
+/** Generic percentage severity (RAM and any plain usage bar). */
+export function pctSeverity(pct: number): Severity {
+  if (pct >= 90) return 'bad'
+  if (pct >= 80) return 'warn'
+  return 'ok'
+}
+
 export function useHealth() {
   const { data, loading, error, refetch } = api
 
@@ -60,40 +94,13 @@ export function useHealth() {
 
     const { volumes, disks } = data.value
 
-    // bad: disk failure or smart failure
-    if (disks) {
-      for (const disk of disks) {
-        const st = disk.status.toLowerCase()
-        const sm = disk.smart.toLowerCase()
-        if (st === 'failure' || st === 'failed' || st === 'bad' || sm === 'failed' || sm === 'failure') {
-          return 'bad'
-        }
-      }
-    }
-
-    // bad: volume >= 90% or volume status failure
-    if (volumes) {
-      for (const vol of volumes) {
-        if (vol.pct >= 90) return 'bad'
-        const st = vol.status.toLowerCase()
-        if (st === 'failure' || st === 'failed' || st === 'bad') return 'bad'
-      }
-    }
-
-    // warn: volume >= 80%
-    if (volumes) {
-      for (const vol of volumes) {
-        if (vol.pct >= 80) return 'warn'
-      }
-    }
-
-    // warn: elevated disk temp
-    if (disks) {
-      for (const disk of disks) {
-        if (disk.tempStatus.toLowerCase() === 'elevated') return 'warn'
-      }
-    }
-
+    // Aggregate the per-item severities: any 'bad' wins, then any 'warn'.
+    const severities: Severity[] = [
+      ...(volumes ?? []).map(volumeSeverity),
+      ...(disks ?? []).map(diskSeverity),
+    ]
+    if (severities.includes('bad')) return 'bad'
+    if (severities.includes('warn')) return 'warn'
     return 'ok'
   })
 

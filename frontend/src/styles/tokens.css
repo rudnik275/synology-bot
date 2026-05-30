@@ -20,9 +20,12 @@
   --green: #2fd86b;
   --violet: #9b6dff;
 
-  /* --- Semantic health (chip + status) --- */
+  /* --- Semantic health (chip + status) ---
+   * Severity owns the traffic-light triad green/amber/red. Warn is amber
+   * (orange), NOT yellow: yellow is reserved for primary actions, so a "warn"
+   * never reads as a button (#101 accent split). */
   --ok: var(--green);
-  --warn: var(--yellow);
+  --warn: var(--orange);
   --bad: var(--red);
   --idle: #c9c7bd; /* unknown / not-yet-wired grey */
 
@@ -38,9 +41,12 @@
   --shadow-lg: 8px 8px 0 var(--ink);
   --shadow-none: 0 0 0 var(--ink);
 
-  /* --- Radius: neo-brutalism is mostly sharp; a hair of softness only on big surfaces --- */
-  --radius: 4px;
-  --radius-lg: 8px;
+  /* --- Radius: rounded neubrutalism. Thick borders + hard offset shadows stay
+   * (that IS the style); the corners are softened to ~12px so the app reads
+   * friendlier / more organic without losing its character. Single source —
+   * every surface (cards, buttons, bars, FAB, hero) inherits these. --- */
+  --radius: 12px;
+  --radius-lg: 16px;
 
   /* --- Spacing rhythm (4/8) --- */
   --space-1: 4px;
@@ -57,6 +63,7 @@
   --fs-md: 16px;
   --fs-lg: 20px;
   --fs-xl: 28px;
+  --fs-2xl: 36px; /* hero metric — the one oversized number per screen */
   --fw-regular: 400;
   --fw-medium: 500;
   --fw-bold: 700;
@@ -144,16 +151,22 @@ body {
 
 /*
  * The mechanical press: element pushes down-right into its own shadow which
- * collapses to nothing. Apply .nb-pressable to any tappable surface that owns
- * a hard shadow. Components reuse this exact recipe in their scoped styles.
+ * collapses to nothing. This is the SINGLE source of the press recipe — every
+ * tappable surface that owns a hard shadow gets it by adding the .nb-pressable
+ * class, instead of re-declaring the translate+shadow-none block inline.
+ *
+ * The push distance follows the element's shadow offset (so it sinks exactly
+ * into its own shadow). Default is 3px (--shadow-sm); elements with a deeper
+ * shadow set `--press` locally (e.g. 5px for --shadow-md, 4px for the FAB).
+ * Disabled controls don't press.
  */
 .nb-pressable {
   transition:
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);
 }
-.nb-pressable:active {
-  transform: translate(3px, 3px);
+.nb-pressable:active:not(:disabled) {
+  transform: translate(var(--press, 3px), var(--press, 3px));
   box-shadow: var(--shadow-none);
 }
 

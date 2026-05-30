@@ -48,10 +48,12 @@ async function handleRemove(id: string) {
   <div class="shows-tab">
     <ScreenHeader title="Shows" />
 
-    <!-- Today-airing block: only shown when there are episodes -->
+    <!-- Today-airing block — the one hero per screen (#101 elevation tiers):
+         most time-relevant info, raised to the top tier. Prominence comes from
+         elevation, not a yellow fill (accent stays reserved for actions). -->
     <section v-if="todayEpisodes.length > 0" class="today-section">
       <h2 class="section-title">Today</h2>
-      <Card tone="yellow">
+      <Card variant="hero">
         <ul class="episode-list">
           <li v-for="ep in todayEpisodes" :key="`${ep.showId}-${ep.season}-${ep.episode}`" class="episode-row">
             <span class="ep-title">{{ ep.title }}</span>

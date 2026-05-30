@@ -34,6 +34,10 @@
   --border-thick: 5px;
   --border: var(--border-thin) solid var(--ink);
   --border-strong: var(--border-thick) solid var(--ink);
+  /* Hairline: the faint internal divider between rows grouped inside one flat
+   * surface (#101 elevation tiers — a grouped panel reads as ONE card with
+   * quiet rows, not a stack of identical bordered boxes). */
+  --hairline: var(--border-thin) solid rgba(9, 9, 11, 0.12);
 
   /* --- Hard offset shadows (Npx Npx 0, no blur) --- */
   --shadow-sm: 3px 3px 0 var(--ink);

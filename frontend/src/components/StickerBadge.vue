@@ -2,9 +2,11 @@
 // A rotated sticker label — the neo-brutalism signature. Used for status tags
 // (DOWNLOADING / DONE / STUCK), counts, and category chips. Slightly rotated by
 // default so it reads as a stuck-on sticker, not a flat pill.
+import { computed } from 'vue'
 import type { Tone } from './tones'
+import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     tone?: Tone
     /** Rotation in degrees. A small tilt sells the "sticker" feel. */
@@ -12,10 +14,16 @@ withDefaults(
   }>(),
   { tone: 'yellow', rotate: -3 },
 )
+
+// The tilt is an inline transform, so the global reduced-motion CSS rule can't
+// neutralise it (#101 E). Sit the sticker flat when the user asks for reduced
+// motion, so the signature is "re-asserted sparingly" and stays opt-out.
+const { prefersReducedMotion } = usePrefersReducedMotion()
+const tilt = computed(() => (prefersReducedMotion.value ? 'none' : `rotate(${props.rotate}deg)`))
 </script>
 
 <template>
-  <span class="sticker" :class="`tone-${tone}`" :style="{ transform: `rotate(${rotate}deg)` }">
+  <span class="sticker" :class="`tone-${tone}`" :style="{ transform: tilt }">
     <slot />
   </span>
 </template>

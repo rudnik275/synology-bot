@@ -1,0 +1,30 @@
+# Keep build-context state out of the image. Without this, `COPY . .` bakes
+# whatever local runtime state happens to be on disk into the image — including
+# a stale/empty data.json or bot.db that would mask the real host-mounted volume
+# at runtime (see #94).
+
+# Dependencies — reinstalled in the build via bun install
+node_modules/
+frontend/node_modules/
+
+# Runtime state — lives on the host-mounted volume, never in the image
+db/
+data/
+*.log
+
+# Secrets — never bake env files into the image
+.env
+.env.*
+.template.env
+
+# Prebuilt frontend — rebuilt in the Docker `frontend` stage
+frontend/dist/
+
+# Local tooling / VCS / tests — not needed at runtime
+.git/
+.github/
+.idea/
+.claude/
+.playwright-mcp/
+tests/
+docs/

@@ -49,3 +49,30 @@ export function miniAppTabUrl(miniappUrl: string, tab: Tab): string | undefined 
   const sep = miniappUrl.includes('?') ? '&' : '?'
   return `${miniappUrl}${sep}tgWebAppStartParam=${tab}&startapp=${tab}`
 }
+
+/**
+ * Prefix that marks a `start_param` as a `.torrent` stash handoff (#99) rather
+ * than a tab name. The Mini App strips this to recover the stash token; an
+ * unknown tab token already falls back to Downloads (where AddFlow lives), so
+ * tab routing needs no change.
+ */
+export const STASH_PARAM_PREFIX = 'tor-'
+
+/**
+ * Deep-link URL that opens the Mini App on a stashed `.torrent` (#99). The stash
+ * token is carried as `start_param = tor-<token>`. Returns `undefined` when
+ * `miniappUrl` is empty (Mini App not configured).
+ */
+export function miniAppTorrentUrl(miniappUrl: string, token: string): string | undefined {
+  if (!miniappUrl) return undefined
+  const sep = miniappUrl.includes('?') ? '&' : '?'
+  const param = `${STASH_PARAM_PREFIX}${token}`
+  return `${miniappUrl}${sep}tgWebAppStartParam=${param}&startapp=${param}`
+}
+
+/** The "Открыть" web_app button deep-linking a stashed `.torrent`, or `undefined` when unconfigured. */
+export function openTorrentButton(miniappUrl: string, token: string): InlineKeyboard | undefined {
+  const url = miniAppTorrentUrl(miniappUrl, token)
+  if (!url) return undefined
+  return new InlineKeyboard().webApp('Открыть', url)
+}

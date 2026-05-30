@@ -152,6 +152,43 @@ export class PersistentStore {
     this.setKv(key, String(value))
   }
 
+  // --- Torrent stash (#99): short-lived .torrent handoff bot → Mini App ---
+
+  /** Stash a .torrent payload under `token`, expiring `ttlMs` from now. */
+  stashTorrent(token: string, fileName: string, data: Uint8Array, ttlMs: number): void {
+    this.db.run(
+      'INSERT OR REPLACE INTO torrent_stash (token, file_name, data, expires_at) VALUES (?, ?, ?, ?)',
+      [token, fileName, data, Date.now() + ttlMs]
+    )
+  }
+
+  /** Fetch a stashed .torrent by token; prunes and returns undefined if expired. */
+  getTorrentStash(token: string): { fileName: string; data: Uint8Array } | undefined {
+    const row = this.db
+      .query<{ file_name: string; data: Uint8Array; expires_at: number }, [string]>(
+        'SELECT file_name, data, expires_at FROM torrent_stash WHERE token = ?'
+      )
+      .get(token)
+    if (!row) return undefined
+    if (row.expires_at <= Date.now()) {
+      this.deleteTorrentStash(token)
+      return undefined
+    }
+    return {
+      fileName: row.file_name,
+      data: row.data instanceof Uint8Array ? row.data : new Uint8Array(row.data),
+    }
+  }
+
+  deleteTorrentStash(token: string): void {
+    this.db.run('DELETE FROM torrent_stash WHERE token = ?', [token])
+  }
+
+  /** Opportunistic cleanup of expired stashes. */
+  pruneExpiredStashes(): void {
+    this.db.run('DELETE FROM torrent_stash WHERE expires_at <= ?', [Date.now()])
+  }
+
   close(): void {
     this.db.close()
   }

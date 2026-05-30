@@ -25,6 +25,11 @@ export interface SubscriptionStore {
   removeSubscription(id: string): void
 }
 
+/** Narrow slice of PersistentStore the torrent-stash endpoint reads (#99). */
+export interface TorrentStashReader {
+  getTorrentStash(token: string): { fileName: string; data: Uint8Array } | undefined
+}
+
 /** One episode airing today, as returned by the injected fetcher. */
 export interface TodayEpisode {
   season: number
@@ -48,6 +53,8 @@ export interface ServerDeps {
   ownerId: number
   /** Max initData age in seconds; 0 disables the freshness check. */
   initDataMaxAgeSeconds?: number
+  /** Reader for .torrent files stashed by the bot (#99); absent in tests that don't exercise it. */
+  torrentStash?: TorrentStashReader
   /**
    * Filesystem root of the built Vue SPA (Vite `dist`), resolved relative to
    * the process CWD. The API and /healthz are registered first and win; any
@@ -163,6 +170,18 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const result = await synology.createDownloadTask(uri, destination)
     if (!result.ok) return c.json({ error: result.reason }, 502)
     return c.json({ ok: true }, 201)
+  })
+
+  // --- Torrent stash (#99): fetch a .torrent the bot stashed by token ---
+  // The Mini App reconstructs a File from the base64 payload and runs it
+  // through the normal createTaskFromFile path. Idempotent; the stash ages out
+  // by its own TTL. Sits under the /api/* owner guard — the token is a fetch
+  // key, not a capability.
+
+  app.get('/api/torrent-stash/:token', (c) => {
+    const stash = deps.torrentStash?.getTorrentStash(c.req.param('token'))
+    if (!stash) return c.json({ error: 'not found' }, 404)
+    return c.json({ name: stash.fileName, base64: Buffer.from(stash.data).toString('base64') })
   })
 
   // --- Folders (destination picker) ---

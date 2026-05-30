@@ -42,6 +42,18 @@ export const startParam =
   new URLSearchParams(location.search).get('startapp') ??
   ''
 
+// Mirrors STASH_PARAM_PREFIX in src/infra/notify/miniapp-link.ts: the bot
+// deep-links a forwarded .torrent as `tor-<token>` (#99).
+const STASH_PREFIX = 'tor-'
+
+/** Recover the stash token from a `tor-<token>` deep-link, or '' for anything else. */
+export function parseTorrentToken(raw: string): string {
+  return raw.startsWith(STASH_PREFIX) ? raw.slice(STASH_PREFIX.length) : ''
+}
+
+/** Stash token when the Mini App was opened from a forwarded .torrent (#99); '' otherwise. */
+export const torrentToken = parseTorrentToken(startParam)
+
 export function initTelegram(): void {
   if (!tg) return
   tg.ready()

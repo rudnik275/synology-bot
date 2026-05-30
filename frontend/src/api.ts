@@ -38,6 +38,10 @@ export const api = {
     return request<{ ok: true }>('/tasks', { method: 'POST', body: form })
   },
 
+  // #99 — fetch a .torrent the bot stashed, as base64 + filename, to rebuild a File.
+  torrentStash: (token: string) =>
+    request<{ name: string; base64: string }>(`/torrent-stash/${encodeURIComponent(token)}`),
+
   search: (q: string) => request<{ results: SearchResultView[] }>(`/search?q=${encodeURIComponent(q)}`).then((r) => r.results),
 
   folders: (path?: string) =>

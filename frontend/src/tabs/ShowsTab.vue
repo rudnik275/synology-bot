@@ -5,6 +5,8 @@
 import { ref } from 'vue'
 import { useSubscriptions } from '../composables/useSubscriptions'
 import Card from '../components/Card.vue'
+import Button from '../components/Button.vue'
+import ScreenHeader from '../components/ScreenHeader.vue'
 import StickerBadge from '../components/StickerBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 
@@ -44,6 +46,8 @@ async function handleRemove(id: string) {
 
 <template>
   <div class="shows-tab">
+    <ScreenHeader title="Shows" />
+
     <!-- Today-airing block: only shown when there are episodes -->
     <section v-if="todayEpisodes.length > 0" class="today-section">
       <h2 class="section-title">Today</h2>
@@ -71,7 +75,7 @@ async function handleRemove(id: string) {
             min="1"
             @keydown.enter="handleAdd"
           />
-          <button data-testid="add-btn" class="add-btn" :disabled="loading" @click="handleAdd">Add</button>
+          <Button data-testid="add-btn" variant="primary" size="lg" :disabled="loading" @click="handleAdd">Add</Button>
         </div>
         <p v-if="addError" class="add-error">{{ addError }}</p>
       </Card>
@@ -105,14 +109,15 @@ async function handleRemove(id: string) {
               <StickerBadge :tone="sub.lastNotifiedEpisode ? 'green' : 'orange'">
                 {{ sub.lastNotifiedEpisode ? fmtEp(sub.lastNotifiedEpisode.season, sub.lastNotifiedEpisode.episode) : 'NEW' }}
               </StickerBadge>
-              <button
+              <Button
                 data-testid="remove-btn"
-                class="remove-btn"
+                variant="danger"
+                size="md"
                 :aria-label="`Remove ${sub.title}`"
                 @click="handleRemove(sub.id)"
               >
                 Remove
-              </button>
+              </Button>
             </div>
           </Card>
         </li>
@@ -199,35 +204,6 @@ async function handleRemove(id: string) {
   box-shadow: var(--shadow-sm);
 }
 
-.add-btn {
-  padding: var(--space-2) var(--space-4);
-  font-family: var(--font);
-  font-size: var(--fs-md);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  background: var(--yellow);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  min-height: 44px;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-
-.add-btn:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
-}
-
-.add-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .add-error {
   margin: var(--space-2) 0 0 0;
   font-size: var(--fs-sm);
@@ -296,29 +272,5 @@ async function handleRemove(id: string) {
 .sub-title {
   font-weight: var(--fw-medium);
   flex: 1 1 auto;
-}
-
-.remove-btn {
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--paper);
-  background: var(--red);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  min-height: 44px;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-
-.remove-btn:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
 }
 </style>

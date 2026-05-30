@@ -359,3 +359,92 @@ describe('useHealth chip derivations', () => {
     expect(health.chipMetric.value).toBe('—')
   })
 })
+
+// ─── per-item severity helpers (#102) ────────────────────────────────────────
+// These are the thresholds extracted out of chipStatus so NasTab can colour
+// individual volumes/disks. They must agree with the chip thresholds above.
+
+describe('severity helpers', () => {
+  it('volumeSeverity: ok < 80 ≤ warn < 90 ≤ bad, and failed status is bad', async () => {
+    const { volumeSeverity } = await import('../src/composables/useHealth')
+    expect(volumeSeverity({ pct: 50, status: 'normal' })).toBe('ok')
+    expect(volumeSeverity({ pct: 80, status: 'normal' })).toBe('warn')
+    expect(volumeSeverity({ pct: 89, status: 'normal' })).toBe('warn')
+    expect(volumeSeverity({ pct: 90, status: 'normal' })).toBe('bad')
+    expect(volumeSeverity({ pct: 10, status: 'failure' })).toBe('bad')
+  })
+
+  it('diskSeverity: failed status/SMART is bad, elevated temp is warn, else ok', async () => {
+    const { diskSeverity } = await import('../src/composables/useHealth')
+    expect(diskSeverity({ tempStatus: 'normal', status: 'good', smart: 'Passed' })).toBe('ok')
+    expect(diskSeverity({ tempStatus: 'elevated', status: 'good', smart: 'Passed' })).toBe('warn')
+    expect(diskSeverity({ tempStatus: 'normal', status: 'failure', smart: 'Passed' })).toBe('bad')
+    expect(diskSeverity({ tempStatus: 'normal', status: 'good', smart: 'Failed' })).toBe('bad')
+  })
+
+  it('pctSeverity: plain percentage thresholds (RAM)', async () => {
+    const { pctSeverity } = await import('../src/composables/useHealth')
+    expect(pctSeverity(25)).toBe('ok')
+    expect(pctSeverity(85)).toBe('warn')
+    expect(pctSeverity(95)).toBe('bad')
+  })
+})
+
+// ─── NasTab redesign — hero + severity rendering (#102) ───────────────────────
+
+describe('NasTab — redesigned presentation', () => {
+  it('promotes the busiest volume to the hero and shows the screen title', async () => {
+    globalThis.fetch = (() => Promise.resolve(jsonResponse(FULL_HEALTH))) as typeof fetch
+    const { useHealth } = await import('../src/composables/useHealth')
+    await useHealth().refetch()
+    const wrapper = mount(NasTab)
+    await flushPromises()
+
+    expect(wrapper.find('.screen-title').text()).toBe('NAS')
+    // busiest of {volume1:50, volume2:80} is volume2 → hero
+    const hero = wrapper.find('.hero')
+    expect(hero.exists()).toBe(true)
+    expect(hero.text()).toContain('volume2')
+    expect(hero.text()).toContain('80%')
+    // warn severity (80%) paints the hero amber, not yellow
+    expect(hero.classes()).toContain('fill-orange')
+  })
+
+  it('renders Top RAM as a donut (with a free segment) and keeps Top CPU as bars', async () => {
+    globalThis.fetch = (() => Promise.resolve(jsonResponse(FULL_HEALTH))) as typeof fetch
+    const { useHealth } = await import('../src/composables/useHealth')
+    await useHealth().refetch()
+    const wrapper = mount(NasTab)
+    await flushPromises()
+
+    // RAM donut: legend lists the process + a "free" remainder
+    const donut = wrapper.find('.donut-wrap')
+    expect(donut.exists()).toBe(true)
+    expect(donut.text()).toContain('synofsd')
+    expect(donut.text()).toContain('free')
+    // CPU stays ranked bars (process %CPU is not part-to-whole)
+    const procRows = wrapper.findAll('.proc')
+    expect(procRows.length).toBeGreaterThan(0)
+    expect(wrapper.text()).toContain('ffmpeg')
+  })
+
+  it('keys disk rows by model+index so same-model bays do not collide', async () => {
+    const dupModel: HealthView = {
+      ...FULL_HEALTH,
+      disks: [
+        { model: 'WD Red 4TB', tempC: 38, tempStatus: 'normal', status: 'good', smart: 'Passed' },
+        { model: 'WD Red 4TB', tempC: 53, tempStatus: 'elevated', status: 'good', smart: 'Failed' },
+      ],
+    }
+    globalThis.fetch = (() => Promise.resolve(jsonResponse(dupModel))) as typeof fetch
+    const { useHealth } = await import('../src/composables/useHealth')
+    await useHealth().refetch()
+    const wrapper = mount(NasTab)
+    await flushPromises()
+
+    const rows = wrapper.findAll('.disk')
+    expect(rows).toHaveLength(2)
+    // the failed-SMART bay reads as bad (red edge)
+    expect(rows[1]!.classes()).toContain('edge-red')
+  })
+})

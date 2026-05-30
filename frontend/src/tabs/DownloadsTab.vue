@@ -3,6 +3,8 @@
 // Composed from the shared kit (Card, StickerBadge, ProgressBar, EmptyState)
 // and driven by useTasks (polls every 3 s, no Pinia). Slice #61.
 import Card from '../components/Card.vue'
+import Button from '../components/Button.vue'
+import ScreenHeader from '../components/ScreenHeader.vue'
 import StickerBadge from '../components/StickerBadge.vue'
 import ProgressBar from '../components/ProgressBar.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -87,6 +89,7 @@ async function onDelete(id: string): Promise<void> {
 
 <template>
   <div class="downloads-tab">
+    <ScreenHeader title="Downloads" />
     <!-- Loading skeleton -->
     <div v-if="loading && tasks.length === 0" class="loading-state" aria-label="Loading downloads">
       <div v-for="i in 2" :key="i" class="skeleton-card" />
@@ -155,22 +158,25 @@ async function onDelete(id: string): Promise<void> {
 
         <!-- Action buttons -->
         <div class="task-actions">
-          <button
+          <Button
             v-if="isActive(task.status)"
-            class="btn btn-pause"
+            variant="warning"
+            size="sm"
             @click="onPause(task.id)"
-          >Pause</button>
+          >Pause</Button>
 
-          <button
+          <Button
             v-if="isPaused(task.status)"
-            class="btn btn-resume"
+            variant="success"
+            size="sm"
             @click="onResume(task.id)"
-          >Resume</button>
+          >Resume</Button>
 
-          <button
-            class="btn btn-delete"
+          <Button
+            variant="danger"
+            size="sm"
             @click="onDelete(task.id)"
-          >Delete</button>
+          >Delete</Button>
         </div>
       </Card>
     </TransitionGroup>
@@ -241,51 +247,11 @@ async function onDelete(id: string): Promise<void> {
   white-space: nowrap;
 }
 
-/* Action buttons: Neo-Brutalism mechanical press style */
+/* Inline task actions — the buttons themselves are the shared <Button>. */
 .task-actions {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  border: var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  /* Hard offset shadow + mechanical press */
-  box-shadow: var(--shadow-sm);
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-  user-select: none;
-}
-
-.btn:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
-}
-
-.btn-pause {
-  background: var(--yellow);
-}
-
-.btn-resume {
-  background: var(--green);
-}
-
-.btn-delete {
-  background: var(--red);
 }
 
 /*

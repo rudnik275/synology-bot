@@ -15,7 +15,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="card" :class="[`tone-${tone}`, { interactive }]">
+  <div class="card" :class="[`tone-${tone}`, { interactive, 'nb-pressable': interactive }]">
     <slot />
   </div>
 </template>
@@ -54,14 +54,8 @@ withDefaults(
   background: var(--violet);
 }
 
+/* Press handled by the shared .nb-pressable utility (added when interactive). */
 .card.interactive {
   cursor: pointer;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.card.interactive:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
 }
 </style>

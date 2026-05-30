@@ -4,6 +4,7 @@
 // Emits the chosen path via v-model.
 // #96: remembers last-used folder + shows recent/favorite chips row.
 import { ref, computed, watch, onMounted } from 'vue'
+import Button from './Button.vue'
 import { api } from '../api'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import type { FolderView } from '../types'
@@ -155,7 +156,7 @@ watch(
         v-for="chipPath in chips"
         :key="chipPath"
         type="button"
-        class="folder-chip"
+        class="folder-chip nb-pressable"
         :class="{ 'folder-chip--favorite': favorites.includes(chipPath) }"
         data-testid="folder-chip"
         :title="chipPath"
@@ -171,7 +172,7 @@ watch(
       <button
         v-if="stack.length > 0"
         type="button"
-        class="up-btn"
+        class="up-btn nb-pressable"
         data-testid="up-btn"
         aria-label="Go up"
         @click="goUp"
@@ -200,7 +201,7 @@ watch(
       <li v-for="folder in folders" :key="folder.path">
         <button
           type="button"
-          class="folder-item"
+          class="folder-item nb-pressable"
           data-testid="folder-item"
           @click="drillInto(folder)"
         >
@@ -216,21 +217,23 @@ watch(
     </ul>
 
     <!-- Pick action — only available when not at root -->
-    <button
+    <Button
       v-if="stack.length > 0"
-      type="button"
+      variant="primary"
+      size="lg"
       class="pick-btn"
       data-testid="pick-btn"
       @click="pickCurrent"
     >
       Pick this folder
-    </button>
+    </Button>
 
     <!-- Always show a pick-btn at root too so tests can always find it;
          pick from root is allowed if user wants the root shared folder. -->
-    <button
+    <Button
       v-if="stack.length === 0 && folders.length > 0"
-      type="button"
+      variant="primary"
+      size="lg"
       class="pick-btn pick-btn--folder"
       data-testid="pick-btn"
       @click="() => {
@@ -238,7 +241,7 @@ watch(
       }"
     >
       Pick first folder
-    </button>
+    </Button>
   </div>
 </template>
 
@@ -274,13 +277,11 @@ watch(
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* Press via .nb-pressable; the small chip sinks only 2px. */
+  --press: 2px;
   transition:
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.folder-chip:active {
-  transform: translate(2px, 2px);
-  box-shadow: var(--shadow-none);
 }
 .folder-chip--favorite {
   background: var(--yellow);
@@ -312,13 +313,10 @@ watch(
   cursor: pointer;
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+  /* Press via .nb-pressable. */
   transition:
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.up-btn:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
 }
 .up-btn svg {
   width: 18px;
@@ -364,13 +362,10 @@ watch(
   cursor: pointer;
   text-align: left;
   font-size: var(--fs-md);
+  /* Press via .nb-pressable. */
   transition:
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.folder-item:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
 }
 .folder-icon {
   width: 20px;
@@ -388,26 +383,8 @@ watch(
   text-align: center;
 }
 
+/* Layout only — the button recipe lives in the shared <Button variant="primary">. */
 .pick-btn {
-  display: block;
   width: 100%;
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  background: var(--yellow);
-  border: var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-  font-size: var(--fs-md);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.pick-btn:active {
-  transform: translate(5px, 5px);
-  box-shadow: var(--shadow-none);
 }
 </style>

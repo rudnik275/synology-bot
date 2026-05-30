@@ -9,7 +9,7 @@ defineEmits<{ click: [] }>()
 </script>
 
 <template>
-  <button type="button" class="fab" :aria-label="label ?? 'Add'" @click="$emit('click')">
+  <button type="button" class="fab nb-pressable" :aria-label="label ?? 'Add'" @click="$emit('click')">
     <slot>
       <!-- default plus glyph -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
@@ -37,16 +37,11 @@ defineEmits<{ click: [] }>()
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   cursor: pointer;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
+  /* Press handled by .nb-pressable; FAB sinks 4px (its own deep shadow). */
+  --press: 4px;
 }
 .fab svg {
   width: 28px;
   height: 28px;
-}
-.fab:active {
-  transform: translate(4px, 4px);
-  box-shadow: var(--shadow-none);
 }
 </style>

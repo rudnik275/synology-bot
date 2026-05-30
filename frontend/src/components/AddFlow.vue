@@ -8,6 +8,7 @@
 import { ref, computed } from 'vue'
 import Sheet from './Sheet.vue'
 import FAB from './FAB.vue'
+import Button from './Button.vue'
 import FolderPicker from './FolderPicker.vue'
 import { api } from '../api'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
@@ -200,7 +201,7 @@ async function create(): Promise<void> {
           <div class="source-cards" role="group" aria-label="Add source">
             <button
               type="button"
-              class="source-card"
+              class="source-card nb-pressable"
               :class="{ 'source-card--selected': mode === 'search' }"
               :aria-pressed="mode === 'search'"
               data-testid="mode-search"
@@ -212,7 +213,7 @@ async function create(): Promise<void> {
             </button>
             <button
               type="button"
-              class="source-card"
+              class="source-card nb-pressable"
               :class="{ 'source-card--selected': mode === 'magnet' }"
               :aria-pressed="mode === 'magnet'"
               data-testid="mode-magnet"
@@ -224,7 +225,7 @@ async function create(): Promise<void> {
             </button>
             <button
               type="button"
-              class="source-card"
+              class="source-card nb-pressable"
               :class="{ 'source-card--selected': mode === 'torrent' }"
               :aria-pressed="mode === 'torrent'"
               data-testid="mode-torrent"
@@ -257,7 +258,7 @@ async function create(): Promise<void> {
           <!-- .torrent file -->
           <div v-else-if="mode === 'torrent'" class="field">
             <label class="field-label" for="torrent-file">.torrent file</label>
-            <label class="file-upload-label" for="torrent-file">
+            <label class="file-upload-label nb-pressable" for="torrent-file">
               <span class="file-upload-icon">📄</span>
               <span class="file-upload-text">
                 {{ selectedFile ? selectedFile.name : 'Tap to select a .torrent file' }}
@@ -289,15 +290,16 @@ async function create(): Promise<void> {
                 @focus="onSearchFocus"
                 @blur="onSearchBlur"
               />
-              <button
-                type="button"
+              <Button
+                variant="ink"
+                size="md"
                 class="search-btn"
                 data-testid="search-btn"
                 :disabled="searchLoading"
                 @click="runSearch"
               >
                 {{ searchLoading ? '…' : 'Search' }}
-              </button>
+              </Button>
               <!-- History dropdown -->
               <div
                 v-if="searchHistoryVisible && (filteredHistory.length > 0 || searchHistory.length > 0)"
@@ -353,7 +355,7 @@ async function create(): Promise<void> {
               >
                 <button
                   type="button"
-                  class="result-card"
+                  class="result-card nb-pressable"
                   :class="{ 'result-card--selected': selectedResult?.id === result.id }"
                   :data-testid="`result-${result.id}`"
                   @click="selectedResult = result"
@@ -419,15 +421,16 @@ async function create(): Promise<void> {
     <!-- Sticky footer with Back / Next / Add -->
     <div class="wizard-footer">
       <!-- Back -->
-      <button
+      <Button
         v-if="step > 1"
-        type="button"
-        class="footer-btn footer-btn--back"
+        variant="neutral"
+        size="lg"
+        class="footer-btn"
         data-testid="wizard-back"
         @click="goBack"
       >
         Back
-      </button>
+      </Button>
       <span v-else class="footer-spacer" aria-hidden="true"></span>
 
       <!-- Step indicator -->
@@ -441,26 +444,28 @@ async function create(): Promise<void> {
       </div>
 
       <!-- Next (steps 1-3) / Add (step 4) -->
-      <button
+      <Button
         v-if="step < 4"
-        type="button"
-        class="footer-btn footer-btn--next"
+        variant="primary"
+        size="lg"
+        class="footer-btn"
         data-testid="wizard-next"
         :disabled="!canAdvance"
         @click="goNext"
       >
         Next
-      </button>
-      <button
+      </Button>
+      <Button
         v-else
-        type="button"
-        class="footer-btn footer-btn--add"
+        variant="primary"
+        size="lg"
+        class="footer-btn"
         data-testid="create-btn"
         :disabled="submitting"
         @click="create"
       >
         {{ submitting ? 'Adding…' : 'Add' }}
-      </button>
+      </Button>
     </div>
   </Sheet>
 </template>
@@ -497,48 +502,10 @@ async function create(): Promise<void> {
   flex-shrink: 0;
 }
 
+/* Layout only — Back/Next/Add are the shared <Button>; this just balances the
+   footer width against the 80px spacer on the opposite side. */
 .footer-btn {
-  min-height: 48px;
   min-width: 80px;
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: var(--fs-md);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.footer-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.footer-btn--back {
-  background: var(--cream);
-  border: var(--border);
-  box-shadow: var(--shadow-sm);
-  color: var(--ink);
-}
-.footer-btn--back:active:not(:disabled) {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
-}
-
-.footer-btn--next,
-.footer-btn--add {
-  background: var(--yellow);
-  border: var(--border-strong);
-  box-shadow: var(--shadow-md);
-  color: var(--ink);
-}
-.footer-btn--next:active:not(:disabled),
-.footer-btn--add:active:not(:disabled) {
-  transform: translate(5px, 5px);
-  box-shadow: var(--shadow-none);
 }
 
 /* Step dots */
@@ -599,10 +566,6 @@ async function create(): Promise<void> {
     box-shadow var(--dur-press) var(--ease-mechanical),
     background var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) var(--ease-out);
-}
-.source-card:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
 }
 .source-card--selected {
   background: var(--yellow);
@@ -689,10 +652,6 @@ async function create(): Promise<void> {
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);
 }
-.file-upload-label:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
-}
 .file-upload-native {
   position: absolute;
   width: 1px;
@@ -729,32 +688,9 @@ async function create(): Promise<void> {
   resize: none;
 }
 
+/* Layout only — the recipe lives in the shared <Button variant="ink">. */
 .search-btn {
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  background: var(--ink);
-  color: var(--cream);
-  border: var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   white-space: nowrap;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.search-btn:active:not(:disabled) {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
-}
-.search-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .search-loading,
@@ -864,10 +800,6 @@ async function create(): Promise<void> {
   transition:
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.result-card:active {
-  transform: translate(3px, 3px);
-  box-shadow: var(--shadow-none);
 }
 .result-card--selected {
   border-color: var(--ink);

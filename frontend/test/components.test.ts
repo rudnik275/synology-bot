@@ -7,6 +7,8 @@ import StickerBadge from '../src/components/StickerBadge.vue'
 import EmptyState from '../src/components/EmptyState.vue'
 import Sheet from '../src/components/Sheet.vue'
 import FAB from '../src/components/FAB.vue'
+import Button from '../src/components/Button.vue'
+import Donut from '../src/components/Donut.vue'
 
 describe('ProgressBar', () => {
   it('clamps the value into 0–100 and reports it via aria', () => {
@@ -56,5 +58,70 @@ describe('Sheet', () => {
     expect(open.emitted('update:open')?.[0]).toEqual([false])
     expect(open.emitted('close')).toHaveLength(1)
     open.unmount()
+  })
+})
+
+describe('Button', () => {
+  it('renders a button with slot text and defaults to neutral/md + type=button', () => {
+    const wrapper = mount(Button, { slots: { default: 'Go' } })
+    const btn = wrapper.get('button')
+    expect(btn.text()).toBe('Go')
+    expect(btn.attributes('type')).toBe('button')
+    expect(btn.classes()).toContain('v-neutral')
+    expect(btn.classes()).toContain('s-md')
+    // press is centralised on the shared utility, not re-declared per button
+    expect(btn.classes()).toContain('nb-pressable')
+  })
+
+  it('maps variant + size to their classes', () => {
+    const btn = mount(Button, { props: { variant: 'primary', size: 'lg' } }).get('button')
+    expect(btn.classes()).toContain('v-primary')
+    expect(btn.classes()).toContain('s-lg')
+  })
+
+  it('passes data-testid / disabled through to the native button', () => {
+    const btn = mount(Button, {
+      attrs: { 'data-testid': 'go-btn', disabled: true },
+      slots: { default: 'Go' },
+    }).get('button')
+    expect(btn.attributes('data-testid')).toBe('go-btn')
+    expect(btn.attributes('disabled')).toBeDefined()
+  })
+
+  it('emits click when tapped', async () => {
+    const wrapper = mount(Button, { slots: { default: 'Go' } })
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('click')).toHaveLength(1)
+  })
+})
+
+describe('Donut', () => {
+  const segments = [
+    { label: 'plex', value: 50, display: '50 u' },
+    { label: 'docker', value: 30, display: '30 u' },
+    { label: 'free', value: 20, display: '20 u', muted: true },
+  ]
+
+  it('renders the centre value/caption and a legend row per segment', () => {
+    const wrapper = mount(Donut, {
+      props: { segments, centerValue: '80', centerUnit: 'u', centerCaption: 'of 100 u' },
+    })
+    expect(wrapper.text()).toContain('80')
+    expect(wrapper.text()).toContain('of 100 u')
+    const rows = wrapper.findAll('.leg')
+    expect(rows).toHaveLength(3)
+    expect(rows[0]!.text()).toContain('plex')
+    expect(rows[0]!.text()).toContain('50 u')
+    expect(rows[2]!.classes()).toContain('muted') // "free" is de-emphasised
+  })
+
+  it('builds a conic-gradient whose stops are the cumulative proportions', () => {
+    const wrapper = mount(Donut, { props: { segments, centerValue: '80' } })
+    const bg = (wrapper.get('.donut').attributes('style') ?? '')
+    // 50/30/20 of 100 → stops at 50% and 80%
+    expect(bg).toContain('conic-gradient')
+    expect(bg).toContain('0% 50%')
+    expect(bg).toContain('50% 80%')
+    expect(bg).toContain('80% 100%')
   })
 })

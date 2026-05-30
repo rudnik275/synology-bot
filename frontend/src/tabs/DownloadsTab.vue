@@ -70,6 +70,13 @@ function isActive(status: string): boolean {
   return status === 'downloading' || status === 'waiting' || status === 'finishing'
 }
 
+/** Elevation tier (#101 D): active transfers and errors stay raised — they want
+ *  attention; settled tasks (done/seeding/paused) recede to flat so elevation
+ *  tracks importance instead of every card sitting at the same height. */
+function cardVariantForStatus(status: string): 'flat' | 'raised' {
+  return isActive(status) || status === 'error' ? 'raised' : 'flat'
+}
+
 function isPaused(status: string): boolean {
   return status === 'paused'
 }
@@ -121,6 +128,7 @@ async function onDelete(id: string): Promise<void> {
         v-for="(task, index) in tasks"
         :key="task.id"
         :tone="cardToneForStatus(task.status)"
+        :variant="cardVariantForStatus(task.status)"
         class="task-card"
         :style="{ '--stagger-index': index }"
       >

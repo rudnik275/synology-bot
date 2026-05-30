@@ -176,40 +176,45 @@ const ramDonut = computed(() => {
       <p class="degraded-reason">{{ sectionError('storage') ?? sectionError('volumes') ?? 'Unavailable' }}</p>
     </Card>
 
-    <!-- ── Compute bento: CPU + RAM ── -->
+    <!-- ── Compute bento: CPU + RAM (one flat panel, hairline split) ── -->
     <p class="section-head">Compute</p>
-    <div class="bento">
-      <Card class="metric-card">
-        <p class="section-label">CPU</p>
-        <template v-if="cpu">
-          <div class="metric">{{ cpu.userLoad }}<span class="metric-unit">%</span></div>
-          <p class="metric-sub">usr {{ cpu.userLoad }} · sys {{ cpu.systemLoad }}</p>
-        </template>
-        <p v-else class="degraded-reason">{{ sectionError('cpu') ?? 'Unavailable' }}</p>
-      </Card>
-      <Card class="metric-card">
-        <p class="section-label">RAM</p>
-        <template v-if="memory">
-          <div class="metric">{{ memory.pct }}<span class="metric-unit">%</span></div>
-          <p class="metric-sub">{{ formatBytes(memory.usedBytes) }} / {{ formatBytes(memory.totalBytes) }}</p>
-          <div class="metric-bar"><ProgressBar :value="memory.pct" :tone="TONE[pctSeverity(memory.pct)]" hide-label /></div>
-        </template>
-        <p v-else class="degraded-reason">{{ sectionError('memory') ?? 'Unavailable' }}</p>
-      </Card>
-    </div>
+    <Card variant="flat" class="group">
+      <div class="bento">
+        <div class="metric-cell">
+          <p class="section-label">CPU</p>
+          <template v-if="cpu">
+            <div class="metric">{{ cpu.userLoad }}<span class="metric-unit">%</span></div>
+            <p class="metric-sub">usr {{ cpu.userLoad }} · sys {{ cpu.systemLoad }}</p>
+          </template>
+          <p v-else class="degraded-reason">{{ sectionError('cpu') ?? 'Unavailable' }}</p>
+        </div>
+        <div class="metric-cell">
+          <p class="section-label">RAM</p>
+          <template v-if="memory">
+            <div class="metric">{{ memory.pct }}<span class="metric-unit">%</span></div>
+            <p class="metric-sub">{{ formatBytes(memory.usedBytes) }} / {{ formatBytes(memory.totalBytes) }}</p>
+            <div class="metric-bar"><ProgressBar :value="memory.pct" :tone="TONE[pctSeverity(memory.pct)]" hide-label /></div>
+          </template>
+          <p v-else class="degraded-reason">{{ sectionError('memory') ?? 'Unavailable' }}</p>
+        </div>
+      </div>
+    </Card>
 
     <!-- ── Disks ── -->
     <p class="section-head">Disks <span v-if="disks" class="count">· {{ disks.length }}</span></p>
     <template v-if="disks">
-      <!-- key on model+index: same-model multi-bay NAS collide on model alone -->
-      <div v-for="(disk, i) in disks" :key="`${disk.model}-${i}`" class="disk" :class="`edge-${TONE[diskSeverity(disk)]}`">
-        <span class="disk-dot" :class="`dot-${TONE[diskSeverity(disk)]}`" aria-hidden="true"></span>
-        <div class="disk-main">
-          <p class="disk-model">{{ disk.model }}</p>
-          <p class="disk-meta">bay {{ i + 1 }} · {{ disk.tempC }}°C · {{ disk.tempStatus }}</p>
+      <!-- one flat panel; rows divided by hairlines (not 3 floating boxes) -->
+      <Card variant="flat" class="group">
+        <!-- key on model+index: same-model multi-bay NAS collide on model alone -->
+        <div v-for="(disk, i) in disks" :key="`${disk.model}-${i}`" class="disk" :class="`edge-${TONE[diskSeverity(disk)]}`">
+          <span class="disk-dot" :class="`dot-${TONE[diskSeverity(disk)]}`" aria-hidden="true"></span>
+          <div class="disk-main">
+            <p class="disk-model">{{ disk.model }}</p>
+            <p class="disk-meta">bay {{ i + 1 }} · {{ disk.tempC }}°C · {{ disk.tempStatus }}</p>
+          </div>
+          <StickerBadge :tone="TONE[diskSeverity(disk)]" :rotate="-2">{{ disk.smart }}</StickerBadge>
         </div>
-        <StickerBadge :tone="TONE[diskSeverity(disk)]" :rotate="-2">{{ disk.smart }}</StickerBadge>
-      </div>
+      </Card>
     </template>
     <Card v-else tone="orange">
       <p class="section-label">Disks</p>
@@ -219,12 +224,14 @@ const ramDonut = computed(() => {
     <!-- ── Top processes ── -->
     <template v-if="processes">
       <p class="section-head">Top CPU</p>
-      <div v-for="(proc, i) in processes.topCpu" :key="`cpu-${proc.name}-${i}`" class="proc">
-        <span class="proc-rank">{{ i + 1 }}</span>
-        <span class="proc-name">{{ procName(proc.name) }}</span>
-        <div class="proc-bar"><ProgressBar :value="(proc.pct / maxCpu) * 100" tone="default" hide-label /></div>
-        <span class="proc-val">{{ formatPct(proc.pct) }}</span>
-      </div>
+      <Card variant="flat" class="group">
+        <div v-for="(proc, i) in processes.topCpu" :key="`cpu-${proc.name}-${i}`" class="proc">
+          <span class="proc-rank">{{ i + 1 }}</span>
+          <span class="proc-name">{{ procName(proc.name) }}</span>
+          <div class="proc-bar"><ProgressBar :value="(proc.pct / maxCpu) * 100" tone="default" hide-label /></div>
+          <span class="proc-val">{{ formatPct(proc.pct) }}</span>
+        </div>
+      </Card>
 
       <p class="section-head">Top RAM</p>
       <Card v-if="ramDonut">
@@ -399,14 +406,24 @@ const ramDonut = computed(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Compute bento ── */
+/* ── Grouped flat panel (#101 elevation tiers) ──
+ * One flat Card whose children read as quiet hairline-divided rows, so a
+ * section is a single calm surface instead of a stack of identical boxes. */
+.group {
+  padding: 0;
+  overflow: hidden; /* clip hairline rows to the card radius */
+}
+
+/* ── Compute bento (cells inside the flat panel) ── */
 .bento {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
 }
-.metric-card {
-  margin: 0;
+.metric-cell {
+  padding: var(--space-3);
+}
+.metric-cell + .metric-cell {
+  border-left: var(--hairline);
 }
 .metric {
   font-size: var(--fs-xl);
@@ -428,22 +445,22 @@ const ramDonut = computed(() => {
   margin-top: var(--space-2);
 }
 
-/* ── Disk rows ── */
+/* ── Disk rows (hairline-divided inside the flat panel) ── */
 .disk {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3);
-  background: var(--paper);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  margin-bottom: var(--space-2);
 }
-/* bad/warn disks get a coloured edge so the row reads at a glance */
+.disk + .disk {
+  border-top: var(--hairline);
+}
+/* bad/warn disks get a coloured inset edge so the row reads at a glance */
+.disk.edge-orange {
+  box-shadow: inset var(--space-1) 0 0 var(--orange);
+}
 .disk.edge-red {
-  border-color: var(--red);
-  box-shadow: var(--shadow-sm), inset var(--space-1) 0 0 var(--red);
+  box-shadow: inset var(--space-1) 0 0 var(--red);
 }
 .disk-dot {
   width: 14px;
@@ -472,13 +489,16 @@ const ramDonut = computed(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Process rank rows ── */
+/* ── Process rank rows (hairline-divided inside the flat panel) ── */
 .proc {
   display: grid;
   grid-template-columns: 16px 76px 1fr 68px;
   gap: var(--space-2);
   align-items: center;
-  padding: 5px 0;
+  padding: var(--space-2) var(--space-3);
+}
+.proc + .proc {
+  border-top: var(--hairline);
 }
 .proc-rank {
   font-size: var(--fs-sm);

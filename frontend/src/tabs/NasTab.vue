@@ -6,7 +6,7 @@
 // a CPU+RAM bento, then disks and top-processes. Severity (ok/warn/bad) is
 // mapped to the green/amber/red triad — yellow stays reserved for actions, so
 // a "warn" never reads as a button (#101 accent split).
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Card from '../components/Card.vue'
 import ProgressBar from '../components/ProgressBar.vue'
 import StickerBadge from '../components/StickerBadge.vue'
@@ -21,9 +21,17 @@ import {
   type Severity,
 } from '../composables/useHealth'
 import type { Tone } from '../components/tones'
-import { formatBytes } from '../format'
+import { formatBytes, formatPct } from '../format'
 
 const { data, loading, error } = useHealth()
+
+// Heartbeat: every successful poll reassigns `data`, so we bump a counter and
+// key the live-dot off it — remounting replays its one-shot pulse animation.
+// This is the only visible cue that the 15 s polling loop is actually running.
+const pulse = ref(0)
+watch(data, () => {
+  pulse.value++
+})
 
 /** Severity → accent tone. The traffic-light triad; warn is amber, not yellow. */
 const TONE: Record<Severity, Tone> = { ok: 'green', warn: 'orange', bad: 'red' }
@@ -39,6 +47,12 @@ function sectionError(section: string): string | null {
 function basename(path: string): string {
   const parts = path.split('/').filter(Boolean)
   return parts[parts.length - 1] ?? path
+}
+
+/** DSM sometimes reports a process group with no name (kernel/aggregate slice);
+ *  fall back to a neutral placeholder so the row never renders blank. */
+function procName(name: string): string {
+  return name.trim() || 'unknown'
 }
 
 const cpu = computed(() => data.value?.cpu ?? null)
@@ -70,7 +84,7 @@ const ramDonut = computed(() => {
 
   const named = procs.slice(0, TOP_RAM_SEGMENTS)
   const segments: DonutSegment[] = named.map((p) => ({
-    label: p.name,
+    label: procName(p.name),
     value: p.bytes,
     display: formatBytes(p.bytes),
   }))
@@ -84,8 +98,9 @@ const ramDonut = computed(() => {
 
   const other = Math.max(0, mem.usedBytes - named.reduce((s, p) => s + p.bytes, 0))
   const free = Math.max(0, mem.totalBytes - mem.usedBytes)
-  if (other > 0) segments.push({ label: 'other', value: other, display: formatBytes(other) })
-  segments.push({ label: 'free', value: free, display: formatBytes(free), muted: true })
+  if (other > 0)
+    segments.push({ label: 'other', value: other, display: formatBytes(other), neutral: true })
+  segments.push({ label: 'free', value: free, display: formatBytes(free), muted: true, neutral: true })
 
   const [usedNum, usedUnit] = formatBytes(mem.usedBytes).split(' ')
   return {
@@ -113,10 +128,22 @@ const ramDonut = computed(() => {
 
   <!-- Data present (possibly partial) -->
   <div v-else-if="data" class="nas-tab">
-    <ScreenHeader title="NAS" subtitle="Live health" />
+    <div class="nas-head">
+      <ScreenHeader title="NAS" subtitle="Live health" />
+      <!-- key off the poll counter so the dot remounts → replays its pulse -->
+      <span :key="pulse" class="live" aria-hidden="true">
+        <span class="live-dot"></span>live
+      </span>
+    </div>
 
     <!-- ── Storage hero (busiest volume) ── -->
-    <section v-if="heroVolume" class="hero" :class="`fill-${TONE[volumeSeverity(heroVolume)]}`">
+    <!-- "ok" reads as a plain paper card — only the badge carries the colour.
+         warn/bad keep a loud coloured fill so a problem volume grabs attention. -->
+    <section
+      v-if="heroVolume"
+      class="hero"
+      :class="volumeSeverity(heroVolume) !== 'ok' ? `fill-${TONE[volumeSeverity(heroVolume)]}` : ''"
+    >
       <div class="hero-top">
         <div>
           <p class="hero-kind">Storage · busiest</p>
@@ -194,9 +221,9 @@ const ramDonut = computed(() => {
       <p class="section-head">Top CPU</p>
       <div v-for="(proc, i) in processes.topCpu" :key="`cpu-${proc.name}-${i}`" class="proc">
         <span class="proc-rank">{{ i + 1 }}</span>
-        <span class="proc-name">{{ proc.name }}</span>
+        <span class="proc-name">{{ procName(proc.name) }}</span>
         <div class="proc-bar"><ProgressBar :value="(proc.pct / maxCpu) * 100" tone="default" hide-label /></div>
-        <span class="proc-val">{{ proc.pct }}%</span>
+        <span class="proc-val">{{ formatPct(proc.pct) }}</span>
       </div>
 
       <p class="section-head">Top RAM</p>
@@ -232,6 +259,48 @@ const ramDonut = computed(() => {
   opacity: 0.6;
 }
 
+/* ── Header + live heartbeat ── */
+.nas-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.45;
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+  /* one-shot pulse on (re)mount — replayed each poll via the :key bump */
+  animation: live-pulse var(--dur-enter) var(--ease-out);
+}
+@keyframes live-pulse {
+  0% {
+    transform: scale(0.4);
+    box-shadow: 0 0 0 0 rgba(9, 9, 11, 0.35);
+  }
+  60% {
+    transform: scale(1.25);
+    box-shadow: 0 0 0 6px rgba(9, 9, 11, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(9, 9, 11, 0);
+  }
+}
+
 /* ── Section heads + labels ── */
 .section-head {
   margin: var(--space-3) 0 var(--space-2);
@@ -255,13 +324,13 @@ const ramDonut = computed(() => {
 
 /* ── Storage hero ── */
 .hero {
+  background: var(--paper);
   border: var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: var(--space-4);
   margin-bottom: var(--space-3);
 }
-.fill-green { background: var(--green); }
 .fill-orange { background: var(--orange); }
 .fill-red { background: var(--red); }
 .hero-top {

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // Part-to-whole donut + legend (#102). A neo-brutalism ring (thick ink border +
-// hard shadow) whose segments are an ink lightness ramp — NOT the accent
-// palette: monochrome keeps it colourblind-safe (distinguished by lightness,
-// per the chart guideline) and never collides with the severity colours.
+// hard shadow). Named entries get a categorical colour palette so the chart
+// reads at a glance; aggregate buckets ("other"/"free") stay neutral grey so the
+// real entries are the only coloured slices. The hues are chart-only and chosen
+// to NOT collide with the severity triad (green/amber/red) or the action yellow.
 //
-// The legend beside it carries the exact values: a donut alone fails WCAG for
-// colour-blind users, so the legend is the mandatory data fallback, not decor.
+// Colour is never the only signal: the legend beside the ring carries every
+// label + exact value, so the chart stays usable for colour-blind users (WCAG)
+// — the legend is the mandatory data fallback, not decor.
 // Largest segment goes first → it starts at 12 o'clock.
 import { computed } from 'vue'
 import type { DonutSegment } from './donut'
@@ -17,14 +19,11 @@ const props = defineProps<{
   centerCaption?: string
 }>()
 
-// Dark → light. Index 0 is the biggest segment (darkest ink).
-const RAMP = [
-  'var(--ink)',
-  'rgba(9, 9, 11, 0.55)',
-  'rgba(9, 9, 11, 0.30)',
-  'rgba(9, 9, 11, 0.16)',
-  'rgba(9, 9, 11, 0.08)',
-]
+// Categorical hues for named entries (violet + a cyan + a pink). Distinct from
+// the severity colours so a process slice never reads as "warn"/"critical".
+const HUES = ['var(--violet)', '#2bc4d4', '#ff6db3', '#ffb02e']
+// Neutral greys for aggregate buckets: "other" (mid) then "free" (faint).
+const NEUTRAL = ['rgba(9, 9, 11, 0.32)', 'rgba(9, 9, 11, 0.12)']
 
 const total = computed(() =>
   Math.max(1, props.segments.reduce((sum, s) => sum + Math.max(0, s.value), 0)),
@@ -32,11 +31,16 @@ const total = computed(() =>
 
 const rows = computed(() => {
   let acc = 0
-  return props.segments.map((s, i) => {
+  let hue = 0
+  let grey = 0
+  return props.segments.map((s) => {
     const start = (acc / total.value) * 100
     acc += Math.max(0, s.value)
     const end = (acc / total.value) * 100
-    return { ...s, color: RAMP[Math.min(i, RAMP.length - 1)]!, start, end }
+    const color = s.neutral
+      ? NEUTRAL[Math.min(grey++, NEUTRAL.length - 1)]!
+      : HUES[Math.min(hue++, HUES.length - 1)]!
+    return { ...s, color, start, end }
   })
 })
 
@@ -70,8 +74,8 @@ const gradient = computed(
   gap: var(--space-4);
 }
 .donut {
-  width: 118px;
-  height: 118px;
+  width: 128px;
+  height: 128px;
   border-radius: 50%;
   border: var(--border);
   box-shadow: var(--shadow-sm);
@@ -80,8 +84,8 @@ const gradient = computed(
   place-items: center;
 }
 .hole {
-  width: 72px;
-  height: 72px;
+  width: 86px;
+  height: 86px;
   border-radius: 50%;
   background: var(--paper);
   border: var(--border);
@@ -89,14 +93,17 @@ const gradient = computed(
   place-items: center;
   text-align: center;
   line-height: 1;
+  padding: 0 var(--space-1);
 }
 .hole b {
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .hole b small {
-  font-size: var(--fs-xs);
+  font-size: 11px;
+  margin-left: 1px;
   opacity: 0.5;
 }
 .hole .cap {

@@ -10,4 +10,9 @@ export interface DonutSegment {
   display: string
   /** Render the legend row de-emphasised (e.g. "free" / "idle"). */
   muted?: boolean
+  /**
+   * Aggregate bucket (e.g. "other" / "free") — painted in a neutral grey instead
+   * of a categorical hue, so the real, named entries are the only coloured slices.
+   */
+  neutral?: boolean
 }

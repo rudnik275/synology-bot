@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Confirm step — variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --red:#ff5c5c; --orange:#ff9a3c; --yellow:#ffd23f; --green:#2fd86b; --violet:#9b6dff;
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px; --fs-2xl:34px;
+  --fw-bold:700;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px;
+  --radius-sm:6px; --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink);
+  --hairline:3px solid rgba(9,9,11,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.cap.bad{color:#c0392b} .cap.good{color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;max-width:304px;min-height:64px}
+
+.phone{width:304px;height:620px;background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2)}
+.hd h2{font-size:var(--fs-lg);font-weight:700;text-transform:uppercase}
+.x{width:38px;height:38px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;box-shadow:var(--shadow-sm)}
+
+.step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-1) var(--space-4) var(--space-4)}
+.node{display:flex;flex-direction:column;align-items:center;gap:5px;width:62px}
+.ndot{width:34px;height:34px;border:var(--border);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm)}
+.ndot.now{background:var(--yellow);border:var(--border-strong)}
+.ndot.done{background:var(--ink);color:var(--paper)}
+.nlab{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.45}
+.nlab.now{opacity:1}
+.line{flex:1;height:3px;background:var(--ink);margin-top:16px;min-width:14px;border-radius:2px}
+
+.body{flex:1;min-height:0;overflow:hidden;padding:0 var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
+.foot{padding:var(--space-3) var(--space-4) var(--space-4);border-top:var(--border);display:flex;gap:var(--space-2)}
+.btn{flex:1;min-height:50px;border:var(--border-strong);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);font-family:var(--font);font-weight:700;font-size:var(--fs-md);text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.prim{background:var(--yellow)}
+.btn.back{flex:0 0 auto;width:58px;font-size:var(--fs-sm)}
+svg.s{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.chip{font-size:11px;font-weight:700;padding:4px 9px;border:2px solid var(--ink);border-radius:999px;background:var(--paper)}
+
+/* ===== A: summary rows (grouped) ===== */
+.sumcard{border:var(--border);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);overflow:hidden}
+.srow{display:flex;flex-direction:column;gap:3px;padding:var(--space-3);border-bottom:var(--hairline)}
+.srow:last-child{border-bottom:none}
+.skey{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.45}
+.sval{font-size:var(--fs-md);font-weight:700;word-break:break-word}
+.sval.mono{font-family:var(--mono);font-size:var(--fs-sm)}
+.frow{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);padding:var(--space-3);border-bottom:none}
+.frow .edit{font-size:11px;font-weight:700;text-transform:uppercase;opacity:.5}
+.chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:2px}
+
+/* ===== B: hero title + compact facts ===== */
+.hero{padding:var(--space-2) 0 var(--space-3)}
+.herotitle{font-size:var(--fs-xl);font-weight:700;line-height:1.05;margin-bottom:6px}
+.herochips{display:flex;gap:5px;flex-wrap:wrap}
+.facts{display:flex;flex-direction:column;gap:0;border-top:var(--hairline)}
+.fact{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:var(--hairline)}
+.fact .fic{width:20px;height:20px;opacity:.6;flex-shrink:0}
+.fact .fk{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.45;width:74px;flex-shrink:0}
+.fact .fv{flex:1;font-weight:700;font-size:var(--fs-sm);word-break:break-word;text-align:right}
+.fact .fv.mono{font-family:var(--mono);font-size:var(--fs-xs)}
+.fact .chev{opacity:.35;width:16px;height:16px}
+
+/* ===== C: card preview (like a download card) ===== */
+.prevlabel{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;opacity:.45}
+.pcard{position:relative;border:var(--border-strong);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-md);padding:var(--space-4);padding-left:calc(var(--space-4) + 8px);display:flex;flex-direction:column;gap:var(--space-3);overflow:hidden}
+.pedge{position:absolute;left:0;top:0;bottom:0;width:9px;background:var(--violet)}
+.ptitle{font-size:var(--fs-md);font-weight:700;line-height:1.2}
+.pchips{display:flex;gap:5px;flex-wrap:wrap}
+.pmeta{display:flex;flex-direction:column;gap:var(--space-2);border-top:var(--hairline);padding-top:var(--space-3)}
+.pmrow{display:flex;align-items:center;gap:var(--space-2);font-size:var(--fs-sm)}
+.pmrow .mk{display:flex;align-items:center;gap:7px;opacity:.6;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;flex:1}
+.pmrow .mk svg{width:16px;height:16px}
+.pmrow .mv{font-weight:700;font-family:var(--mono);font-size:var(--fs-xs);word-break:break-word;text-align:right;max-width:55%}
+.pfiles{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);padding:var(--space-2) var(--space-3);border:var(--border);border-radius:var(--radius);background:var(--cream)}
+.pfiles .lab{font-weight:700;font-size:var(--fs-sm);display:flex;align-items:center;gap:7px}
+.pfiles .lab svg{width:16px;height:16px}
+.pfiles .badge{font-size:10px;font-weight:700;padding:2px 7px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow)}
+
+.legend{font-size:11px;opacity:.6;text-align:center;margin-top:2px;max-width:304px}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- CURRENT -->
+  <div class="col" id="P">
+    <div class="cap bad">⚠ Сейчас</div>
+    <div class="sub">Список «ключ-значение» в одной плоской рамке: Source / Title / Destination. Сырой title с мусором, моноширинный путь, никакого превью результата, нет файлов.</div>
+    <div class="phone">
+      <div class="hd"><h2>Add Download</h2><div class="x">✕</div></div>
+      <div class="body" style="padding-top:var(--space-3)">
+        <div class="sumcard">
+          <div class="srow"><span class="skey">Source</span><span class="sval">Search</span></div>
+          <div class="srow"><span class="skey">Title</span><span class="sval" style="font-weight:500">Dune.Part.Two.2024.2160p.HDR.x265-GROUP</span></div>
+          <div class="srow"><span class="skey">Destination</span><span class="sval mono">/volume1/media/Movies</span></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn back">Back</span><span class="btn prim">Add</span></div>
+    </div>
+  </div>
+
+  <!-- A -->
+  <div class="col" id="A">
+    <div class="cap good">A — Сводка строками + «Файлы»</div>
+    <div class="sub">Сгруппированная карточка: чистое имя + чипы, папка (со ссылкой «изменить»), размер, и строка «Файлы: все» (задел под #126, тап откроет выбор). Аккуратно и информативно.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">3</div><div class="nlab now">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="sumcard">
+          <div class="srow"><span class="skey">Что качаем</span><span class="sval">Dune: Part Two</span><div class="chips"><span class="chip">2024</span><span class="chip">2160p</span><span class="chip">x265</span><span class="chip">Ukr/Eng</span></div></div>
+          <div class="frow" style="border-bottom:var(--hairline)"><div><span class="skey" style="display:block;margin-bottom:3px">Папка</span><span class="sval mono">/media/Movies</span></div><span class="edit">Изменить</span></div>
+          <div class="srow"><span class="skey">Размер</span><span class="sval">4.7 GB</span></div>
+          <div class="frow"><div class="pfiles" style="border:none;background:transparent;padding:0;width:100%"><span class="lab"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы</span><span class="badge">Все</span></div></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn back"><svg class="s" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg></span><span class="btn prim">Добавить</span></div>
+    </div>
+    <div class="legend">чистое имя+чипы · папка с «изменить» · «Файлы: Все»</div>
+  </div>
+
+  <!-- B -->
+  <div class="col" id="B">
+    <div class="cap good">B — Крупное имя + факты</div>
+    <div class="sub">Имя крупным заголовком вверху с чипами, ниже — компактные строки-факты с иконками (папка / размер / файлы). Меньше «рамочности», больше акцента на «что качаем».</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">3</div><div class="nlab now">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="hero">
+          <div class="herotitle">Dune: Part Two</div>
+          <div class="herochips"><span class="chip">2024</span><span class="chip">2160p</span><span class="chip">x265</span><span class="chip">Ukr/Eng</span></div>
+        </div>
+        <div class="facts">
+          <div class="fact"><span class="fic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fk">Папка</span><span class="fv mono">/media/Movies</span><svg class="chev s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+          <div class="fact"><span class="fic"><svg class="s" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg></span><span class="fk">Размер</span><span class="fv">4.7 GB</span><span style="width:16px"></span></div>
+          <div class="fact"><span class="fic"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="fk">Файлы</span><span class="fv">Все</span><svg class="chev s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn back"><svg class="s" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg></span><span class="btn prim">Добавить</span></div>
+    </div>
+    <div class="legend">крупное имя · факты с иконками · файлы=строка</div>
+  </div>
+
+  <!-- C -->
+  <div class="col" id="C">
+    <div class="cap good">C — Превью карточки</div>
+    <div class="sub">Показываем, как загрузка будет выглядеть в списке: та же карточка (#116) с гранью, именем, чипами. Снизу — папка/размер и строка «Файлы: Все». «Что получишь» = буквально превью.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">3</div><div class="nlab now">Готово</div></div>
+      </div>
+      <div class="body">
+        <span class="prevlabel">Будет добавлено</span>
+        <div class="pcard">
+          <span class="pedge"></span>
+          <div class="ptitle">Dune: Part Two</div>
+          <div class="pchips"><span class="chip">2024</span><span class="chip">2160p</span><span class="chip">x265</span><span class="chip">Ukr/Eng</span></div>
+          <div class="pmeta">
+            <div class="pmrow"><span class="mk"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>Папка</span><span class="mv">/media/Movies</span></div>
+            <div class="pmrow"><span class="mk"><svg class="s" viewBox="0 0 24 24"><path d="M4 7V4h16v3M12 4v16"/></svg>Размер</span><span class="mv" style="font-family:var(--font);font-size:var(--fs-sm)">4.7 GB</span></div>
+            <div class="pfiles"><span class="lab"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы</span><span class="badge">Все</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn back"><svg class="s" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg></span><span class="btn prim">Добавить</span></div>
+    </div>
+    <div class="legend">превью будущей карточки · «что получишь»</div>
+  </div>
+
+</div>
+</body>
+</html>

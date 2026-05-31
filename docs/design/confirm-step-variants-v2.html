@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Confirm step — v2 (card)</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --red:#ff5c5c; --orange:#ff9a3c; --yellow:#ffd23f; --green:#2fd86b; --violet:#9b6dff;
+  --coral:#ff6b5e;
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px; --fs-2xl:34px;
+  --fw-bold:700;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px;
+  --radius-sm:6px; --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink); --shadow-lg:8px 8px 0 var(--ink);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.cap.good{color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;max-width:320px;min-height:60px}
+
+.phone{width:320px;height:640px;background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2)}
+.hd h2{font-size:var(--fs-lg);font-weight:700;text-transform:uppercase}
+.x{width:38px;height:38px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;box-shadow:var(--shadow-sm)}
+
+.step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-1) var(--space-4) var(--space-4)}
+.node{display:flex;flex-direction:column;align-items:center;gap:5px;width:64px}
+.ndot{width:34px;height:34px;border:var(--border);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm)}
+.ndot.now{background:var(--yellow);border:var(--border-strong)}
+.ndot.done{background:var(--ink);color:var(--paper)}
+.nlab{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.45}
+.nlab.now{opacity:1}
+.line{flex:1;height:3px;background:var(--ink);margin-top:16px;min-width:14px;border-radius:2px}
+
+.body{flex:1;min-height:0;overflow:hidden;padding:0 var(--space-4);display:flex;flex-direction:column;gap:var(--space-4)}
+.foot{padding:var(--space-3) var(--space-4) var(--space-4);display:flex;gap:var(--space-3)}
+svg.s{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+/* sticker badge (matches mockup) */
+.sticker{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);transform:rotate(-3deg);white-space:nowrap}
+.sticker.violet{background:var(--violet);color:var(--cream)}
+.sticker.yellow{background:var(--yellow)}
+
+/* chips */
+.chip{font-size:11px;font-weight:700;padding:4px 10px;border:var(--border);border-radius:999px;background:var(--cream);box-shadow:var(--shadow-sm)}
+
+/* big confirm card — same language as a download card */
+.bigcard{border:var(--border-strong);border-radius:var(--radius-lg);background:var(--paper);box-shadow:var(--shadow-md);padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
+.bc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-2)}
+.bc-title{font-size:var(--fs-lg);font-weight:700;line-height:1.15}
+.bc-chips{display:flex;gap:6px;flex-wrap:wrap}
+.bc-rows{display:flex;flex-direction:column;gap:var(--space-2);margin-top:var(--space-1)}
+.bc-rowline{display:flex;align-items:center;gap:var(--space-2)}
+.bc-rowline .k{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;opacity:.55;flex:1}
+.bc-rowline .k svg{width:17px;height:17px}
+.bc-rowline .v{font-weight:700;font-size:var(--fs-sm);text-align:right;word-break:break-word;max-width:60%}
+.bc-rowline .v.mono{font-family:var(--mono);font-size:var(--fs-xs)}
+
+/* files pill row */
+.filesbtn{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);padding:var(--space-2) var(--space-3);border:var(--border);border-radius:var(--radius);background:var(--cream);box-shadow:var(--shadow-sm)}
+.filesbtn .k{display:flex;align-items:center;gap:7px;font-weight:700;font-size:var(--fs-sm)}
+.filesbtn .k svg{width:17px;height:17px}
+.filesbtn .all{font-size:10px;font-weight:700;padding:3px 9px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow)}
+
+/* footer buttons — pill, chunky like mockup */
+.btn{min-height:54px;border:var(--border-strong);border-radius:999px;background:var(--paper);box-shadow:var(--shadow-md);font-family:var(--font);font-weight:700;font-size:var(--fs-md);text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.add{flex:1;background:var(--coral)}
+.btn.back{flex:0 0 auto;width:60px;box-shadow:var(--shadow-sm);min-height:54px}
+.btn svg{width:20px;height:20px}
+
+/* take2: yellow-filled card (like the DONE card) */
+.bigcard.fill{background:var(--yellow)}
+.bigcard.fill .filesbtn{background:var(--paper)}
+
+.legend{font-size:11px;opacity:.6;text-align:center;margin-top:2px;max-width:320px}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- F: big white card matching download card -->
+  <div class="col" id="F">
+    <div class="cap good">F — Большая карточка (как в списке)</div>
+    <div class="sub">Та же пухлая карточка, что в Downloads: жирный бордер, стикер-бейдж «К загрузке», крупное имя, чипы. Строки папка/размер с иконками, pill «Файлы: Все». Внизу большая коралловая pill «Добавить».</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">3</div><div class="nlab now">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="bigcard">
+          <div class="bc-head">
+            <div class="bc-title">Dune: Part Two</div>
+            <span class="sticker violet">К загрузке</span>
+          </div>
+          <div class="bc-chips"><span class="chip">2024</span><span class="chip">2160p</span><span class="chip">x265</span><span class="chip">Ukr/Eng</span></div>
+          <div class="bc-rows">
+            <div class="bc-rowline"><span class="k"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>Папка</span><span class="v mono">/media/Movies</span></div>
+            <div class="bc-rowline"><span class="k"><svg class="s" viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18"/></svg>Размер</span><span class="v">4.7 GB</span></div>
+          </div>
+          <div class="filesbtn"><span class="k"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы</span><span class="all">Все</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="btn back"><svg class="s" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></span>
+        <span class="btn add"><svg class="s" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Добавить</span>
+      </div>
+    </div>
+    <div class="legend">белая карточка · стикер «К загрузке» · коралловая «Добавить»</div>
+  </div>
+
+  <!-- G: yellow-filled card (hero, like DONE card) -->
+  <div class="col" id="G">
+    <div class="cap good">G — Жёлтая карточка (акцент)</div>
+    <div class="sub">То же, но карточка залита жёлтым — как карточка «DONE» в макете. Сильнее выделяет «вот что добавится», ощущается праздничнее. Pill «Файлы» и кнопки те же.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">3</div><div class="nlab now">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="bigcard fill">
+          <div class="bc-head">
+            <div class="bc-title">Dune: Part Two</div>
+            <span class="sticker" style="background:var(--paper)">К загрузке</span>
+          </div>
+          <div class="bc-chips"><span class="chip" style="background:var(--paper)">2024</span><span class="chip" style="background:var(--paper)">2160p</span><span class="chip" style="background:var(--paper)">x265</span><span class="chip" style="background:var(--paper)">Ukr/Eng</span></div>
+          <div class="bc-rows">
+            <div class="bc-rowline"><span class="k" style="opacity:.7"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>Папка</span><span class="v mono">/media/Movies</span></div>
+            <div class="bc-rowline"><span class="k" style="opacity:.7"><svg class="s" viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h18"/></svg>Размер</span><span class="v">4.7 GB</span></div>
+          </div>
+          <div class="filesbtn"><span class="k"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы</span><span class="all">Все</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="btn back"><svg class="s" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></span>
+        <span class="btn add"><svg class="s" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Добавить</span>
+      </div>
+    </div>
+    <div class="legend">жёлтая заливка (как «DONE») · праздничнее</div>
+  </div>
+
+</div>
+</body>
+</html>

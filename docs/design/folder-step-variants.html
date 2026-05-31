@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Folder step — variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --red:#ff5c5c; --orange:#ff9a3c; --yellow:#ffd23f; --green:#2fd86b; --violet:#9b6dff;
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px;
+  --fw-bold:700;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px;
+  --radius-sm:6px; --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.cap.bad{color:#c0392b} .cap.good{color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;max-width:304px;min-height:56px}
+
+.phone{width:304px;height:620px;background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2)}
+.hd h2{font-size:var(--fs-lg);font-weight:700;text-transform:uppercase}
+.x{width:38px;height:38px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;box-shadow:var(--shadow-sm)}
+
+/* stepper frame B, step 2 active */
+.step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-1) var(--space-4) var(--space-3)}
+.node{display:flex;flex-direction:column;align-items:center;gap:5px;width:62px}
+.ndot{width:34px;height:34px;border:var(--border);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm)}
+.ndot.now{background:var(--yellow);border:var(--border-strong)}
+.ndot.done{background:var(--ink);color:var(--paper)}
+.nlab{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.45}
+.nlab.now{opacity:1}
+.line{flex:1;height:3px;background:var(--ink);margin-top:16px;min-width:14px;border-radius:2px}
+.line.future{opacity:.22}
+
+.body{flex:1;min-height:0;overflow:hidden;padding:0 var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
+.foot{padding:var(--space-3) var(--space-4) var(--space-4);border-top:var(--border);display:flex;gap:var(--space-2)}
+
+.ic{width:18px;height:18px}
+svg.s{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+/* breadcrumb */
+.bc{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:var(--fs-xs);font-weight:700}
+.crumb{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:var(--border);border-radius:999px;background:var(--paper);box-shadow:var(--shadow-sm)}
+.crumb.home{padding:5px 8px}
+.csep{opacity:.4}
+
+/* chips */
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;font-weight:700;padding:5px 10px;border:var(--border);border-radius:999px;background:var(--paper);box-shadow:var(--shadow-sm)}
+.chip.fav{background:var(--yellow)}
+.chiplabel{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.5}
+
+/* folder list (grouped) */
+.flist{flex:1;min-height:0;overflow:hidden;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;flex-direction:column}
+.fitem{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border-bottom:3px solid rgba(9,9,11,.1);font-weight:500;font-size:var(--fs-sm);text-align:left}
+.fitem:last-child{border-bottom:none}
+.fitem .fic{opacity:.7}
+.fitem .fname{flex:1}
+.fitem .farr{opacity:.4}
+.fitem.create{color:var(--ink);font-weight:700}
+.fitem.create .fic{color:var(--ink)}
+
+/* save-here bar */
+.saveherebar{display:flex;flex-direction:column;gap:6px;padding:var(--space-3);border:var(--border-strong);border-radius:var(--radius);background:var(--yellow);box-shadow:var(--shadow-sm)}
+.saveherebar .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.65}
+.saveherebar .pathrow{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2)}
+.saveherebar .path{font-family:var(--mono);font-size:var(--fs-sm);font-weight:700;word-break:break-all}
+.saveherebar .go{flex-shrink:0;width:42px;height:42px;border:var(--border);border-radius:var(--radius);background:var(--ink);color:var(--cream);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm)}
+
+/* current-folder header card (variant B) */
+.hereCard{padding:var(--space-3);border:var(--border-strong);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-md);display:flex;flex-direction:column;gap:var(--space-2)}
+.hereCard .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.5}
+.hereCard .path{font-family:var(--mono);font-size:var(--fs-md);font-weight:700;word-break:break-all}
+.savebtn{min-height:46px;border:var(--border-strong);border-radius:var(--radius);background:var(--yellow);box-shadow:var(--shadow-sm);font-family:var(--font);font-weight:700;font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:center;gap:8px;width:100%}
+
+/* footer buttons */
+.btn{flex:1;min-height:48px;border:var(--border-strong);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);font-family:var(--font);font-weight:700;font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.prim{background:var(--yellow)}
+.btn.back{flex:0 0 auto;width:64px}
+
+.legend{font-size:11px;opacity:.6;text-align:center;margin-top:2px;max-width:304px}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- CURRENT -->
+  <div class="col" id="P">
+    <div class="cap bad">⚠ Сейчас</div>
+    <div class="sub">Тап по папке = и зайти, и выбрать одновременно. Нельзя выбрать текущую папку, нельзя зайти не выбрав. Emoji 🏠/📁. Нельзя создать папку.</div>
+    <div class="phone">
+      <div class="hd"><h2>Add Download</h2><div class="x">✕</div></div>
+      <div class="body" style="padding-top:var(--space-2);gap:var(--space-2)">
+        <div class="chips"><span class="chip fav">Movies</span><span class="chip fav">Shows</span><span class="chip">downloads</span></div>
+        <div class="bc"><span class="crumb home">🏠</span><span class="csep">›</span><span class="crumb">downloads</span></div>
+        <div class="flist">
+          <div class="fitem"><span class="fic">📁</span><span class="fname">Movies</span><span class="farr">›</span></div>
+          <div class="fitem"><span class="fic">📁</span><span class="fname">Shows</span><span class="farr">›</span></div>
+          <div class="fitem"><span class="fic">📁</span><span class="fname">Music</span><span class="farr">›</span></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn back">Back</span><span class="btn prim">Next</span></div>
+    </div>
+  </div>
+
+  <!-- A: drill list + sticky save-here bar + create row -->
+  <div class="col" id="A">
+    <div class="cap good">A — Список + панель «Сохранить сюда»</div>
+    <div class="sub">Тап = только зайти внутрь. Жёлтая панель снизу «Сохранить сюда: /путь» выбирает текущую папку. «+ Новая папка» — первой строкой. Хлебные крошки сверху.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">2</div><div class="nlab now">Папка</div></div>
+        <div class="line future"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="bc"><span class="crumb home"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg></span><span class="csep">›</span><span class="crumb">downloads</span></div>
+        <div class="flist">
+          <div class="fitem create"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="fname">Новая папка</span></div>
+          <div class="fitem"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fname">Movies</span><span class="farr"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          <div class="fitem"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fname">Shows</span><span class="farr"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          <div class="fitem"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fname">Music</span><span class="farr"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+        </div>
+      </div>
+      <div class="foot" style="flex-direction:column;border-top:var(--border)">
+        <div class="saveherebar">
+          <span class="lab">Сохранить сюда</span>
+          <div class="pathrow"><span class="path">/downloads</span><span class="go"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">тап=зайти · панель=выбрать текущую · +Новая папка</div>
+  </div>
+
+  <!-- B: current-folder header card + drill list -->
+  <div class="col" id="B">
+    <div class="cap good">B — Карточка «Вы здесь» сверху</div>
+    <div class="sub">Сверху карточка с текущим путём и крупной кнопкой «Сохранить сюда». Под ней — список подпапок (тап = зайти) и «+ Новая папка». Действие выбора всегда на виду вверху.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">2</div><div class="nlab now">Папка</div></div>
+        <div class="line future"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="hereCard">
+          <div class="bc"><span class="crumb home"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg></span><span class="csep">›</span><span class="crumb">downloads</span></div>
+          <button class="savebtn"><svg class="s ic" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Сохранить сюда</button>
+        </div>
+        <span class="chiplabel">Подпапки</span>
+        <div class="flist">
+          <div class="fitem create"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="fname">Новая папка</span></div>
+          <div class="fitem"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fname">Movies</span><span class="farr"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          <div class="fitem"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fname">Shows</span><span class="farr"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn back"><svg class="s ic" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></span><span class="btn">Назад к поиску</span></div>
+    </div>
+    <div class="legend">карточка «вы здесь» + кнопка сверху · список ниже</div>
+  </div>
+
+  <!-- C: chips-first + save-here -->
+  <div class="col" id="C">
+    <div class="cap good">C — Сначала чипы (частый кейс)</div>
+    <div class="sub">Большинство загрузок идёт в известную папку → крупные чипы recent/favorite сверху (тап = сразу выбрать и дальше). Ниже — «Обзор папок» для остального + «Сохранить сюда».</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">2</div><div class="nlab now">Папка</div></div>
+        <div class="line future"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <span class="chiplabel">Недавние</span>
+        <div class="chips">
+          <span class="chip fav" style="padding:8px 12px">★ Movies</span>
+          <span class="chip fav" style="padding:8px 12px">★ Shows</span>
+          <span class="chip" style="padding:8px 12px">downloads</span>
+        </div>
+        <span class="chiplabel">Обзор папок</span>
+        <div class="flist">
+          <div class="fitem create"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="fname">Новая папка</span></div>
+          <div class="fitem"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fname">Movies</span><span class="farr"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+          <div class="fitem"><span class="fic"><svg class="s ic" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="fname">Shows</span><span class="farr"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+        </div>
+      </div>
+      <div class="foot" style="flex-direction:column;border-top:var(--border)">
+        <div class="saveherebar">
+          <span class="lab">Сохранить сюда</span>
+          <div class="pathrow"><span class="path">/downloads</span><span class="go"><svg class="s ic" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">чип = выбрать+дальше · обзор для остального</div>
+  </div>
+
+</div>
+</body>
+</html>

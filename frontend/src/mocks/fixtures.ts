@@ -32,28 +32,37 @@ export const tasks: TaskView[] = [
 // Base snapshot; ./index.ts applies a little jitter per poll so the "live" dot
 // and numbers actually move. Busiest volume sits at 84% → warn → orange hero.
 export const baseHealth: HealthView = {
-  cpu: { userLoad: 23, systemLoad: 7 },
-  memory: { usedBytes: 5.1 * GB, totalBytes: 8 * GB, pct: 64 },
+  cpu: { userLoad: 31, systemLoad: 9 },
+  memory: { usedBytes: 9.8 * GB, totalBytes: 16 * GB, pct: 61 },
   volumes: [
+    // busiest → hero: 84% = warn (orange). Plus an ok and a near-empty one so
+    // the secondary-bar list has range. Bump volume1 ≥90 to preview the red hero.
     { path: '/volume1', usedBytes: 6.7 * 1000 * GB, totalBytes: 8 * 1000 * GB, pct: 84, status: 'normal' },
-    { path: '/volume2', usedBytes: 1.8 * 1000 * GB, totalBytes: 4 * 1000 * GB, pct: 46, status: 'normal' },
+    { path: '/volume2', usedBytes: 2.7 * 1000 * GB, totalBytes: 4 * 1000 * GB, pct: 67, status: 'normal' },
+    { path: '/volume3', usedBytes: 4.9 * 1000 * GB, totalBytes: 12 * 1000 * GB, pct: 41, status: 'normal' },
   ],
   disks: [
-    { model: 'WD Red Plus 8TB', tempC: 39, tempStatus: 'normal', status: 'normal', smart: 'normal' },
+    // Exercises the full severity triad: ok (green) / elevated → warn (orange) /
+    // failing SMART → bad (red).
+    { model: 'WD Red Plus 8TB', tempC: 38, tempStatus: 'normal', status: 'normal', smart: 'normal' },
+    { model: 'WD Red Plus 8TB', tempC: 40, tempStatus: 'normal', status: 'normal', smart: 'normal' },
     { model: 'Seagate IronWolf 8TB', tempC: 47, tempStatus: 'elevated', status: 'normal', smart: 'normal' },
-    { model: 'WD Red 4TB', tempC: 41, tempStatus: 'normal', status: 'normal', smart: 'normal' },
+    { model: 'Seagate IronWolf 8TB', tempC: 44, tempStatus: 'normal', status: 'normal', smart: 'normal' },
+    { model: 'WD Red 4TB', tempC: 53, tempStatus: 'elevated', status: 'normal', smart: 'failing' },
   ],
   processes: {
     topCpu: [
-      { name: 'synoindexd', pct: 14.2 },
-      { name: 'dockerd', pct: 8.6 },
-      { name: 'Plex Media Server', pct: 6.1 },
-      { name: 'smbd', pct: 2.3 },
+      { name: 'synoindexd', pct: 22.4 },
+      { name: 'dockerd', pct: 11.3 },
+      { name: 'Plex Media Server', pct: 8.7 },
+      { name: 'ffmpeg', pct: 5.2 },
+      { name: 'smbd', pct: 2.1 },
     ],
     topRam: [
-      { name: 'Plex Media Server', bytes: 1.8 * GB },
-      { name: 'dockerd', bytes: 920 * MB },
-      { name: 'synoindexd', bytes: 540 * MB },
+      { name: 'Plex Media Server', bytes: 2.1 * GB },
+      { name: 'dockerd', bytes: 1.1 * GB },
+      { name: 'synoindexd', bytes: 640 * MB },
+      { name: 'postgres', bytes: 480 * MB },
     ],
   },
   errors: [],
@@ -64,12 +73,20 @@ export const baseHealth: HealthView = {
 export const subscriptions: SubscriptionView[] = [
   { id: 's1', showId: 1396, title: 'Breaking Bad', lastNotifiedEpisode: { season: 5, episode: 16 } },
   { id: 's2', showId: 1399, title: 'Game of Thrones', lastNotifiedEpisode: { season: 8, episode: 6 } },
-  { id: 's3', showId: 60625, title: 'Rick and Morty', lastNotifiedEpisode: null },
+  { id: 's3', showId: 60625, title: 'Rick and Morty', lastNotifiedEpisode: null }, // NEW
+  { id: 's4', showId: 82856, title: 'The Mandalorian', lastNotifiedEpisode: { season: 3, episode: 8 } },
+  { id: 's5', showId: 95396, title: 'Severance', lastNotifiedEpisode: { season: 2, episode: 3 } },
+  { id: 's6', showId: 100088, title: 'The Last of Us', lastNotifiedEpisode: { season: 1, episode: 9 } },
+  { id: 's7', showId: 93740, title: 'Foundation', lastNotifiedEpisode: null }, // NEW
+  { id: 's8', showId: 125988, title: 'Silo', lastNotifiedEpisode: { season: 1, episode: 10 } },
+  { id: 's9', showId: 153312, title: 'Fallout', lastNotifiedEpisode: null }, // NEW
 ]
 
 export const todayEpisodes: TodayEpisodeView[] = [
-  { showId: 12345, title: 'The Bear', season: 3, episode: 5, airTime: '18:00' },
-  { showId: 95396, title: 'Severance', season: 2, episode: 3, airTime: '21:30' },
+  { showId: 136315, title: 'The Bear', season: 3, episode: 5, airTime: '18:00' },
+  { showId: 95396, title: 'Severance', season: 2, episode: 4, airTime: '21:30' },
+  { showId: 100088, title: 'The Last of Us', season: 2, episode: 3, airTime: '22:00' },
+  { showId: 125988, title: 'Silo', season: 2, episode: 2, airTime: '20:15' },
 ]
 
 // A tiny showId → name table so a freshly-added subscription gets a real-looking
@@ -81,7 +98,11 @@ const SHOW_NAMES: Record<number, string> = {
   1668: 'Friends',
   82856: 'The Mandalorian',
   95396: 'Severance',
-  12345: 'The Bear',
+  136315: 'The Bear',
+  100088: 'The Last of Us',
+  93740: 'Foundation',
+  125988: 'Silo',
+  153312: 'Fallout',
 }
 
 export function showTitle(showId: number): string {

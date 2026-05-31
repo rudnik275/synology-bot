@@ -41,7 +41,9 @@ const TAB_VIEWS = {
 }
 .content {
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+  /* Reserve clearance for the FLOATING pill nav: it sits off the bottom edge
+   * (safe-bottom + space-3) and is ~62px tall, so the last row clears it. */
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-4));
   min-height: 100dvh;
 }
 

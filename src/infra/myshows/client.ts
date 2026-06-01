@@ -31,6 +31,10 @@ export interface MyShowsShow {
   id: number
   title: string
   titleOriginal?: string
+  /** Poster image URL (may be absent for older API responses). */
+  image?: string
+  /** Show description (synopsis). */
+  description?: string
 }
 
 export interface MyShowsEpisode {
@@ -45,8 +49,41 @@ export interface MyShowsShowDetailed extends MyShowsShow {
   episodes: MyShowsEpisode[]
 }
 
+/**
+ * Minimal shape of a single show entry returned by the `shows.Search` RPC.
+ *
+ * ASSUMPTION: The `shows.Search` method returns a list of shows under the
+ * `result` key, each with at least `id`, `title`, `titleOriginal`, and
+ * `image`. This shape is inferred from the existing `shows.GetById` pattern
+ * and the public myshows.me API documentation.
+ *
+ * ⚠️ NEEDS LIVE-API VERIFICATION — the exact field names and response wrapper
+ * must be confirmed against the live myshows.me JSON-RPC API. See PR caveat.
+ */
+export interface MyShowsSearchResult {
+  id: number
+  title: string
+  titleOriginal?: string
+  image?: string
+}
+
 export async function getShowById(showId: number): Promise<MyShowsShowDetailed> {
   return rpc<MyShowsShowDetailed>('shows.GetById', { showId, withEpisodes: true })
+}
+
+/**
+ * Searches the myshows.me catalog by name.
+ *
+ * Uses the `shows.Search` RPC method.
+ *
+ * ⚠️ ASSUMPTION: The exact request/response shape of `shows.Search` has been
+ * inferred from the existing `shows.GetById` pattern and is assumed to accept
+ * `{ query }` and return an array of `MyShowsSearchResult` objects directly as
+ * the RPC result. This MUST be verified against the live API.
+ */
+export async function searchShows(query: string): Promise<MyShowsSearchResult[]> {
+  const result = await rpc<MyShowsSearchResult[] | null>('shows.Search', { query })
+  return result ?? []
 }
 
 /**

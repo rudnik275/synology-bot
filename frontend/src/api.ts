@@ -1,5 +1,5 @@
 import { initData } from './telegram'
-import type { HealthView, TaskView, SearchResultView, SubscriptionView, TodayEpisodeView, FolderView } from './types'
+import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView } from './types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -54,5 +54,9 @@ export const api = {
   subscriptions: () => request<{ subscriptions: SubscriptionView[] }>('/subscriptions').then((r) => r.subscriptions),
   subscribe: (showId: number) => request<{ subscription: SubscriptionView }>('/subscriptions', jsonBody({ showId })),
   unsubscribe: (id: string) => request<{ ok: true }>(`/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  today: () => request<{ episodes: TodayEpisodeView[] }>('/subscriptions/today').then((r) => r.episodes),
+
+  // Shows (ADR 0009)
+  searchShows: (q: string) =>
+    request<{ results: ShowSearchResultView[] }>(`/shows/search?q=${encodeURIComponent(q)}`).then((r) => r.results),
+  getShow: (showId: number) => request<ShowDetailView>(`/shows/${encodeURIComponent(String(showId))}`),
 }

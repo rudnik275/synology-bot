@@ -11,7 +11,6 @@ import {
   tasks,
   baseHealth,
   subscriptions,
-  todayEpisodes,
   showTitle,
   searchResults,
   folders,
@@ -189,19 +188,57 @@ async function route(path: string, query: URLSearchParams, method: string, init?
       if (method === 'POST') {
         const body = await readBody(init)
         const showId = Number(body.showId)
-        const sub = { id: `s${nextId++}`, showId, title: showTitle(showId), lastNotifiedEpisode: null }
+        const sub = { id: `s${nextId++}`, showId, title: showTitle(showId), lastNotifiedEpisode: null, poster: null, latestAiredEpisode: null }
         subscriptions.push(sub)
         return json({ subscription: sub })
       }
     }
     if (seg.length === 2 && seg[1] === 'today' && method === 'GET') {
-      return json({ episodes: todayEpisodes })
+      // Retired (ADR 0009)
+      return json({ error: 'endpoint retired' }, 404)
     }
     if (seg.length === 2 && method === 'DELETE') {
       const i = subscriptions.findIndex((s) => s.id === seg[1])
       if (i >= 0) subscriptions.splice(i, 1)
       return json({ ok: true })
     }
+  }
+
+  // /shows/search?q=
+  if (seg[0] === 'shows' && seg[1] === 'search' && method === 'GET') {
+    const q = query.get('q') ?? ''
+    const subscribedIds = new Set(subscriptions.map((s) => s.showId))
+    const mockResults = searchResults(q).map((r, i) => ({
+      id: i + 9000,
+      title: r.title,
+      titleOriginal: null as string | null,
+      poster: null as string | null,
+      isSubscribed: subscribedIds.has(i + 9000),
+    }))
+    return json({ results: mockResults })
+  }
+
+  // /shows/:id
+  if (seg[0] === 'shows' && seg.length === 2 && method === 'GET') {
+    const showId = Number(seg[1])
+    const sub = subscriptions.find((s) => s.showId === showId)
+    return json({
+      id: showId,
+      title: sub?.title ?? `Show #${showId}`,
+      titleOriginal: null,
+      poster: null,
+      description: 'Mock description for dev mode.',
+      isSubscribed: Boolean(sub),
+      seasons: [
+        {
+          season: 1,
+          episodes: [
+            { episode: 1, title: 'Pilot', airDate: '2023-01-01T00:00:00Z', aired: true },
+            { episode: 2, title: 'Episode 2', airDate: '2023-01-08T00:00:00Z', aired: true },
+          ],
+        },
+      ],
+    })
   }
 
   return json({ error: `mock: no route for ${method} /api${path}` }, 404)

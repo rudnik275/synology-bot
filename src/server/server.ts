@@ -11,12 +11,16 @@ import {
   serializeTask,
   serializeSearchResult,
   serializeSubscription,
+  serializeShowSearchResult,
+  serializeShowDetail,
   serializeCpu,
   serializeMemory,
   serializeVolumes,
   serializeDisks,
   serializeProcesses,
 } from './serializers.ts'
+import type { MyShowsShowDetailed, MyShowsSearchResult } from '../infra/myshows/client.ts'
+import { refreshSubscriptionMetadata } from '../domain/subscription-metadata-refresh.ts'
 
 /** Narrow slice of PersistentStore the subscriptions endpoints need. */
 export interface SubscriptionStore {
@@ -45,9 +49,11 @@ export interface ServerDeps {
   docker: DockerClient
   store: SubscriptionStore
   /** Resolve a myshows.me show's title; injected for testability. */
-  getShowById: (showId: number) => Promise<{ title: string }>
+  getShowById: (showId: number) => Promise<MyShowsShowDetailed>
   /** Episodes airing today for a show; injected for testability. */
   getTodayEpisodes: (showId: number) => Promise<TodayEpisode[]>
+  /** Search shows by query string; injected for testability. */
+  searchShows: (query: string) => Promise<MyShowsSearchResult[]>
   /** Base URL of the Toloka tracker — used to route Toloka download URLs through an authenticated fetch. */
   tolokaBaseUrl: string
   botToken: string
@@ -88,7 +94,7 @@ function isTolokaUrl(uri: string, tolokaBaseUrl: string): boolean {
  * (NAS / Toloka) failures map to 502; bad client input maps to 400.
  */
 export function createServer(deps: ServerDeps): Hono<AppEnv> {
-  const { synology, toloka, docker, store, getShowById, getTodayEpisodes, tolokaBaseUrl } = deps
+  const { synology, toloka, docker, store, getShowById, getTodayEpisodes, searchShows, tolokaBaseUrl } = deps
   const app = new Hono<AppEnv>()
 
   app.get('/healthz', (c) => c.json({ ok: true }))
@@ -249,28 +255,9 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     c.json({ subscriptions: store.listSubscriptions().map(serializeSubscription) })
   )
 
-  app.get('/api/subscriptions/today', async (c) => {
-    const episodes: Array<{
-      showId: number
-      title: string
-      season: number
-      episode: number
-      airTime: string
-    }> = []
-    for (const sub of store.listSubscriptions()) {
-      const today = await getTodayEpisodes(sub.showId)
-      for (const ep of today) {
-        episodes.push({
-          showId: sub.showId,
-          title: sub.title,
-          season: ep.season,
-          episode: ep.episode,
-          airTime: ep.airTime,
-        })
-      }
-    }
-    return c.json({ episodes })
-  })
+  // /api/subscriptions/today is retired (ADR 0009 — the in-app today block is removed).
+  // The endpoint returns 404 to signal removal to any lingering clients.
+  app.get('/api/subscriptions/today', (c) => c.json({ error: 'endpoint retired' }, 404))
 
   app.post('/api/subscriptions', async (c) => {
     const body = await c.req.json().catch(() => null)
@@ -281,13 +268,13 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const existing = store.getSubscription(String(showId))
     if (existing) return c.json({ subscription: serializeSubscription(existing) })
 
-    let title: string
+    let show: MyShowsShowDetailed
     try {
-      title = (await getShowById(showId)).title
+      show = await getShowById(showId)
     } catch (err) {
       return c.json({ error: errorMessage(err) }, 502)
     }
-    const sub: Subscription = { id: String(showId), showId, title }
+    const sub: Subscription = { id: String(showId), showId, title: show.title, poster: show.image }
     store.addSubscription(sub)
     return c.json({ subscription: serializeSubscription(sub) }, 201)
   })
@@ -298,6 +285,52 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     if (!existing) return c.json({ error: 'not found' }, 404)
     store.removeSubscription(id)
     return c.json({ ok: true })
+  })
+
+  // --- Shows: search + detail (ADR 0009) ---
+
+  app.get('/api/shows/search', async (c) => {
+    const q = c.req.query('q')?.trim()
+    if (!q) return c.json({ error: 'q is required' }, 400)
+    try {
+      const results = await searchShows(q)
+      const subscribedIds = new Set(store.listSubscriptions().map((s) => s.showId))
+      return c.json({ results: results.map((r) => serializeShowSearchResult(r, subscribedIds)) })
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 502)
+    }
+  })
+
+  app.get('/api/shows/:id', async (c) => {
+    const showId = Number(c.req.param('id'))
+    if (!Number.isInteger(showId) || showId <= 0) {
+      return c.json({ error: 'showId must be a positive integer' }, 400)
+    }
+
+    let show: MyShowsShowDetailed
+    try {
+      show = await getShowById(showId)
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 502)
+    }
+
+    const subscribedIds = new Set(store.listSubscriptions().map((s) => s.showId))
+
+    // Self-heal: if the show is subscribed, stamp updated poster + latestAiredEpisode into the store.
+    const existingSub = store.getSubscription(String(showId))
+    if (existingSub) {
+      try {
+        const [refreshed] = await refreshSubscriptionMetadata([existingSub], async () => ({
+          poster: show.image,
+          episodes: show.episodes,
+        }), new Date())
+        if (refreshed) store.addSubscription(refreshed)
+      } catch {
+        // Non-fatal: self-heal failure should not block the detail response.
+      }
+    }
+
+    return c.json(serializeShowDetail(show, subscribedIds, new Date()))
   })
 
   // --- Deploy status (Watchtower) ---

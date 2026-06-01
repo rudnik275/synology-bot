@@ -26,14 +26,49 @@ export interface SubscriptionView {
   showId: number
   title: string
   lastNotifiedEpisode: { season: number; episode: number } | null
+  poster: string | null
+  latestAiredEpisode: { season: number; episode: number; airDate: string } | null
 }
 
+/** Retired: /api/subscriptions/today is gone (ADR 0009). Kept for reference only. */
 export interface TodayEpisodeView {
   showId: number
   title: string
   season: number
   episode: number
   airTime: string
+}
+
+// --- Shows tab (ADR 0009) ---
+
+export interface ShowSearchResultView {
+  id: number
+  title: string
+  titleOriginal: string | null
+  poster: string | null
+  isSubscribed: boolean
+}
+
+export interface ShowEpisodeView {
+  episode: number
+  title: string
+  airDate: string | null
+  aired: boolean
+}
+
+export interface ShowSeasonView {
+  season: number
+  episodes: ShowEpisodeView[]
+}
+
+export interface ShowDetailView {
+  id: number
+  title: string
+  titleOriginal: string | null
+  poster: string | null
+  description: string | null
+  isSubscribed: boolean
+  seasons: ShowSeasonView[]
 }
 
 export interface HealthView {

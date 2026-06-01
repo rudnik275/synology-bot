@@ -8,7 +8,6 @@ import type {
   HealthView,
   TaskView,
   SubscriptionView,
-  TodayEpisodeView,
   SearchResultView,
   FolderView,
 } from '../types'
@@ -68,25 +67,20 @@ export const baseHealth: HealthView = {
   errors: [],
 }
 
-// ── Shows: subscriptions + today ──────────────────────────────────────────
+// ── Shows: subscriptions ─────────────────────────────────────────────────
 // Mutable: subscribe/unsubscribe mutate this list.
+// poster is null here since the mock doesn't serve real images; latestAiredEpisode
+// is the new badge field (ADR 0009) — populated with realistic data.
 export const subscriptions: SubscriptionView[] = [
-  { id: 's1', showId: 1396, title: 'Breaking Bad', lastNotifiedEpisode: { season: 5, episode: 16 } },
-  { id: 's2', showId: 1399, title: 'Game of Thrones', lastNotifiedEpisode: { season: 8, episode: 6 } },
-  { id: 's3', showId: 60625, title: 'Rick and Morty', lastNotifiedEpisode: null }, // NEW
-  { id: 's4', showId: 82856, title: 'The Mandalorian', lastNotifiedEpisode: { season: 3, episode: 8 } },
-  { id: 's5', showId: 95396, title: 'Severance', lastNotifiedEpisode: { season: 2, episode: 3 } },
-  { id: 's6', showId: 100088, title: 'The Last of Us', lastNotifiedEpisode: { season: 1, episode: 9 } },
-  { id: 's7', showId: 93740, title: 'Foundation', lastNotifiedEpisode: null }, // NEW
-  { id: 's8', showId: 125988, title: 'Silo', lastNotifiedEpisode: { season: 1, episode: 10 } },
-  { id: 's9', showId: 153312, title: 'Fallout', lastNotifiedEpisode: null }, // NEW
-]
-
-export const todayEpisodes: TodayEpisodeView[] = [
-  { showId: 136315, title: 'The Bear', season: 3, episode: 5, airTime: '18:00' },
-  { showId: 95396, title: 'Severance', season: 2, episode: 4, airTime: '21:30' },
-  { showId: 100088, title: 'The Last of Us', season: 2, episode: 3, airTime: '22:00' },
-  { showId: 125988, title: 'Silo', season: 2, episode: 2, airTime: '20:15' },
+  { id: 's1', showId: 1396, title: 'Breaking Bad', lastNotifiedEpisode: { season: 5, episode: 16 }, poster: null, latestAiredEpisode: { season: 5, episode: 16, airDate: '2013-09-29T02:00:00Z' } },
+  { id: 's2', showId: 1399, title: 'Game of Thrones', lastNotifiedEpisode: { season: 8, episode: 6 }, poster: null, latestAiredEpisode: { season: 8, episode: 6, airDate: '2019-05-19T02:00:00Z' } },
+  { id: 's3', showId: 60625, title: 'Rick and Morty', lastNotifiedEpisode: null, poster: null, latestAiredEpisode: null },
+  { id: 's4', showId: 82856, title: 'The Mandalorian', lastNotifiedEpisode: { season: 3, episode: 8 }, poster: null, latestAiredEpisode: { season: 3, episode: 8, airDate: '2023-04-19T04:00:00Z' } },
+  { id: 's5', showId: 95396, title: 'Severance', lastNotifiedEpisode: { season: 2, episode: 3 }, poster: null, latestAiredEpisode: { season: 2, episode: 3, airDate: '2025-02-21T12:00:00Z' } },
+  { id: 's6', showId: 100088, title: 'The Last of Us', lastNotifiedEpisode: { season: 1, episode: 9 }, poster: null, latestAiredEpisode: { season: 1, episode: 9, airDate: '2023-03-12T02:00:00Z' } },
+  { id: 's7', showId: 93740, title: 'Foundation', lastNotifiedEpisode: null, poster: null, latestAiredEpisode: null },
+  { id: 's8', showId: 125988, title: 'Silo', lastNotifiedEpisode: { season: 1, episode: 10 }, poster: null, latestAiredEpisode: { season: 1, episode: 10, airDate: '2023-07-28T00:00:00Z' } },
+  { id: 's9', showId: 153312, title: 'Fallout', lastNotifiedEpisode: null, poster: null, latestAiredEpisode: null },
 ]
 
 // A tiny showId → name table so a freshly-added subscription gets a real-looking

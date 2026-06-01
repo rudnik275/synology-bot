@@ -1,8 +1,8 @@
 import type { Bot, Context } from 'grammy'
 import type { PersistentStore } from '../../infra/persistence/store.ts'
-import { openTorrentButton } from '../../infra/notify/miniapp-link.ts'
+import { openStashButton } from '../../infra/notify/miniapp-link.ts'
 
-/** How long a forwarded .torrent stays fetchable by the Mini App. */
+/** How long a forwarded add-intake (`.torrent` bytes / magnet / URL) stays fetchable by the Mini App. */
 export const STASH_TTL_MS = 15 * 60 * 1000
 
 export interface TorrentIntakeDeps {
@@ -13,6 +13,27 @@ export interface TorrentIntakeDeps {
   fetchFileBytes?: (filePath: string, botToken: string) => Promise<Uint8Array>
   /** Generate the stash token. Injectable for tests. */
   makeToken?: () => string
+}
+
+export interface UriIntakeDeps {
+  store: Pick<PersistentStore, 'stashUri'>
+  miniappUrl: string
+  /** Generate the stash token. Injectable for tests. */
+  makeToken?: () => string
+}
+
+/**
+ * Is this chat text an add-intent link (#120)? Matches a `magnet:` link or an
+ * `http(s)://` URL — mirrors the old in-wizard "Magnet / URL" mode, which
+ * accepted any URI (so direct-`.torrent`-URL adds survive). Ordinary text is
+ * ignored. The owner-only DM has no conversational traffic, so accepting any
+ * http(s) link is safe (ADR 0008); tighten to `.torrent`-suffixed URLs if it bites.
+ */
+export function isAddIntakeUri(text: string): boolean {
+  const t = text.trim()
+  if (t.includes(' ') || t.includes('\n')) return false
+  if (/^magnet:\?/i.test(t)) return true
+  return /^https?:\/\/\S+$/i.test(t)
 }
 
 function isTorrentDocument(doc: { file_name?: string; mime_type?: string }): boolean {
@@ -66,7 +87,37 @@ export function registerTorrentIntakeRoute(bot: Bot<Context>, deps: TorrentIntak
     deps.store.stashTorrent(token, doc.file_name ?? 'download.torrent', bytes, STASH_TTL_MS)
 
     await ctx.reply('Файл получен. Откройте Mini App, чтобы выбрать папку и начать загрузку.', {
-      reply_markup: openTorrentButton(deps.miniappUrl, token),
+      reply_markup: openStashButton(deps.miniappUrl, token),
+    })
+  })
+}
+
+/**
+ * Handle a magnet / `http(s)` URL pasted into the bot chat (#120). Runs after
+ * the owner-only guard. The handler fires only when the message text *is* such a
+ * link (ordinary chat text is ignored — see {@link isAddIntakeUri}); it stashes
+ * the URI server-side under a short-lived token and replies with a Mini App
+ * deep-link that opens AddFlow at the folder step. Magnet links can exceed the
+ * 512-char `start_param` limit, so the URI is stashed, not carried inline.
+ */
+export function registerUriIntakeRoute(bot: Bot<Context>, deps: UriIntakeDeps): void {
+  const makeToken = deps.makeToken ?? defaultMakeToken
+
+  bot.on('message:text', async (ctx) => {
+    const text = ctx.message.text
+    // Ordinary text is not add-intent — stay silent so the DM isn't noisy.
+    if (!isAddIntakeUri(text)) return
+
+    if (!deps.miniappUrl) {
+      await ctx.reply('Mini App не настроен — добавить ссылку через бота сейчас нельзя.')
+      return
+    }
+
+    const token = makeToken()
+    deps.store.stashUri(token, text.trim(), STASH_TTL_MS)
+
+    await ctx.reply('Ссылка получена. Откройте Mini App, чтобы выбрать папку и начать загрузку.', {
+      reply_markup: openStashButton(deps.miniappUrl, token),
     })
   })
 }

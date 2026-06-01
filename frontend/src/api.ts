@@ -38,9 +38,13 @@ export const api = {
     return request<{ ok: true }>('/tasks', { method: 'POST', body: form })
   },
 
-  // #99 — fetch a .torrent the bot stashed, as base64 + filename, to rebuild a File.
+  // #99/#120 — fetch what the bot stashed for the add-flow handoff. A stash holds
+  // either a .torrent's bytes (kind 'bytes' → base64 + filename, rebuilt into a
+  // File) or a magnet/URL string (kind 'uri'). The wizard resumes at the folder step.
   torrentStash: (token: string) =>
-    request<{ name: string; base64: string }>(`/torrent-stash/${encodeURIComponent(token)}`),
+    request<
+      { kind: 'bytes'; name: string; base64: string } | { kind: 'uri'; uri: string }
+    >(`/torrent-stash/${encodeURIComponent(token)}`),
 
   search: (q: string) => request<{ results: SearchResultView[] }>(`/search?q=${encodeURIComponent(q)}`).then((r) => r.results),
 

@@ -51,28 +51,39 @@ export function miniAppTabUrl(miniappUrl: string, tab: Tab): string | undefined 
 }
 
 /**
- * Prefix that marks a `start_param` as a `.torrent` stash handoff (#99) rather
- * than a tab name. The Mini App strips this to recover the stash token; an
- * unknown tab token already falls back to Downloads (where AddFlow lives), so
- * tab routing needs no change.
+ * Prefix that marks a `start_param` as an add-intake stash handoff rather than
+ * a tab name. Introduced for `.torrent` bytes (#99) and now also carries
+ * magnet/URL stashes (#120) — the token is opaque, the payload kind is resolved
+ * server-side by the stash reader, so one prefix covers both. The Mini App
+ * strips this to recover the stash token; an unknown tab token already falls
+ * back to Downloads (where AddFlow lives), so tab routing needs no change.
  */
 export const STASH_PARAM_PREFIX = 'tor-'
 
 /**
- * Deep-link URL that opens the Mini App on a stashed `.torrent` (#99). The stash
- * token is carried as `start_param = tor-<token>`. Returns `undefined` when
- * `miniappUrl` is empty (Mini App not configured).
+ * Deep-link URL that opens the Mini App on a stashed add-intake (#99, #120). The
+ * stash token is carried as `start_param = tor-<token>`. Returns `undefined`
+ * when `miniappUrl` is empty (Mini App not configured).
  */
-export function miniAppTorrentUrl(miniappUrl: string, token: string): string | undefined {
+export function miniAppStashUrl(miniappUrl: string, token: string): string | undefined {
   if (!miniappUrl) return undefined
   const sep = miniappUrl.includes('?') ? '&' : '?'
   const param = `${STASH_PARAM_PREFIX}${token}`
   return `${miniappUrl}${sep}tgWebAppStartParam=${param}&startapp=${param}`
 }
 
-/** The "Открыть" web_app button deep-linking a stashed `.torrent`, or `undefined` when unconfigured. */
-export function openTorrentButton(miniappUrl: string, token: string): InlineKeyboard | undefined {
-  const url = miniAppTorrentUrl(miniappUrl, token)
+/** @deprecated #99 name; use {@link miniAppStashUrl}. Kept as an alias for callers/tests. */
+export const miniAppTorrentUrl = miniAppStashUrl
+
+/**
+ * The "Открыть" web_app button deep-linking a stashed add-intake (a `.torrent`'s
+ * bytes or a magnet/URL), or `undefined` when the Mini App is unconfigured.
+ */
+export function openStashButton(miniappUrl: string, token: string): InlineKeyboard | undefined {
+  const url = miniAppStashUrl(miniappUrl, token)
   if (!url) return undefined
   return new InlineKeyboard().webApp('Открыть', url)
 }
+
+/** @deprecated #99 name; use {@link openStashButton}. Kept as an alias for callers/tests. */
+export const openTorrentButton = openStashButton

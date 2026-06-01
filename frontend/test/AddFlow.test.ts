@@ -430,8 +430,7 @@ describe('AddFlow (search-only)', () => {
     // Step 2 — still Next, no Add.
     expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
 
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-    await flushPromises()
+    await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
     // Step 3 — Add appears.

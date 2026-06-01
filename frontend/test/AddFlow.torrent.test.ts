@@ -120,7 +120,9 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
     expect(document.querySelector('[data-testid="wizard-next"]')).not.toBeNull()
 
-    // Advance to Confirm (step 3).
+    // Advance to Confirm (step 3). Variant D: drill into a folder, then pick it.
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()

@@ -53,7 +53,9 @@ describe('SynologyClient extensions', () => {
       const calledUrl: string = (fetchMock.mock.calls[0] as [string])[0]
       expect(calledUrl).toContain('SYNO.DownloadStation.Task')
       expect(calledUrl).toContain('method=create')
-      expect(calledUrl).toContain(encodeURIComponent('/volume1/video'))
+      // destination is normalized: /volume1/video → video (leading slash + volumeN prefix stripped)
+      expect(calledUrl).toContain('destination=video')
+      expect(calledUrl).not.toContain(encodeURIComponent('/volume1/video'))
     })
 
     it('returns ok:false with reason on Synology error', async () => {

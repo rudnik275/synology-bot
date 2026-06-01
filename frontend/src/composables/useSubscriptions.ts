@@ -37,5 +37,20 @@ export function useSubscriptions() {
     await refetch()
   }
 
-  return { subscriptions, subscribedIds, loading, error, refetch, add, remove }
+  /**
+   * Background backfill: ask the server to stamp poster + latestAiredEpisode for
+   * all subscriptions from live myshows, then refetch so the list self-fills.
+   * Best-effort — the cached list stays usable if it fails. Called on Shows-tab
+   * open so pre-existing subs don't sit empty until the daily digest runs.
+   */
+  async function refreshMetadata(): Promise<void> {
+    try {
+      await api.refreshSubscriptions()
+      await refetch()
+    } catch {
+      // best-effort backfill; keep the cached list as-is on failure
+    }
+  }
+
+  return { subscriptions, subscribedIds, loading, error, refetch, add, remove, refreshMetadata }
 }

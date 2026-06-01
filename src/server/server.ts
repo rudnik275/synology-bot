@@ -335,6 +335,24 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     c.json({ subscriptions: store.listSubscriptions().map(serializeSubscription) })
   )
 
+  // Background backfill: refresh poster + latestAiredEpisode for ALL subscriptions
+  // from live myshows, so the list self-fills when the Shows tab opens instead of
+  // waiting for the daily digest (ADR 0009's lazy backfill made first load look
+  // half-empty for pre-existing subs). Reuses the same metadata-refresh path as
+  // the detail-page self-heal; a per-show fetch failure keeps that show's values.
+  app.post('/api/subscriptions/refresh', async (c) => {
+    const refreshed = await refreshSubscriptionMetadata(
+      store.listSubscriptions(),
+      async (showId) => {
+        const show = await getShowById(showId)
+        return { poster: show.image, episodes: show.episodes }
+      },
+      new Date()
+    )
+    for (const sub of refreshed) store.addSubscription(sub)
+    return c.json({ subscriptions: refreshed.map(serializeSubscription) })
+  })
+
   // /api/subscriptions/today is retired (ADR 0009 — the in-app today block is removed).
   // The endpoint returns 404 to signal removal to any lingering clients.
   app.get('/api/subscriptions/today', (c) => c.json({ error: 'endpoint retired' }, 404))

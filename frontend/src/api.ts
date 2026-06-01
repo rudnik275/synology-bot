@@ -70,6 +70,8 @@ export const api = {
     request<{ folders: FolderView[] }>(`/folders${path ? `?path=${encodeURIComponent(path)}` : ''}`).then((r) => r.folders),
 
   subscriptions: () => request<{ subscriptions: SubscriptionView[] }>('/subscriptions').then((r) => r.subscriptions),
+  // Background backfill of poster + latestAiredEpisode for all subs (Shows-tab open).
+  refreshSubscriptions: () => request<{ subscriptions: SubscriptionView[] }>('/subscriptions/refresh', { method: 'POST' }).then((r) => r.subscriptions),
   subscribe: (showId: number) => request<{ subscription: SubscriptionView }>('/subscriptions', jsonBody({ showId })),
   unsubscribe: (id: string) => request<{ ok: true }>(`/subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 

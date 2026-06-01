@@ -10,7 +10,7 @@
  * Subscribe / Unsubscribe lives ONLY on the detail page.
  * The in-app "today" block is removed; daily push covers same-day airings.
  */
-import { ref, computed, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useSubscriptions } from '../composables/useSubscriptions'
 import { useShowSearch } from '../composables/useShowSearch'
 import { useShowDetail } from '../composables/useShowDetail'
@@ -20,13 +20,20 @@ import ScreenHeader from '../components/ScreenHeader.vue'
 import StickerBadge from '../components/StickerBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 
-const { subscriptions, loading: subsLoading, error: subsError, add, remove } = useSubscriptions()
+const { subscriptions, loading: subsLoading, error: subsError, add, remove, refreshMetadata } = useSubscriptions()
 const { results: searchResults, loading: searchLoading, error: searchError, debouncedSearch } = useShowSearch()
 const { data: showDetail, loading: detailLoading, error: detailError, load: loadDetail, clear: clearDetail } = useShowDetail()
 
 const query = ref('')
 const selectedShowId = ref<number | null>(null)
 const subscribing = ref(false)
+
+// On open, kick a background backfill so pre-existing subs (no cached poster/
+// episode from before ADR 0009) self-fill within a couple seconds rather than
+// waiting for the daily digest. The cached list renders instantly meanwhile.
+onMounted(() => {
+  void refreshMetadata()
+})
 
 // When query changes, trigger debounced search and clear detail
 watch(query, (q) => {

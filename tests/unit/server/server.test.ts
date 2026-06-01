@@ -448,6 +448,39 @@ describe('Mini App server — subscriptions', () => {
     const res = await makeApp().request('/api/subscriptions/99', { method: 'DELETE', headers: ownerHeaders() })
     expect(res.status).toBe(404)
   })
+
+  it('POST /api/subscriptions/refresh backfills poster + latestAiredEpisode for all subs', async () => {
+    const subs = [
+      { id: '1', showId: 1, title: 'A' },
+      { id: '2', showId: 2, title: 'B' },
+    ]
+    const saved: Array<{ showId: number; poster?: string }> = []
+    const store = makeStore({
+      listSubscriptions: () => subs,
+      addSubscription: (s) => { saved.push(s) },
+    })
+    const app = makeApp(makeSynology(), makeToloka(), {
+      store,
+      getShowById: async (showId) =>
+        makeDefaultShow({
+          id: showId,
+          image: `https://img/${showId}.jpg`,
+          episodes: [{ id: 1, title: 'Ep', seasonNumber: 1, episodeNumber: 1, airDateUTC: '2020-01-01T00:00:00Z' }],
+        }),
+    })
+    const res = await app.request('/api/subscriptions/refresh', { method: 'POST', headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { subscriptions: Array<{ poster: string | null; latestAiredEpisode: { season: number; episode: number } | null }> }
+    expect(body.subscriptions).toHaveLength(2)
+    expect(body.subscriptions[0].poster).toBe('https://img/1.jpg')
+    expect(body.subscriptions[0].latestAiredEpisode).toMatchObject({ season: 1, episode: 1 })
+    expect(saved).toHaveLength(2) // both persisted back to the store
+  })
+
+  it('POST /api/subscriptions/refresh requires auth', async () => {
+    const res = await makeApp().request('/api/subscriptions/refresh', { method: 'POST' })
+    expect(res.status).toBe(401)
+  })
 })
 
 describe('Mini App server — shows search & detail (ADR 0009)', () => {

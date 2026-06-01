@@ -74,6 +74,20 @@ async function searchAndSelect() {
   await flushPromises()
 }
 
+/**
+ * Pick a folder in the Variant D FolderPicker (no localStorage history).
+ * No-history path → tree is shown directly at root. Drill into the first
+ * folder-item, then click "Сохранить сюда" (pick-btn) to emit the path.
+ */
+async function pickFolderInTree() {
+  // Drill into the first root folder
+  document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+  await flushPromises()
+  // Now inside the folder — pick-btn appears
+  document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
+  await flushPromises()
+}
+
 describe('AddFlow (search-only)', () => {
   // ─── Basic rendering ────────────────────────────────────────────────
   it('renders a FAB button', () => {
@@ -176,18 +190,19 @@ describe('AddFlow (search-only)', () => {
   })
 
   // ─── Step 2: Folder ────────────────────────────────────────────────
-  it('step 2 (Folder): shows FolderPicker; Next disabled until a folder is picked', async () => {
+  it('step 2 (Folder): shows FolderPicker (tree mode — no history); Next disabled until a folder is picked', async () => {
     const wrapper = await openWizard()
     await searchAndSelect()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
-    expect(document.querySelector('[data-testid="pick-btn"]')).not.toBeNull()
+    // Variant D with no history: tree is shown directly (no tiles)
+    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
     const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
     expect(nextBtn.disabled).toBe(true)
 
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-    await flushPromises()
+    // Drill into a folder, then pick it
+    await pickFolderInTree()
     expect(nextBtn.disabled).toBe(false)
     wrapper.unmount()
   })
@@ -199,8 +214,8 @@ describe('AddFlow (search-only)', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-    await flushPromises()
+    // Variant D: drill in, then pick
+    await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
@@ -224,8 +239,7 @@ describe('AddFlow (search-only)', () => {
     await searchAndSelect()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-    await flushPromises()
+    await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
@@ -248,8 +262,7 @@ describe('AddFlow (search-only)', () => {
     await searchAndSelect()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-    await flushPromises()
+    await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
@@ -283,8 +296,8 @@ describe('AddFlow (search-only)', () => {
     await searchAndSelect()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
-    // Now on Folder.
-    expect(document.querySelector('[data-testid="pick-btn"]')).not.toBeNull()
+    // Now on Folder — Variant D: tree shown (no history), folder-item present.
+    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
 
     const closeBtn = document.querySelector('.sheet-close') as HTMLButtonElement
     closeBtn?.click()
@@ -295,7 +308,9 @@ describe('AddFlow (search-only)', () => {
 
     // Back at Search, nothing selected.
     expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
+    // On the search step there is no pick-btn and no folder-item.
     expect(document.querySelector('[data-testid="pick-btn"]')).toBeNull()
+    expect(document.querySelector('[data-testid="folder-item"]')).toBeNull()
     const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
     expect(nextBtn.disabled).toBe(true)
     wrapper.unmount()

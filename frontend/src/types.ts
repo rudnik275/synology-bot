@@ -19,12 +19,19 @@ export interface TaskView {
 
 export interface SearchResultView {
   id: string
+  /** Human-readable title with scene tokens stripped (#117) */
   title: string
   size: string
   seeders: number
   leechers: number
   downloadUrl: string
   category: string
+  /** Release year extracted from torrent name (#117) */
+  year?: number
+  /** Resolution / source / codec / HDR tokens extracted from torrent name (#117) */
+  quality?: string[]
+  /** Language codes extracted from torrent name (#117) */
+  languages?: string[]
 }
 
 export interface SubscriptionView {

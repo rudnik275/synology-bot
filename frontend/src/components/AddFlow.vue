@@ -9,10 +9,12 @@
 // bytes (#99) or a magnet/URL (#120). The wizard opens directly at the Folder
 // step with the source pre-loaded, then Confirm (2 steps; Search is not drawn).
 //
-// Mounted by App.vue as a fixed overlay on the Downloads surface.
+// Mounted by App.vue alongside DownloadsTab. The manual open trigger has moved
+// out of this component — DownloadsTab renders an inline «Добавить загрузку»
+// row (#118) and calls openSheet() via the exposed method. The deep-link/handoff
+// path (torrentToken / auto-open) is unchanged.
 import { ref, computed, onMounted } from 'vue'
 import Sheet from './Sheet.vue'
-import FAB from './FAB.vue'
 import Button from './Button.vue'
 import FolderPicker from './FolderPicker.vue'
 import { api } from '../api'
@@ -251,6 +253,10 @@ onMounted(() => {
   if (props.torrentToken) void startFromStashedTorrent(props.torrentToken)
 })
 
+// Expose openSheet so DownloadsTab (or any parent) can trigger the wizard
+// from the inline «Добавить загрузку» row (#118).
+defineExpose({ openSheet })
+
 async function create(): Promise<void> {
   errorMsg.value = null
 
@@ -289,10 +295,7 @@ async function create(): Promise<void> {
 </script>
 
 <template>
-  <!-- FAB: fixed bottom-right, floats above tab content -->
-  <FAB label="Add download" @click="openSheet" />
-
-  <!-- Fullscreen Add Wizard -->
+  <!-- Fullscreen Add Wizard (opened by inline row in DownloadsTab, #118) -->
   <Sheet v-model:open="open" title="Добавить" variant="fullscreen" @close="resetForm">
     <!-- Step content — wrapped in Transition unless reduced motion -->
     <div class="wizard-body">

@@ -1,5 +1,6 @@
 import type { Task } from '../infra/synology/types.ts'
 import type { TaskDetector } from './task-monitor/task-monitor.ts'
+import { cleanReleaseTitle } from './clean-release-title.ts'
 
 export interface FailedDetectorStore {
   wasNotifFired(taskId: string, event: string): boolean
@@ -37,7 +38,7 @@ export class FailedDetector implements TaskDetector {
       if (this.store.wasNotifFired(task.id, 'failed')) continue
 
       await this.sendAlert({
-        text: `❌ Ошибка: ${task.title}\nСтатус: error`,
+        text: `❌ Ошибка: ${cleanReleaseTitle(task.title).title}\nСтатус: error`,
         taskId: task.id,
       })
       this.store.markNotifFired(task.id, 'failed')

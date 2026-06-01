@@ -1,5 +1,6 @@
 import type { Task } from '../infra/synology/types.ts'
 import { formatBytes, formatSpeed } from '../lib/format-size.ts'
+import { cleanReleaseTitle } from './clean-release-title.ts'
 
 // Local plain-object shape so the domain layer doesn't import grammy (ADR-0002).
 // Handler layer treats this as a structurally-compatible InlineKeyboardButton.CallbackButton.
@@ -36,7 +37,7 @@ function statusIcon(status: Task['status']): string {
 
 function formatTaskRow(task: Task): string {
   const icon = statusIcon(task.status)
-  const title = truncateTitle(task.title)
+  const title = truncateTitle(cleanReleaseTitle(task.title).title)
   const downloaded = task.additional?.transfer?.size_downloaded ?? 0
   const speed = task.additional?.transfer?.speed_download ?? 0
   const total = task.size

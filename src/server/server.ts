@@ -179,6 +179,86 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     return c.json({ ok: true }, 201)
   })
 
+  // --- Tasks: inspect → commit (per-file selection, #123) ---
+  //
+  // Selective per-file BT download is a two-phase flow on DownloadStation2
+  // (verified on the live NAS). `/inspect` creates the task in INSPECTING state
+  // (create_list=true) and returns its `list_id` + the file list; the confirm
+  // step shows the tree, the owner picks a subset, then `/commit` selects that
+  // subset (BT.File) and starts the download (Complete). Backing out without a
+  // commit must DELETE the inspect so no orphaned list lingers on the NAS.
+  //
+  // Inspect needs the .torrent BYTES (magnets have none locally, but DSM
+  // resolves magnet metadata server-side — so a magnet URI is passed through to
+  // createDownloadTask as a whole-torrent add; only .torrent/Toloka sources get
+  // a file tree). Accepts the same source shapes as POST /api/tasks: a multipart
+  // .torrent upload, or a JSON {uri,title,destination} where the uri is a Toloka
+  // URL we fetch with auth.
+
+  app.post('/api/tasks/inspect', async (c) => {
+    const contentType = c.req.header('content-type') ?? ''
+
+    let bytes: Uint8Array
+    let fileName: string
+    let destination: string
+
+    if (contentType.includes('multipart/form-data')) {
+      const body = await c.req.parseBody().catch(() => null)
+      const file = body?.['file']
+      const dest = body?.['destination']
+      if (!(file instanceof File) || typeof dest !== 'string' || !dest) {
+        return c.json({ error: 'file and destination are required' }, 400)
+      }
+      bytes = new Uint8Array(await file.arrayBuffer())
+      fileName = file.name
+      destination = dest
+    } else {
+      const body = await c.req.json().catch(() => null)
+      const uri = body?.uri
+      destination = body?.destination
+      if (typeof uri !== 'string' || !uri || typeof destination !== 'string' || !destination) {
+        return c.json({ error: 'uri (Toloka URL) or a .torrent file, plus destination, are required' }, 400)
+      }
+      // Only sources we can turn into .torrent bytes can be inspected. Magnets
+      // have no local bytes; the client falls back to a whole-torrent add.
+      if (uri.startsWith('magnet:') || !isTolokaUrl(uri, tolokaBaseUrl)) {
+        return c.json({ error: 'this source cannot be inspected (no .torrent bytes)' }, 400)
+      }
+      try {
+        bytes = await toloka.downloadTorrent(uri)
+      } catch (err) {
+        return c.json({ error: errorMessage(err) }, 502)
+      }
+      const title = typeof body?.title === 'string' && body.title ? body.title : 'download'
+      fileName = `${title}.torrent`
+    }
+
+    const result = await synology.inspectTaskFromFile(bytes, fileName, destination)
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    return c.json(result.data, 200)
+  })
+
+  app.post('/api/tasks/commit', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const listId = body?.listId
+    const indices = body?.indices
+    if (typeof listId !== 'string' || !listId) {
+      return c.json({ error: 'listId is required' }, 400)
+    }
+    if (!Array.isArray(indices) || indices.length === 0 || !indices.every((n) => Number.isInteger(n))) {
+      return c.json({ error: 'indices must be a non-empty array of integers' }, 400)
+    }
+    const result = await synology.commitTaskSubset(listId, indices)
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    return c.json({ ok: true }, 201)
+  })
+
+  app.delete('/api/tasks/inspect/:listId', async (c) => {
+    const result = await synology.cancelTaskList(c.req.param('listId'))
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    return c.json({ ok: true })
+  })
+
   // --- Add-intake stash (#99, generalized #120): fetch what the bot stashed ---
   // A stash holds either a .torrent's BYTES (#99) or a magnet/URL string (#120).
   // For bytes the Mini App reconstructs a File and runs createTaskFromFile; for

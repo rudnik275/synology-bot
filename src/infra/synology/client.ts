@@ -1,4 +1,4 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoDownloadTaskCreateData, SynoStorageLoadInfo, ProcessGroupList, ProcessGroupSlice } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoDownloadTaskCreateData, SynoStorageLoadInfo, ProcessGroupList, ProcessGroupSlice, SynoTaskListGetData, TaskListFile, TaskInspectResult } from './types.ts'
 
 const PATH_ENTRY = 'webapi/entry.cgi'
 const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
@@ -238,6 +238,170 @@ export class SynologyClient {
     }
 
     return { ok: true }
+  }
+
+  // ─── DownloadStation2 selective-download (two-phase: inspect → select → commit) ───
+  //
+  // Verified on the live NAS (DSM 7). The flow is: create with create_list=true
+  // (INSPECTING, not downloading) → read the file list → set the wanted subset
+  // via BT.File → Complete to start only the selected files. Backing out before
+  // Complete leaves an orphaned inspecting task — cancelTaskList cleans it up.
+  //
+  // ⚠ create_list / the API surface / versions / sequence are confirmed. The
+  // exact WRITE payloads of selectTaskFiles (BT.File) and completeTaskList
+  // (Complete) are best-faithful — they were not exercised against a real write
+  // during the read-only probe. If a live-NAS pass reveals a different shape,
+  // only these two method bodies (and their unit tests) change. See the PR.
+
+  /**
+   * Phase 1+2: create an INSPECTING BT task (create_list=true) from a .torrent's
+   * bytes, then read its file list. Returns the `list_id` (needed to commit or
+   * cancel) plus the normalized file list. For magnets/torrents whose metadata
+   * is still resolving server-side, the list comes back empty + `inspecting`;
+   * we poll `Task.List get` up to `maxPolls` times. An empty list after polling
+   * is returned as-is (the caller decides whether to fall back to a whole add).
+   */
+  async inspectTaskFromFile(
+    bytes: Uint8Array,
+    fileName: string,
+    destination: string,
+    opts: { pollDelayMs?: number; maxPolls?: number } = {},
+  ): Promise<{ ok: true; data: TaskInspectResult } | { ok: false; reason: string }> {
+    const normalizedDestination = normalizeDownloadDestination(destination)
+    const form = new FormData()
+    form.append('api', 'SYNO.DownloadStation2.Task')
+    form.append('version', '2')
+    form.append('method', 'create')
+    form.append('_sid', this.sid ?? '')
+    form.append('type', '"file"')
+    form.append('destination', `"${normalizedDestination}"`)
+    form.append('create_list', 'true')
+    form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
+
+    const created = await this.postForm<SynoDownloadTaskCreateData>(form)
+    if (!created.ok) return created
+    const listId = created.data.list_id?.[0]
+    if (!listId) return { ok: false, reason: 'Synology returned no list_id for the inspecting task' }
+
+    const files = await this.pollTaskList(listId, opts)
+    if (!files.ok) return files
+    return { ok: true, data: { listId, files: files.data } }
+  }
+
+  /** Read the file list of an inspecting task (`Task.List get`), normalized. */
+  async getTaskListFiles(
+    listId: string,
+  ): Promise<{ ok: true; data: TaskListFile[]; inspecting: boolean } | { ok: false; reason: string }> {
+    const form = this.entryForm('SYNO.DownloadStation2.Task.List', 2, 'get')
+    form.append('list_id', `"${listId}"`)
+    const res = await this.postForm<SynoTaskListGetData>(form)
+    if (!res.ok) return res
+    const files: TaskListFile[] = (res.data.files ?? []).map((f, i) => ({
+      index: f.index ?? i,
+      path: f.path ?? f.name ?? '',
+      size: typeof f.size === 'string' ? Number(f.size) || 0 : f.size ?? 0,
+    }))
+    return { ok: true, data: files, inspecting: res.data.inspecting === true }
+  }
+
+  /** Poll `Task.List get` until files appear (or `inspecting` clears), up to maxPolls. */
+  private async pollTaskList(
+    listId: string,
+    opts: { pollDelayMs?: number; maxPolls?: number },
+  ): Promise<{ ok: true; data: TaskListFile[] } | { ok: false; reason: string }> {
+    const maxPolls = opts.maxPolls ?? 20
+    const pollDelayMs = opts.pollDelayMs ?? 500
+    let last: TaskListFile[] = []
+    for (let i = 0; i < maxPolls; i++) {
+      const res = await this.getTaskListFiles(listId)
+      if (!res.ok) return res
+      last = res.data
+      if (res.data.length > 0 && !res.inspecting) return { ok: true, data: res.data }
+      if (res.data.length > 0 && res.inspecting === false) return { ok: true, data: res.data }
+      // Still resolving metadata — wait and retry.
+      if (i < maxPolls - 1 && pollDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, pollDelayMs))
+      }
+    }
+    return { ok: true, data: last }
+  }
+
+  /** Phase 3: set the wanted file subset for an inspecting list via `BT.File`. */
+  async selectTaskFiles(
+    listId: string,
+    indices: number[],
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const form = this.entryForm('SYNO.DownloadStation2.Task.BT.File', 2, 'set')
+    form.append('list_id', `"${listId}"`)
+    form.append('index', JSON.stringify(indices))
+    const res = await this.postForm<unknown>(form)
+    if (!res.ok) return res
+    return { ok: true }
+  }
+
+  /** Phase 4: commit the list (`Complete`) — only the selected files download. */
+  async completeTaskList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const form = this.entryForm('SYNO.DownloadStation2.Task.Complete', 1, 'start')
+    form.append('list_id', `"${listId}"`)
+    const res = await this.postForm<unknown>(form)
+    if (!res.ok) return res
+    return { ok: true }
+  }
+
+  /** Phase 5: cancel an uncommitted inspecting list (`Task.List delete`). */
+  async cancelTaskList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const form = this.entryForm('SYNO.DownloadStation2.Task.List', 2, 'delete')
+    form.append('list_id', `"${listId}"`)
+    const res = await this.postForm<unknown>(form)
+    if (!res.ok) return res
+    return { ok: true }
+  }
+
+  /** Phases 3+4 as one operation: set the subset, then complete. Aborts before
+   *  Complete if the selection fails, so a half-applied list never starts. */
+  async commitTaskSubset(
+    listId: string,
+    indices: number[],
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const selected = await this.selectTaskFiles(listId, indices)
+    if (!selected.ok) return selected
+    return this.completeTaskList(listId)
+  }
+
+  /** A multipart form pre-filled with api/version/method/_sid for entry.cgi. */
+  private entryForm(api: string, version: number, method: string): FormData {
+    const form = new FormData()
+    form.append('api', api)
+    form.append('version', String(version))
+    form.append('method', method)
+    form.append('_sid', this.sid ?? '')
+    return form
+  }
+
+  /**
+   * POST a multipart form to entry.cgi, with the same code-119 relogin-and-retry
+   * contract as `request()`. Used by the DownloadStation2 file/list endpoints,
+   * which take a form body rather than query params.
+   */
+  private async postForm<T>(form: FormData): Promise<{ ok: true; data: T } | { ok: false; reason: string }> {
+    const url = `${this.host}/${PATH_ENTRY}`
+    const res = await fetch(url, { method: 'POST', body: form })
+    const json: SynoEnvelope<T> = await res.json()
+    if (!json.success) {
+      const code = json.error?.code
+      if (code === 119) {
+        await this.login()
+        form.set('_sid', this.sid ?? '')
+        const retry = await fetch(url, { method: 'POST', body: form })
+        const retryJson: SynoEnvelope<T> = await retry.json()
+        if (!retryJson.success) {
+          return { ok: false, reason: `Synology error code ${retryJson.error?.code ?? 'unknown'}` }
+        }
+        return { ok: true, data: retryJson.data as T }
+      }
+      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
+    }
+    return { ok: true, data: json.data as T }
   }
 
   private async requestOnce<T>(

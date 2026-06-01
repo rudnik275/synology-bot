@@ -59,8 +59,9 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     // It fetched the stash by token.
     expect(fetchCalls.some((c) => c.url.includes('/api/torrent-stash/TOK123'))).toBe(true)
-    // Jumped to the folder step (FolderPicker present); Search is not drawn.
-    expect(document.querySelector('[data-testid="pick-btn"]')).not.toBeNull()
+    // Jumped to the folder step — Variant D: no history → tree shown directly.
+    // FolderPicker renders folder-item (tree) not tiles; Search is not drawn.
+    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="search-query"]')).toBeNull()
     // No Back button — Folder is the first drawn step on the handoff path.
     expect(document.querySelector('[data-testid="wizard-back"]')).toBeNull()
@@ -71,7 +72,9 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     const wrapper = mount(AddFlow, { props: { torrentToken: 'TOK123' } })
     await flushPromises()
 
-    // Pick a folder, advance to confirm, submit.
+    // Variant D: drill into a folder, then pick it, then advance to confirm.
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
@@ -104,8 +107,9 @@ describe('AddFlow bot handoff — magnet/URL uri (#120)', () => {
 
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     expect(fetchCalls.some((c) => c.url.includes('/api/torrent-stash/TOKURI'))).toBe(true)
-    // Folder step, Search not drawn, no Back on the first drawn step.
-    expect(document.querySelector('[data-testid="pick-btn"]')).not.toBeNull()
+    // Folder step — Variant D: no history → tree shown directly.
+    // Search not drawn, no Back on the first drawn step.
+    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="search-query"]')).toBeNull()
     expect(document.querySelector('[data-testid="wizard-back"]')).toBeNull()
     wrapper.unmount()
@@ -116,6 +120,9 @@ describe('AddFlow bot handoff — magnet/URL uri (#120)', () => {
     const wrapper = mount(AddFlow, { props: { torrentToken: 'TOKURI' } })
     await flushPromises()
 
+    // Variant D: drill into a folder, then pick it.
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()

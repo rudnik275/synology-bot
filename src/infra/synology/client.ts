@@ -3,6 +3,27 @@ import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Ta
 const PATH_ENTRY = 'webapi/entry.cgi'
 const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
 
+/**
+ * Converts a FileStation absolute path to a DownloadStation share-relative path.
+ *
+ * FileStation returns paths with a leading slash (e.g. `/video/Movies`), but
+ * DownloadStation `create` expects a share-relative path without the leading
+ * slash (e.g. `video/Movies`). This function also strips a `/volumeN/` prefix
+ * if one is present.
+ *
+ * @example
+ * normalizeDownloadDestination('/video/Movies') // 'video/Movies'
+ * normalizeDownloadDestination('/volume1/video/Movies') // 'video/Movies'
+ * normalizeDownloadDestination('video/Movies') // 'video/Movies' (idempotent)
+ */
+export function normalizeDownloadDestination(destination: string): string {
+  // Strip /volumeN/ prefix (e.g. /volume1/, /volume2/)
+  let normalized = destination.replace(/^\/volume\d+\//, '/')
+  // Strip leading slash
+  normalized = normalized.replace(/^\//, '')
+  return normalized
+}
+
 /** Synology HDD temperature classification, synthesised from numeric `temp` (°C). */
 function classifyTemp(t: number): 'normal' | 'warning' | 'critical' {
   if (t >= 56) return 'critical'
@@ -130,7 +151,7 @@ export class SynologyClient {
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
     const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'create', {
       uri: magnet,
-      destination,
+      destination: normalizeDownloadDestination(destination),
     }, PATH_DOWNLOAD_TASK)
     if (!result.ok) return result
     return { ok: true }
@@ -160,13 +181,14 @@ export class SynologyClient {
     fileName: string,
     destination: string
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const normalizedDestination = normalizeDownloadDestination(destination)
     const form = new FormData()
     form.append('api', 'SYNO.DownloadStation2.Task')
     form.append('version', '2')
     form.append('method', 'create')
     form.append('_sid', this.sid ?? '')
     form.append('type', '"file"')
-    form.append('destination', `"${destination}"`)
+    form.append('destination', `"${normalizedDestination}"`)
     form.append('create_list', 'false')
     form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
 
@@ -195,13 +217,14 @@ export class SynologyClient {
     fileName: string,
     destination: string
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const normalizedDestination = normalizeDownloadDestination(destination)
     const form = new FormData()
     form.append('api', 'SYNO.DownloadStation2.Task')
     form.append('version', '2')
     form.append('method', 'create')
     form.append('_sid', this.sid ?? '')
     form.append('type', '"file"')
-    form.append('destination', `"${destination}"`)
+    form.append('destination', `"${normalizedDestination}"`)
     form.append('create_list', 'false')
     form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
 

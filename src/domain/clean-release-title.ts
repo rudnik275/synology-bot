@@ -127,10 +127,21 @@ export function cleanReleaseTitle(raw: string): CleanedTitle {
   // 5. Normalise remaining dots → spaces, collapse whitespace.
   let title = working.replace(/\./g, ' ').replace(/\s+/g, ' ').trim()
 
-  // 6. Remove stray leading/trailing punctuation.
-  title = title.replace(/^[-–\s.]+/, '').replace(/[-–\s.]+$/, '').trim()
+  // 6. Drop empty brackets left when a token was extracted from inside them,
+  //    e.g. "From (Season 4) (2026)" → "From (Season 4) ( )" → "From (Season 4)".
+  title = title.replace(/[([{]\s*[)\]}]/g, ' ')
 
-  // 7. Guard: never return empty title.
+  // 7. Collapse a RUN of 2+ adjacent separators (left dangling when a token
+  //    between/around them was removed) to a single one — but keep a lone
+  //    separator, which is a real divider (the "Назва / Title" dual-title split).
+  title = title.replace(/\s*([/|·])\s*(?:[/|·]\s*)+/g, ' $1 ')
+
+  // 8. Collapse whitespace, then strip stray leading/trailing punctuation and
+  //    now-dangling separators (e.g. a trailing " / |").
+  title = title.replace(/\s+/g, ' ').trim()
+  title = title.replace(/^[-–/|·\s.]+/, '').replace(/[-–/|·\s.]+$/, '').trim()
+
+  // 9. Guard: never return empty title.
   if (!title) {
     title = raw
   }

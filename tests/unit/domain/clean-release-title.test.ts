@@ -157,4 +157,20 @@ describe('cleanReleaseTitle', () => {
     expect(r.languages).toContain('Ukr')
     expect(r.languages).toContain('Eng')
   })
+
+  it('drops empty brackets and dangling separators left after token extraction', () => {
+    // Reproduces the live confirm-step junk "From (Season 4) ( ) / |".
+    const r = cleanReleaseTitle('Ззовні (Сезон 4) / From (Season 4) (2026) WEB-DL 1080p Ukr/Eng')
+    expect(r.title).not.toMatch(/[([{]\s*[)\]}]/) // no empty "( )"
+    expect(r.title).not.toMatch(/[/|·\s]$/) // no trailing separator / pipe
+    expect(r.title).toContain('From (Season 4)') // season marker kept
+    expect(r.title).toContain('Ззовні (Сезон 4)') // dual-title + lone "/" preserved
+    expect(r.title).toContain(' / ')
+    expect(r.year).toBe(2026)
+  })
+
+  it('keeps a lone slash divider but collapses a run of separators', () => {
+    expect(cleanReleaseTitle('Назва / Title').title).toBe('Назва / Title')
+    expect(cleanReleaseTitle('Назва / | Title').title).toBe('Назва / Title')
+  })
 })

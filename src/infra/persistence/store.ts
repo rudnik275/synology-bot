@@ -5,6 +5,15 @@ import { runMigrations } from './migrations.ts'
 import type { NasState } from '../../domain/reachability-monitor.ts'
 import type { Subscription } from '../../domain/subscription.ts'
 
+/**
+ * A stashed add-intake (#99, generalized #120): the bot stashes either the
+ * BYTES of a forwarded `.torrent` or a magnet/URL string, and the Mini App
+ * fetches it by token to resume the wizard at the folder step.
+ */
+export type AddIntakeStash =
+  | { kind: 'bytes'; fileName: string; data: Uint8Array }
+  | { kind: 'uri'; uri: string }
+
 export class PersistentStore {
   private db: Database
 
@@ -152,31 +161,53 @@ export class PersistentStore {
     this.setKv(key, String(value))
   }
 
-  // --- Torrent stash (#99): short-lived .torrent handoff bot → Mini App ---
+  // --- Add-intake stash (#99, generalized #120): short-lived handoff bot → Mini App ---
+  //
+  // Holds either file BYTES (a .torrent forwarded as a document, #99) or a URI
+  // string (a magnet / http(s) URL sent as text, #120). One token, one of the
+  // two payload kinds. The Mini App fetches it by token and resumes the wizard
+  // at the folder step.
 
   /** Stash a .torrent payload under `token`, expiring `ttlMs` from now. */
   stashTorrent(token: string, fileName: string, data: Uint8Array, ttlMs: number): void {
     this.db.run(
-      'INSERT OR REPLACE INTO torrent_stash (token, file_name, data, expires_at) VALUES (?, ?, ?, ?)',
+      'INSERT OR REPLACE INTO torrent_stash (token, file_name, data, uri, expires_at) VALUES (?, ?, ?, NULL, ?)',
       [token, fileName, data, Date.now() + ttlMs]
     )
   }
 
-  /** Fetch a stashed .torrent by token; prunes and returns undefined if expired. */
-  getTorrentStash(token: string): { fileName: string; data: Uint8Array } | undefined {
+  /** Stash a magnet / URL string under `token`, expiring `ttlMs` from now (#120). */
+  stashUri(token: string, uri: string, ttlMs: number): void {
+    this.db.run(
+      'INSERT OR REPLACE INTO torrent_stash (token, file_name, data, uri, expires_at) VALUES (?, NULL, NULL, ?, ?)',
+      [token, uri, Date.now() + ttlMs]
+    )
+  }
+
+  /**
+   * Fetch a stashed add-intake by token; prunes and returns undefined if
+   * expired. Returns a discriminated payload: `{ kind: 'bytes', fileName, data }`
+   * for a .torrent (#99) or `{ kind: 'uri', uri }` for a magnet/URL (#120).
+   */
+  getTorrentStash(token: string): AddIntakeStash | undefined {
     const row = this.db
-      .query<{ file_name: string; data: Uint8Array; expires_at: number }, [string]>(
-        'SELECT file_name, data, expires_at FROM torrent_stash WHERE token = ?'
-      )
+      .query<
+        { file_name: string | null; data: Uint8Array | null; uri: string | null; expires_at: number },
+        [string]
+      >('SELECT file_name, data, uri, expires_at FROM torrent_stash WHERE token = ?')
       .get(token)
     if (!row) return undefined
     if (row.expires_at <= Date.now()) {
       this.deleteTorrentStash(token)
       return undefined
     }
+    if (row.uri !== null) {
+      return { kind: 'uri', uri: row.uri }
+    }
     return {
-      fileName: row.file_name,
-      data: row.data instanceof Uint8Array ? row.data : new Uint8Array(row.data),
+      kind: 'bytes',
+      fileName: row.file_name ?? 'download.torrent',
+      data: row.data instanceof Uint8Array ? row.data : new Uint8Array(row.data ?? []),
     }
   }
 

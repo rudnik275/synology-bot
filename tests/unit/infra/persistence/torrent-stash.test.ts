@@ -7,15 +7,53 @@ function freshStore(): PersistentStore {
 
 const BYTES = new Uint8Array([0x64, 0x38, 0x3a, 0x61, 0x6e, 0x6e]) // "d8:ann" — torrent-ish
 
-describe('PersistentStore torrent stash', () => {
-  it('round-trips a stashed torrent by token', () => {
+describe('PersistentStore add-intake stash', () => {
+  it('round-trips a stashed torrent (bytes) by token', () => {
     const store = freshStore()
     store.stashTorrent('tok-1', 'movie.torrent', BYTES, 60_000)
 
     const got = store.getTorrentStash('tok-1')
     expect(got).toBeDefined()
-    expect(got!.fileName).toBe('movie.torrent')
-    expect(Array.from(got!.data)).toEqual(Array.from(BYTES))
+    if (got?.kind !== 'bytes') throw new Error('expected bytes stash')
+    expect(got.fileName).toBe('movie.torrent')
+    expect(Array.from(got.data)).toEqual(Array.from(BYTES))
+  })
+
+  it('round-trips a stashed URI (magnet) by token (#120)', () => {
+    const store = freshStore()
+    const magnet = 'magnet:?xt=urn:btih:abc123&dn=Big+Buck+Bunny'
+    store.stashUri('tok-uri', magnet, 60_000)
+
+    const got = store.getTorrentStash('tok-uri')
+    expect(got).toBeDefined()
+    if (got?.kind !== 'uri') throw new Error('expected uri stash')
+    expect(got.uri).toBe(magnet)
+  })
+
+  it('round-trips a stashed http(s) URL by token (#120)', () => {
+    const store = freshStore()
+    const url = 'https://tracker.example/file.torrent'
+    store.stashUri('tok-url', url, 60_000)
+
+    const got = store.getTorrentStash('tok-url')
+    if (got?.kind !== 'uri') throw new Error('expected uri stash')
+    expect(got.uri).toBe(url)
+  })
+
+  it('a URI stash is not mistaken for a bytes stash', () => {
+    const store = freshStore()
+    store.stashUri('tok-uri', 'magnet:?xt=urn:btih:zzz', 60_000)
+    const got = store.getTorrentStash('tok-uri')
+    if (got === undefined) throw new Error('expected a stash')
+    expect(got.kind).toBe('uri')
+    // No bytes payload leaks through the discriminated shape.
+    expect('data' in got).toBe(false)
+  })
+
+  it('an expired URI stash is treated as gone (#120)', () => {
+    const store = freshStore()
+    store.stashUri('tok-old-uri', 'magnet:?xt=urn:btih:old', -1)
+    expect(store.getTorrentStash('tok-old-uri')).toBeUndefined()
   })
 
   it('returns undefined for an unknown token', () => {
@@ -46,8 +84,8 @@ describe('PersistentStore torrent stash', () => {
     expect(store.getTorrentStash('dead')).toBeUndefined()
   })
 
-  it('migration creates the torrent_stash table (user_version >= 2)', () => {
+  it('migration creates the generalized torrent_stash table (user_version >= 3)', () => {
     const store = freshStore()
-    expect(store.getUserVersion()).toBeGreaterThanOrEqual(2)
+    expect(store.getUserVersion()).toBeGreaterThanOrEqual(3)
   })
 })

@@ -5,6 +5,7 @@ import type { TolokaClient } from '../infra/toloka/client.ts'
 import type { DockerClient } from '../infra/docker/client.ts'
 import { parseLastSessionDone } from '../infra/docker/client.ts'
 import type { Subscription } from '../domain/subscription.ts'
+import type { AddIntakeStash } from '../infra/persistence/store.ts'
 import { ownerAuth, type AppEnv } from './auth.ts'
 import {
   serializeTask,
@@ -25,9 +26,9 @@ export interface SubscriptionStore {
   removeSubscription(id: string): void
 }
 
-/** Narrow slice of PersistentStore the torrent-stash endpoint reads (#99). */
+/** Narrow slice of PersistentStore the add-intake stash endpoint reads (#99, #120). */
 export interface TorrentStashReader {
-  getTorrentStash(token: string): { fileName: string; data: Uint8Array } | undefined
+  getTorrentStash(token: string): AddIntakeStash | undefined
 }
 
 /** One episode airing today, as returned by the injected fetcher. */
@@ -172,16 +173,24 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     return c.json({ ok: true }, 201)
   })
 
-  // --- Torrent stash (#99): fetch a .torrent the bot stashed by token ---
-  // The Mini App reconstructs a File from the base64 payload and runs it
-  // through the normal createTaskFromFile path. Idempotent; the stash ages out
-  // by its own TTL. Sits under the /api/* owner guard — the token is a fetch
-  // key, not a capability.
+  // --- Add-intake stash (#99, generalized #120): fetch what the bot stashed ---
+  // A stash holds either a .torrent's BYTES (#99) or a magnet/URL string (#120).
+  // For bytes the Mini App reconstructs a File and runs createTaskFromFile; for
+  // a URI it runs the normal createTask URI path. Either way it resumes the
+  // wizard at the folder step. Idempotent; the stash ages out by its own TTL.
+  // Sits under the /api/* owner guard — the token is a fetch key, not a capability.
 
   app.get('/api/torrent-stash/:token', (c) => {
     const stash = deps.torrentStash?.getTorrentStash(c.req.param('token'))
     if (!stash) return c.json({ error: 'not found' }, 404)
-    return c.json({ name: stash.fileName, base64: Buffer.from(stash.data).toString('base64') })
+    if (stash.kind === 'uri') {
+      return c.json({ kind: 'uri', uri: stash.uri })
+    }
+    return c.json({
+      kind: 'bytes',
+      name: stash.fileName,
+      base64: Buffer.from(stash.data).toString('base64'),
+    })
   })
 
   // --- Folders (destination picker) ---

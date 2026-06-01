@@ -49,6 +49,33 @@ export const MIGRATIONS: Migration[] = [
       )`)
     },
   },
+  {
+    // #120 — generalize the stash to an add-intake stash that holds either file
+    // BYTES (.torrent, #99) or a URI string (magnet / http(s) URL handed off
+    // from a bot text message). A magnet link can exceed the 512-char
+    // `start_param` limit, so it is stashed too, not carried inline.
+    //
+    // SQLite can't drop the existing NOT NULL constraint on `data` in place, so
+    // recreate the table: `data` and `file_name` become nullable (a URI stash
+    // has neither), and a `uri` column is added. Existing rows (bytes stashes)
+    // carry over; the in-flight TTL is short, so any loss on upgrade is benign.
+    version: 3,
+    up: (db) => {
+      db.run('ALTER TABLE torrent_stash RENAME TO torrent_stash_v2')
+      db.run(`CREATE TABLE torrent_stash (
+        token TEXT PRIMARY KEY,
+        file_name TEXT,
+        data BLOB,
+        uri TEXT,
+        expires_at INTEGER NOT NULL
+      )`)
+      db.run(
+        'INSERT INTO torrent_stash (token, file_name, data, uri, expires_at) ' +
+          'SELECT token, file_name, data, NULL, expires_at FROM torrent_stash_v2'
+      )
+      db.run('DROP TABLE torrent_stash_v2')
+    },
+  },
 ]
 
 export function runMigrations(db: Database): void {

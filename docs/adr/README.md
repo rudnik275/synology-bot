@@ -23,3 +23,5 @@
 | [0005](./0005-mini-app-for-pull-thin-bot-for-push.md) | Mini App for management (pull), thin bot for notifications (push) |
 | [0006](./0006-mini-app-design-system-neo-brutalism.md) | Mini App design system — Neo-Brutalism, single light mode, jobs-first IA |
 | [0007](./0007-cloudflared-runtime-topology-and-deploy-resilience.md) | cloudflared in the bot's netns + Watchtower depends-on (tunnel survives deploys) |
+| [0008](./0008-add-intake-search-only-app-bot-handoff.md) | Add intake — Mini App search-only; bot chat hands off .torrent + magnet/URL |
+| [0009](./0009-shows-tab-search-first-detail-page.md) | Shows tab — search-first, Show detail page, detail-only subscribe, in-app today dropped |

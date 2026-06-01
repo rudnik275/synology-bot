@@ -136,9 +136,31 @@ function qualityChips(task: TaskView): string[] {
   <div class="downloads-tab">
     <ScreenHeader title="Downloads" />
 
-    <!-- Loading skeleton -->
-    <div v-if="loading && tasks.length === 0" class="loading-state" aria-label="Loading downloads">
-      <div v-for="i in 2" :key="i" class="skeleton-card" />
+    <!-- Loading skeleton: content-shaped cards matching the real card geometry (#115 Variant A) -->
+    <div v-if="loading && tasks.length === 0" class="loading-state" aria-label="Loading downloads" aria-busy="true">
+      <div v-for="i in 3" :key="i" class="sk-card" role="presentation">
+        <!-- Left edge stripe in neutral skeleton grey (status unknown while loading) -->
+        <div class="sk-edge" />
+        <!-- Title row: ~60% title bar + small status label placeholder -->
+        <div class="sk-row">
+          <div class="sk-line sk-title" />
+          <div class="sk-line sk-label" />
+        </div>
+        <!-- Quality chip placeholders (year / resolution / codec) -->
+        <div class="sk-chips">
+          <div class="sk-chip" />
+          <div class="sk-chip" />
+          <div v-if="i !== 2" class="sk-chip" />
+        </div>
+        <!-- Progress bar placeholder (full-width container + partial fill block) -->
+        <div class="sk-bar">
+          <div class="sk-bar-fill" :style="{ width: i === 1 ? '55%' : '78%' }" />
+        </div>
+        <!-- Meta line placeholder -->
+        <div class="sk-row">
+          <div class="sk-line sk-meta" />
+        </div>
+      </div>
     </div>
 
     <!-- Error state -->
@@ -562,25 +584,151 @@ function qualityChips(task: TaskView): string[] {
   transform: translateY(-8px);
 }
 
-/* Skeleton loading cards */
-.skeleton-card {
-  height: 140px;
+/*
+ * ── Skeleton loader — Variant A (#115) ───────────────────────────────────────
+ *
+ * Content-shaped cards that mirror the real download card geometry (#116):
+ * same border / radius / shadow / left edge stripe.  Animated via a horizontal
+ * left→right shimmer sweep on the skeleton colour (background-position only,
+ * no layout thrash).  Only renders on first load (loading && tasks.length===0).
+ *
+ * Skeleton palette:
+ *   --sk-base   the quiet fill  (#e9e4d4 — warm parchment, no hue association)
+ *   --sk-sheen  the shimmer peak (a lighter warm tone blended inline)
+ *
+ * Reduced motion: the global tokens.css block already sets
+ *   animation-duration: 0.01ms; animation-iteration-count: 1
+ * on * which effectively stops the shimmer.  The local override below
+ * additionally freezes background-position so there is truly no movement.
+ */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Outer card — same geometry as the real Card component (raised tier) */
+.sk-card {
+  position: relative;
   background: var(--paper);
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
-  opacity: 0.5;
-  animation: pulse 1.4s ease-in-out infinite;
+  padding: var(--space-4);
+  /* Left padding accounts for the 5px edge stripe (mirrors .task-card) */
+  padding-left: calc(var(--space-4) + 5px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow: hidden;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 0.25; }
+/* Neutral skeleton grey edge stripe — left side, same position as Card::after stripe */
+.sk-edge {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: #e2ddd1; /* neutral skeleton grey — no status hue */
 }
 
+/* Shimmer keyframe: left → right sweep using background-position */
+@keyframes sk-shimmer {
+  0%   { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+/*
+ * Shimmer base: applied to every skeleton placeholder element.
+ * The gradient blends skeleton-base → lighter sheen → skeleton-base,
+ * which slides across via background-position.
+ */
+.sk-line,
+.sk-chip {
+  --sk-base: #e9e4d4;
+  --sk-sheen: #f3eedf;
+  border-radius: 6px;
+  background: var(--sk-base);
+  background-image: linear-gradient(
+    90deg,
+    var(--sk-base) 0,
+    var(--sk-sheen) 40px,
+    var(--sk-base) 80px
+  );
+  background-size: 300px 100%;
+  background-repeat: no-repeat;
+  animation: sk-shimmer 1.3s linear infinite;
+}
+
+/* Header row: title bar + status label placeholder */
+.sk-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sk-title {
+  height: 16px;
+  width: 62%;
+}
+
+.sk-label {
+  height: 12px;
+  width: 34px;
+  flex-shrink: 0;
+}
+
+/* Chip row */
+.sk-chips {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.sk-chip {
+  width: 42px;
+  height: 18px;
+  border-radius: 999px; /* fully-rounded pill like real chips */
+}
+
+/* Progress bar — full-width container (bordered, like ProgressBar), partial fill block */
+.sk-bar {
+  height: 18px;
+  border: var(--border);
+  border-radius: 6px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.sk-bar-fill {
+  --sk-base: #e9e4d4;
+  --sk-sheen: #f3eedf;
+  height: 100%;
+  background: var(--sk-base);
+  background-image: linear-gradient(
+    90deg,
+    var(--sk-base) 0,
+    var(--sk-sheen) 40px,
+    var(--sk-base) 80px
+  );
+  background-size: 300px 100%;
+  background-repeat: no-repeat;
+  animation: sk-shimmer 1.3s linear infinite;
+}
+
+/* Meta line */
+.sk-meta {
+  height: 12px;
+  width: 45%;
+}
+
+/* Reduced motion: neutralise the shimmer sweep — fall back to a static tint. */
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-card {
+  .sk-line,
+  .sk-chip,
+  .sk-bar-fill {
     animation: none;
+    background-image: none; /* remove the gradient; flat skeleton colour only */
   }
 }
 </style>

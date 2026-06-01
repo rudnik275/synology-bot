@@ -1,10 +1,11 @@
-// Tests for DownloadsTab Variant B (#116):
+// Tests for DownloadsTab Variant B card (#116) + Variant A skeleton loader (#115):
 //   - One status accent (edge stripe via Card, not badge/tone)
 //   - Exactly one primary action per status group (or none)
 //   - Delete lives in the overflow ⋯ menu behind a confirmation dialog
 //   - Quality chips (year/quality/languages from #117) render under the title
 //   - Elevation tiers (#101 D) preserved
 //   - useTasks composable contract unchanged
+//   - Loading state: content-shaped skeleton cards (not generic boxes), first-load only
 // Mocks globalThis.fetch.
 import { describe, it, expect, afterEach } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -342,6 +343,71 @@ describe('DownloadsTab', () => {
 
     const chips = wrapper.findAll('.chip')
     expect(chips).toHaveLength(0)
+  })
+
+  // ── Skeleton loader — Variant A (#115) ───────────────────────────────────
+
+  it('shows content-shaped skeleton cards (not generic boxes) on first load', async () => {
+    // Fetch never resolves — loading stays true while tasks.length === 0
+    globalThis.fetch = (() => new Promise(() => {})) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+    // Wait one tick: onMounted fires → refetch() starts → loading becomes true
+    await wrapper.vm.$nextTick()
+
+    // The loading-state container must be present
+    const loadingState = wrapper.find('[aria-label="Loading downloads"]')
+    expect(loadingState.exists()).toBe(true)
+    expect(loadingState.attributes('aria-busy')).toBe('true')
+
+    // Content-shaped skeleton cards — NOT the old generic .skeleton-card boxes
+    const skCards = wrapper.findAll('.sk-card')
+    expect(skCards.length).toBeGreaterThanOrEqual(2)
+
+    // Each card contains a left edge stripe in neutral skeleton grey
+    const firstCard = skCards[0]!
+    expect(firstCard.find('.sk-edge').exists()).toBe(true)
+
+    // Each card has a title placeholder bar
+    expect(firstCard.find('.sk-title').exists()).toBe(true)
+
+    // Each card has chip placeholders
+    expect(firstCard.findAll('.sk-chip').length).toBeGreaterThanOrEqual(2)
+
+    // Each card has a progress bar container with a partial fill block
+    expect(firstCard.find('.sk-bar').exists()).toBe(true)
+    expect(firstCard.find('.sk-bar-fill').exists()).toBe(true)
+
+    // Each card has a meta line placeholder
+    expect(firstCard.find('.sk-meta').exists()).toBe(true)
+
+    // The old generic box class must NOT be present
+    expect(wrapper.find('.skeleton-card').exists()).toBe(false)
+  })
+
+  it('hides skeleton when loading completes (first-load only trigger)', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+
+    // Before promises resolve, tasks.length === 0 — but let it resolve
+    await flushPromises()
+
+    // After load with tasks, loading state must be gone
+    expect(wrapper.find('[aria-label="Loading downloads"]').exists()).toBe(false)
+
+    // Task list is shown instead
+    expect(wrapper.text()).toContain(downloadingTask.title)
+  })
+
+  it('hides skeleton once tasks arrive even if loading remains true', async () => {
+    // First request resolves with tasks (simulates refetch while still "loading")
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // tasks.length > 0 so skeleton must not render even if loading===true
+    expect(wrapper.find('.sk-card').exists()).toBe(false)
   })
 
   // ── No StickerBadge on card face (Variant B one-accent rule) ─────────────

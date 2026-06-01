@@ -163,6 +163,30 @@ export interface ShowDetailView {
   seasons: ShowSeasonView[]
 }
 
+/**
+ * myshows returns show descriptions as HTML (`<p>…</p><h3>…</h3>`). The Mini App
+ * renders text, not markup (`{{ description }}`), so a raw value shows the tags
+ * verbatim. Normalize to plain text here: block-level tags become paragraph
+ * breaks, the rest are stripped, common entities decoded. Keeps the normalized
+ * contract free of raw markup.
+ */
+export function htmlToText(html: string): string {
+  return html
+    .replace(/<\/(p|h[1-6]|div|li|ul|ol)>/gi, '\n\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}
+
 export function serializeShowDetail(
   show: MyShowsShowDetailed,
   subscribedIds: Set<number>,
@@ -201,7 +225,7 @@ export function serializeShowDetail(
     title: show.title,
     titleOriginal: show.titleOriginal ?? null,
     poster: show.image ?? null,
-    description: show.description ?? null,
+    description: show.description ? htmlToText(show.description) : null,
     isSubscribed: subscribedIds.has(show.id),
     seasons,
   }

@@ -141,6 +141,19 @@ describe('serializeShowDetail', () => {
     expect(result.description).toBe('A chemistry teacher turned drug lord.')
   })
 
+  it('strips HTML markup from the description (myshows returns HTML)', () => {
+    const htmlDesc: MyShowsShowDetailed = {
+      ...FIXTURE,
+      description: '<p>Британский сериал.</p> <h3>В чем суть?</h3> <p>Превосходные&nbsp;актеры &amp; сюжеты.</p>',
+    }
+    const result = serializeShowDetail(htmlDesc, new Set(), NOW)
+    expect(result.description).not.toContain('<')
+    expect(result.description).not.toContain('>')
+    expect(result.description).toContain('Британский сериал.')
+    expect(result.description).toContain('В чем суть?')
+    expect(result.description).toContain('Превосходные актеры & сюжеты.')
+  })
+
   it('isSubscribed reflects subscribedIds set', () => {
     expect(serializeShowDetail(FIXTURE, new Set(), NOW).isSubscribed).toBe(false)
     expect(serializeShowDetail(FIXTURE, new Set([1396]), NOW).isSubscribed).toBe(true)

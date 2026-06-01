@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Folder step — v2 (simpler)</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --red:#ff5c5c; --orange:#ff9a3c; --yellow:#ffd23f; --green:#2fd86b; --violet:#9b6dff;
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px;
+  --fw-bold:700;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px;
+  --radius-sm:6px; --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink);
+  --hairline:3px solid rgba(9,9,11,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.cap.good{color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;max-width:304px;min-height:72px}
+
+.phone{width:304px;height:620px;background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2)}
+.hd h2{font-size:var(--fs-lg);font-weight:700;text-transform:uppercase}
+.x{width:38px;height:38px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;box-shadow:var(--shadow-sm)}
+
+.step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-1) var(--space-4) var(--space-4)}
+.node{display:flex;flex-direction:column;align-items:center;gap:5px;width:62px}
+.ndot{width:34px;height:34px;border:var(--border);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm)}
+.ndot.now{background:var(--yellow);border:var(--border-strong)}
+.ndot.done{background:var(--ink);color:var(--paper)}
+.nlab{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.45}
+.nlab.now{opacity:1}
+.line{flex:1;height:3px;background:var(--ink);margin-top:16px;min-width:14px;border-radius:2px}
+.line.future{opacity:.22}
+
+.body{flex:1;min-height:0;overflow:hidden;padding:0 var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
+.qlabel{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;opacity:.45}
+svg.s{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+
+/* ===== D: big folder tiles, tree hidden behind a link ===== */
+.tile{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:60px;padding:var(--space-3) var(--space-4);background:var(--paper);border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);text-align:left}
+.tile .ic{width:24px;height:24px;flex-shrink:0;opacity:.75}
+.tile .nm{flex:1;font-weight:700;font-size:var(--fs-md)}
+.tile .sel{width:22px;height:22px;border:2px solid var(--ink);border-radius:50%;flex-shrink:0}
+.tile.cur{border:var(--border-strong);box-shadow:var(--shadow-md);background:var(--yellow)}
+.tile.cur .sel{background:var(--ink)}
+.morelink{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;background:transparent;border:none;font-family:var(--font);font-weight:700;font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.03em;opacity:.6}
+.morelink svg{width:16px;height:16px}
+
+/* ===== E: minimal plain rows, no boxes ===== */
+.plainwrap{display:flex;flex-direction:column}
+.pathline{font-family:var(--mono);font-size:var(--fs-sm);font-weight:700;opacity:.6;padding:var(--space-2) 0 var(--space-3);border-bottom:var(--hairline)}
+.prow{display:flex;align-items:center;gap:var(--space-3);min-height:52px;padding:var(--space-2) 0;border-bottom:var(--hairline);font-weight:500;font-size:var(--fs-md)}
+.prow .ic{width:22px;height:22px;opacity:.7}
+.prow .nm{flex:1}
+.prow.cur .nm{font-weight:700}
+.prow .check{width:22px;height:22px;color:var(--ink)}
+.prow .arr{opacity:.35;width:18px;height:18px}
+
+/* footer */
+.foot{padding:var(--space-3) var(--space-4) var(--space-4);border-top:var(--border);display:flex;gap:var(--space-2)}
+.btn{flex:1;min-height:48px;border:var(--border-strong);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);font-family:var(--font);font-weight:700;font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.prim{background:var(--yellow)}
+.btn.back{flex:0 0 auto;width:60px}
+.legend{font-size:11px;opacity:.6;text-align:center;margin-top:2px;max-width:304px}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- D: PRIMARY = pick known folder, tree hidden -->
+  <div class="col" id="D">
+    <div class="cap good">D — Известные папки крупно</div>
+    <div class="sub">Главный экран = только твои 2-3 папки крупными плитками. Тап = выбрать и сразу дальше. Дерево спрятано за «Выбрать другую папку…» (нужно редко). Максимально чисто.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">2</div><div class="nlab now">Папка</div></div>
+        <div class="line future"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <span class="qlabel">Куда сохранить</span>
+        <div class="tile cur"><span class="ic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Фильмы</span><span class="sel"></span></div>
+        <div class="tile"><span class="ic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Сериалы</span><span class="sel"></span></div>
+        <div class="tile"><span class="ic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Загрузки</span><span class="sel"></span></div>
+        <button class="morelink">Выбрать другую папку <svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+      </div>
+      <div class="foot"><span class="btn back"><svg class="s" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg></span><span class="btn prim">Далее</span></div>
+    </div>
+    <div class="legend">2-3 папки крупно · тап=выбрать · дерево спрятано</div>
+  </div>
+
+  <!-- E: minimal plain rows -->
+  <div class="col" id="E">
+    <div class="cap good">E — Минимал, простые строки</div>
+    <div class="sub">Никаких карточек/панелей. Путь сверху одной строкой. Папки — простые строки с тонкой линией-разделителем. Известные сверху (галочка), остальные ниже со стрелкой «зайти».</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">2</div><div class="nlab now">Папка</div></div>
+        <div class="line future"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="plainwrap">
+          <div class="pathline">/volume1/downloads</div>
+          <div class="prow cur"><span class="ic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Фильмы</span><svg class="check s" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+          <div class="prow"><span class="ic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Сериалы</span><svg class="arr s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+          <div class="prow"><span class="ic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Музыка</span><svg class="arr s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+          <div class="prow"><span class="ic"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Документалки</span><svg class="arr s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+      </div>
+      <div class="foot"><span class="btn back"><svg class="s" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M15 6l-6 6 6 6"/></svg></span><span class="btn prim">Сохранить в «Фильмы»</span></div>
+    </div>
+    <div class="legend">путь строкой · галочка=выбрано · стрелка=зайти</div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Downloads loader — variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --red:#ff5c5c; --orange:#ff9a3c; --yellow:#ffd23f; --green:#2fd86b; --violet:#9b6dff;
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px;
+  --fw-bold:700;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px;
+  --radius-sm:6px; --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink);
+  --skel:#e9e4d4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:14px;width:330px}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.cap.bad{color:#c0392b} .cap.good{color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;min-height:60px}
+.phone{background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);padding:var(--space-4);min-height:430px;display:flex;flex-direction:column;gap:var(--space-4);
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px}
+.h1{font-size:var(--fs-xl);font-weight:700;text-transform:uppercase}
+
+/* shimmer keyframes */
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:.25}}
+@keyframes shimmer{0%{background-position:-200px 0}100%{background-position:calc(200px + 100%) 0}}
+@keyframes barfill{0%{width:8%}100%{width:92%}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== CURRENT: 2 pulsing boxes ===== */
+.s0{height:140px;background:var(--paper);border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);opacity:.5;animation:pulse 1.4s ease-in-out infinite}
+
+/* ===== A: content-shaped skeleton (matches #116 card) ===== */
+.skcard{position:relative;background:var(--paper);border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-md);padding:var(--space-4);padding-left:calc(var(--space-4) + 8px);display:flex;flex-direction:column;gap:var(--space-3);overflow:hidden}
+.skedge{position:absolute;left:0;top:0;bottom:0;width:9px;background:var(--skel)}
+.skline{background:var(--skel);border-radius:var(--radius-sm);background-image:linear-gradient(90deg,var(--skel) 0,#f3eee0 40px,var(--skel) 80px);background-size:200px 100%;animation:shimmer 1.3s linear infinite}
+.skrow{display:flex;justify-content:space-between;gap:var(--space-2);align-items:center}
+.skchips{display:flex;gap:6px}
+.skchip{width:42px;height:18px;border-radius:999px;background:var(--skel)}
+.skbar{height:18px;border:var(--border);border-radius:var(--radius-sm);background:var(--paper);overflow:hidden}
+.skbar i{display:block;height:100%;background:var(--skel);width:55%}
+
+/* ===== B: animated indeterminate bar + label ===== */
+.bwrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-4);min-height:340px}
+.bbar{width:80%;height:22px;border:var(--border);border-radius:var(--radius);background:var(--paper);overflow:hidden}
+.bbar i{display:block;height:100%;background:var(--yellow);border-right:3px solid var(--ink);animation:barfill 1.1s var(--ease,ease-in-out) infinite alternate}
+.blabel{font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.6}
+.barrow{width:80%;height:22px;border:var(--border);border-radius:var(--radius);background:repeating-linear-gradient(45deg,var(--yellow) 0 12px,var(--ink) 12px 16px);background-size:200% 100%;animation:shimmer 1s linear infinite}
+
+/* ===== C: spinner sticker ===== */
+.cwrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-4);min-height:340px}
+.spin{width:64px;height:64px;border:6px solid var(--ink);border-top-color:var(--yellow);border-radius:50%;animation:spin .9s linear infinite;box-shadow:var(--shadow-sm)}
+.clabel{font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.6}
+
+.legend{font-size:11px;opacity:.6;text-align:center;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- CURRENT -->
+  <div class="col" id="P">
+    <div class="cap bad">⚠ Сейчас</div>
+    <div class="sub">2 одинаковых серых бокса, пульсируют прозрачностью. Не похожи на карточки, не намекают на контент — просто «что-то грузится».</div>
+    <div class="phone">
+      <div class="h1">Downloads</div>
+      <div class="s0"></div>
+      <div class="s0"></div>
+    </div>
+    <div class="legend">opacity-pulse, абстрактные боксы</div>
+  </div>
+
+  <!-- A -->
+  <div class="col" id="A">
+    <div class="cap good">A — Скелетон по форме карточки</div>
+    <div class="sub">Заглушки повторяют будущую карточку (#116): грань слева, заголовок, чипы, прогресс. Shimmer-блик слева-направо. Контент «проявляется», layout не прыгает.</div>
+    <div class="phone">
+      <div class="h1">Downloads</div>
+      <div class="skcard">
+        <span class="skedge"></span>
+        <div class="skrow"><span class="skline" style="height:16px;width:62%"></span><span class="skline" style="height:18px;width:34px"></span></div>
+        <div class="skchips"><span class="skchip"></span><span class="skchip"></span></div>
+        <div class="skbar"><i></i></div>
+        <div class="skrow"><span class="skline" style="height:12px;width:45%"></span></div>
+      </div>
+      <div class="skcard">
+        <span class="skedge"></span>
+        <div class="skrow"><span class="skline" style="height:16px;width:52%"></span><span class="skline" style="height:18px;width:34px"></span></div>
+        <div class="skchips"><span class="skchip"></span><span class="skchip"></span><span class="skchip"></span></div>
+        <div class="skbar"><i style="width:78%"></i></div>
+        <div class="skrow"><span class="skline" style="height:12px;width:38%"></span></div>
+      </div>
+    </div>
+    <div class="legend">shimmer · форма = будущая карточка · нет скачка layout</div>
+  </div>
+
+  <!-- B -->
+  <div class="col" id="B">
+    <div class="cap good">B — Брутал-полоса + подпись</div>
+    <div class="sub">Одна крупная неопределённая полоса в фирменном стиле (жёлтый бежит в чёрной рамке) + «Загрузка…». Самый «брутальный»/фирменный, но контент не предсказывает.</div>
+    <div class="phone">
+      <div class="h1">Downloads</div>
+      <div class="bwrap">
+        <div class="barrow"></div>
+        <div class="blabel">Загрузка…</div>
+      </div>
+    </div>
+    <div class="legend">индетерминантная полоса · фирменный жёлтый/чёрный</div>
+  </div>
+
+  <!-- C -->
+  <div class="col" id="C">
+    <div class="cap good">C — Спиннер-стикер</div>
+    <div class="sub">Классический круговой спиннер (чёрное кольцо, жёлтый сектор) по центру + подпись. Простой и привычный, но самый «обычный», меньше всего в духе брутализма.</div>
+    <div class="phone">
+      <div class="h1">Downloads</div>
+      <div class="cwrap">
+        <div class="spin"></div>
+        <div class="clabel">Загрузка…</div>
+      </div>
+    </div>
+    <div class="legend">круговой спиннер по центру</div>
+  </div>
+
+</div>
+</body>
+</html>

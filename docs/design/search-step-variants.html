@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Search step — variants</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --red:#ff5c5c; --orange:#ff9a3c; --yellow:#ffd23f; --green:#2fd86b; --violet:#9b6dff;
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px;
+  --fw-bold:700;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px;
+  --radius-sm:6px; --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.cap.bad{color:#c0392b} .cap.good{color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;max-width:304px;min-height:56px}
+
+/* phone — fullscreen wizard sheet */
+.phone{width:304px;height:620px;background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2)}
+.hd h2{font-size:var(--fs-lg);font-weight:700;text-transform:uppercase}
+.x{width:38px;height:38px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;box-shadow:var(--shadow-sm)}
+
+/* stepper (frame B from #119) */
+.step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-1) var(--space-4) var(--space-3)}
+.node{display:flex;flex-direction:column;align-items:center;gap:5px;width:62px}
+.ndot{width:34px;height:34px;border:var(--border);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm)}
+.ndot.now{background:var(--yellow);border:var(--border-strong)}
+.nlab{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.45}
+.nlab.now{opacity:1}
+.line{flex:1;height:3px;background:var(--ink);margin-top:16px;min-width:14px;opacity:.22;border-radius:2px}
+
+.body{flex:1;min-height:0;overflow:hidden;padding:0 var(--space-4) var(--space-3);display:flex;flex-direction:column;gap:var(--space-3)}
+
+/* search input */
+.searchrow{display:flex;gap:var(--space-2)}
+.sinput{flex:1;min-height:46px;padding:0 var(--space-3);border:var(--border-strong);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);font-family:var(--font);font-size:var(--fs-md);font-weight:500;display:flex;align-items:center;gap:8px;color:var(--ink)}
+.sinput .ph{opacity:.4}
+.sbtn{min-width:46px;border:var(--border-strong);border-radius:var(--radius);background:var(--ink);color:var(--cream);box-shadow:var(--shadow-sm);display:flex;align-items:center;justify-content:center}
+.sbtn svg{width:20px;height:20px}
+
+.reslabel{font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.5}
+
+/* health dot */
+.health{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.hdot{width:9px;height:9px;border-radius:50%;border:2px solid var(--ink)}
+.hg{background:var(--green)} .ho{background:var(--orange)} .hr{background:var(--red)}
+.chip{font-size:10px;font-weight:700;padding:2px 7px;border:2px solid var(--ink);border-radius:999px;background:var(--paper);white-space:nowrap}
+.chip.cat{background:var(--violet);color:var(--cream)}
+
+/* ===== A: rich result rows (tap → next) ===== */
+.results{display:flex;flex-direction:column;gap:var(--space-2);overflow:hidden}
+.rcard{position:relative;background:var(--paper);border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:var(--space-3);padding-right:30px;display:flex;flex-direction:column;gap:6px;text-align:left}
+.rcard .chev{position:absolute;right:10px;top:50%;transform:translateY(-50%);opacity:.4}
+.rcard .chev svg{width:16px;height:16px}
+.rtitle{font-size:var(--fs-sm);font-weight:700;line-height:1.25}
+.rmeta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.rmeta .size{font-size:11px;font-weight:700;opacity:.75;font-variant-numeric:tabular-nums}
+
+/* ===== B: compact dense rows ===== */
+.rlist{display:flex;flex-direction:column;border:var(--border);border-radius:var(--radius);overflow:hidden;background:var(--paper)}
+.rrow{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-bottom:3px solid rgba(9,9,11,.12)}
+.rrow:last-child{border-bottom:none}
+.rrow .col2{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.rrow .t{font-size:var(--fs-sm);font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow .m{display:flex;gap:6px;align-items:center}
+.rrow .m .size{font-size:10px;opacity:.7;font-weight:700}
+
+/* ===== C: card grid-ish with big health ===== */
+.ccard{background:var(--paper);border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:var(--space-3);display:flex;flex-direction:column;gap:var(--space-2)}
+.ctop{display:flex;justify-content:space-between;gap:var(--space-2);align-items:flex-start}
+.cbtitle{font-size:var(--fs-sm);font-weight:700;line-height:1.25}
+.healthbig{display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;padding:4px 8px;border:2px solid var(--ink);border-radius:var(--radius-sm)}
+.healthbig.g{background:var(--green)} .healthbig.o{background:var(--orange)}
+.healthbig .n{font-size:var(--fs-md);font-weight:700;line-height:1}
+.healthbig .l{font-size:8px;font-weight:700;text-transform:uppercase;opacity:.8}
+.cchips{display:flex;gap:6px;flex-wrap:wrap}
+
+/* history dropdown (variant A shows it) */
+.hist{border:var(--border);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);overflow:hidden}
+.histh{display:flex;justify-content:space-between;padding:6px var(--space-3);border-bottom:3px solid rgba(9,9,11,.12);font-size:10px;font-weight:700;text-transform:uppercase;opacity:.6}
+.histi{padding:8px var(--space-3);font-size:var(--fs-sm);border-bottom:3px solid rgba(9,9,11,.08);display:flex;align-items:center;gap:8px}
+.histi:last-child{border-bottom:none}
+.histi .clock{opacity:.4}
+
+svg.s{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.legend{font-size:11px;opacity:.6;text-align:center;margin-top:2px;max-width:304px}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- CURRENT -->
+  <div class="col" id="P">
+    <div class="cap bad">⚠ Сейчас</div>
+    <div class="sub">Поле + кнопка «Search», результаты — title и сухая строка «4.7 GB · S: 340 · L: 12 · Кино». Плоско, мусор в названии, сиды нечитаемы, выбор требует ещё тапа «Далее».</div>
+    <div class="phone">
+      <div class="hd"><h2>Add Download</h2><div class="x">✕</div></div>
+      <div class="body">
+        <div class="searchrow"><div class="sinput">dune</div><div class="sbtn" style="min-width:auto;padding:0 14px;font-weight:700;font-size:13px">Search</div></div>
+        <div class="results">
+          <div class="rcard" style="padding-right:var(--space-3)">
+            <div class="rtitle" style="font-weight:500">Dune.Part.Two.2024.2160p.HDR.x265-GROUP</div>
+            <div class="rmeta"><span class="size">4.7 GB · S: 340 · L: 12 · Кіно</span></div>
+          </div>
+          <div class="rcard" style="padding-right:var(--space-3)">
+            <div class="rtitle" style="font-weight:500">Dune.Part.One.2021.1080p.BluRay.DTS-HD</div>
+            <div class="rmeta"><span class="size">2.1 GB · S: 88 · L: 3 · Кіно</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- A -->
+  <div class="col" id="A">
+    <div class="cap good">A — Результат-карточки + здоровье</div>
+    <div class="sub">Крупный поиск (иконка-кнопка). Каждый результат — карточка: чистое имя, чипы год/качество/языки, индикатор здоровья (точка+сиды). Тап по карточке сразу ведёт на шаг папки (шеврон-стрелка).</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot now">1</div><div class="nlab now">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot">2</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="searchrow"><div class="sinput">dune</div><div class="sbtn"><svg class="s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></div></div>
+        <div class="reslabel">Найдено 2</div>
+        <div class="results">
+          <div class="rcard">
+            <span class="chev"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+            <div class="rtitle">Dune: Part Two</div>
+            <div class="rmeta"><span class="chip">2024</span><span class="chip">2160p</span><span class="chip">x265</span><span class="chip cat">Кіно</span></div>
+            <div class="rmeta"><span class="health"><span class="hdot hg"></span>340 сидов</span><span class="size">· 4.7 GB · Ukr/Eng</span></div>
+          </div>
+          <div class="rcard">
+            <span class="chev"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+            <div class="rtitle">Dune: Part One</div>
+            <div class="rmeta"><span class="chip">2021</span><span class="chip">1080p</span><span class="chip">BluRay</span><span class="chip cat">Кіно</span></div>
+            <div class="rmeta"><span class="health"><span class="hdot ho"></span>88 сидов</span><span class="size">· 2.1 GB · Ukr</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">тап = сразу к папке · чипы #117 · точка здоровья</div>
+  </div>
+
+  <!-- B -->
+  <div class="col" id="B">
+    <div class="cap good">B — Плотный список</div>
+    <div class="sub">Сгруппированный список (одна рамка, тонкие разделители). Имя в одну строку, под ним чипы + здоровье. Больше результатов на экран; компактнее, но имена обрезаются.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot now">1</div><div class="nlab now">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot">2</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="searchrow"><div class="sinput">dune</div><div class="sbtn"><svg class="s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></div></div>
+        <div class="reslabel">Найдено 4</div>
+        <div class="rlist">
+          <div class="rrow"><div class="col2"><div class="t">Dune: Part Two</div><div class="m"><span class="chip">2160p</span><span class="health"><span class="hdot hg"></span>340</span><span class="size">4.7 GB</span></div></div><svg class="s" viewBox="0 0 24 24" style="width:16px;height:16px;opacity:.4"><path d="M9 6l6 6-6 6"/></svg></div>
+          <div class="rrow"><div class="col2"><div class="t">Dune: Part One</div><div class="m"><span class="chip">1080p</span><span class="health"><span class="hdot ho"></span>88</span><span class="size">2.1 GB</span></div></div><svg class="s" viewBox="0 0 24 24" style="width:16px;height:16px;opacity:.4"><path d="M9 6l6 6-6 6"/></svg></div>
+          <div class="rrow"><div class="col2"><div class="t">Dune (1984) Theatrical</div><div class="m"><span class="chip">720p</span><span class="health"><span class="hdot hr"></span>4</span><span class="size">1.4 GB</span></div></div><svg class="s" viewBox="0 0 24 24" style="width:16px;height:16px;opacity:.4"><path d="M9 6l6 6-6 6"/></svg></div>
+          <div class="rrow"><div class="col2"><div class="t">Dune: Prophecy S01</div><div class="m"><span class="chip">1080p</span><span class="health"><span class="hdot hg"></span>210</span><span class="size">9 GB</span></div></div><svg class="s" viewBox="0 0 24 24" style="width:16px;height:16px;opacity:.4"><path d="M9 6l6 6-6 6"/></svg></div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">плотно · группа = одна карточка · больше на экран</div>
+  </div>
+
+  <!-- C -->
+  <div class="col" id="C">
+    <div class="cap good">C — Карточки + крупное здоровье</div>
+    <div class="sub">Имя крупно, справа большой бейдж здоровья (число сидов на зелёном/красном). Чипы под именем. Здоровье читается с одного взгляда — главный критерий выбора раздачи.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot now">1</div><div class="nlab now">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot">2</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot">3</div><div class="nlab">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="searchrow"><div class="sinput">dune</div><div class="sbtn"><svg class="s" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></div></div>
+        <div class="reslabel">Найдено 2</div>
+        <div class="results">
+          <div class="ccard">
+            <div class="ctop">
+              <div class="cbtitle">Dune: Part Two</div>
+              <div class="healthbig g"><span class="n">340</span><span class="l">сидов</span></div>
+            </div>
+            <div class="cchips"><span class="chip">2024</span><span class="chip">2160p</span><span class="chip">x265</span><span class="chip">Ukr/Eng</span></div>
+            <div class="rmeta"><span class="size">4.7 GB · Кіно</span></div>
+          </div>
+          <div class="ccard">
+            <div class="ctop">
+              <div class="cbtitle">Dune: Part One</div>
+              <div class="healthbig o"><span class="n">88</span><span class="l">сидов</span></div>
+            </div>
+            <div class="cchips"><span class="chip">2021</span><span class="chip">1080p</span><span class="chip">BluRay</span><span class="chip">Ukr</span></div>
+            <div class="rmeta"><span class="size">2.1 GB · Кіно</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">здоровье — крупный бейдж справа · тап = к папке</div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -10,7 +10,7 @@ Architecture split rationale: ADR 0005 ([`docs/adr/0005-mini-app-for-pull-thin-b
 ## Language
 
 **Download Task**:
-Active download unit in Synology DownloadStation. Created from the Mini App (via Toloka search, .torrent upload, or magnet link through the unified Add flow), lives in Synology until completion or deletion. The backend only observes and edits it (pause/resume/delete) — it does not store task state locally. Completed tasks are auto-cleaned after the retention window.
+Active download unit in Synology DownloadStation. Created through the Add flow — either from a Toloka **search** result chosen in the Mini App, or from a `.torrent` file / magnet link / direct URL handed off via the bot chat (ADR 0008). Lives in Synology until completion or deletion. The backend only observes and edits it (pause/resume/delete) — it does not store task state locally. Completed tasks are auto-cleaned after the retention window.
 _Avoid:_ Download, torrent, job, item
 
 **NAS Health**:
@@ -29,7 +29,7 @@ _Avoid:_ User, admin, allowed user
 
 Three bottom tabs — **Downloads / NAS / Shows** (default: Downloads). Every screen shows an ambient **health-chip** in the header (green/amber/red dot + one metric) that taps through to the NAS tab.
 
-**Add flow** — the only entry point for adding a download: FAB → bottom sheet → three modes (Toloka search / magnet / .torrent upload) → folder-picker → confirm. Search is not a separate tab; it is one of the three modes in the unified Add flow.
+**Add flow** — adding a download (ADR 0008). In the Mini App it is **search-only**: FAB → wizard → Toloka search → folder-picker → confirm. `.torrent` files, magnet links, and direct URLs are not pasted in-app; they are sent to the **bot chat**, which stashes them and deep-links the Mini App into the wizard at the folder step (Folder → Confirm). The bot is otherwise push-only; this stash-and-handoff is its sole intake role and it never creates tasks itself.
 
 Design system: ADR 0006 ([`docs/adr/0006-mini-app-design-system-neo-brutalism.md`](./docs/adr/0006-mini-app-design-system-neo-brutalism.md)) — Neo-Brutalism, single light mode, Space Grotesk, hard offset shadows, first-class motion.
 
@@ -47,6 +47,7 @@ State is managed through **composables** (`useApi`, `useHealth`, `useTasks`, `us
 | [0004](./docs/adr/0004-topics-and-centralized-notifier.md) | Centralized OwnerNotifier (topics superseded by 0005) |
 | [0005](./docs/adr/0005-mini-app-for-pull-thin-bot-for-push.md) | Mini App for management (pull), thin bot for notifications (push) |
 | [0006](./docs/adr/0006-mini-app-design-system-neo-brutalism.md) | Mini App design system — Neo-Brutalism, jobs-first IA |
+| [0008](./docs/adr/0008-add-intake-search-only-app-bot-handoff.md) | Add intake — Mini App search-only; bot hands off .torrent + magnet/URL |
 
 ## Domain boundary
 

@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Add Wizard — variants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --red:#ff5c5c; --orange:#ff9a3c; --yellow:#ffd23f; --green:#2fd86b;
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px; --fs-xl:28px; --fs-2xl:36px;
+  --fw-medium:500; --fw-bold:700;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px; --space-6:32px;
+  --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink); --border-thick:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink); --shadow-lg:8px 8px 0 var(--ink);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#efe9d8;font-family:var(--font);color:var(--ink);padding:34px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;
+  -webkit-font-smoothing:antialiased;
+}
+.row{display:flex;gap:42px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.caption{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;opacity:.65}
+.variant-title{font-size:24px;font-weight:700;text-transform:uppercase;letter-spacing:.01em;margin-bottom:4px;width:100%}
+.variant-sub{font-size:13px;opacity:.62;margin-bottom:22px;max-width:900px;line-height:1.55}
+.block{margin-bottom:60px}
+
+/* phone shell — fullscreen sheet */
+.phone{width:304px;height:616px;background:var(--cream);border:var(--border-thick);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;position:relative;
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px;}
+.body{flex:1;display:flex;flex-direction:column;padding:var(--space-4);min-height:0;overflow:hidden}
+
+/* shared header / footer */
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-3);flex-shrink:0}
+.hd h2{font-size:var(--fs-lg);font-weight:var(--fw-bold);text-transform:uppercase;letter-spacing:.02em}
+.x{width:40px;height:40px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;box-shadow:var(--shadow-sm);flex-shrink:0}
+.ft{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) var(--space-4) var(--space-4);border-top:var(--border);flex-shrink:0}
+.btn{min-height:48px;padding:0 var(--space-4);border:var(--border-strong);border-radius:var(--radius);font-family:var(--font);font-size:var(--fs-md);font-weight:var(--fw-bold);background:var(--paper);box-shadow:var(--shadow-sm);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn--primary{background:var(--yellow)}
+.btn--wide{flex:1}
+
+/* folder step content (shared) */
+.steplabel{font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.5;margin-bottom:var(--space-3)}
+.chips{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-3)}
+.chip{font-size:var(--fs-xs);font-weight:700;padding:6px 11px;border:var(--border);border-radius:999px;background:var(--paper);box-shadow:var(--shadow-sm)}
+.chip--fav{background:var(--yellow)}
+.crumbs{font-family:var(--mono);font-size:var(--fs-xs);opacity:.65;margin-bottom:var(--space-3);word-break:break-all}
+.folder{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:var(--border);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm);margin-bottom:var(--space-2);font-weight:500;font-size:var(--fs-sm)}
+.folder .ic{font-size:18px}
+.folder--sel{background:var(--yellow);border:var(--border-thick);box-shadow:var(--shadow-md)}
+.content{flex:1;min-height:0;overflow:hidden}
+
+/* ── A: segmented progress bar ── */
+.A-wrap{padding:0 var(--space-4) var(--space-3)}
+.A-seg{display:flex;gap:6px;margin-bottom:7px}
+.A-seg .s{flex:1;height:15px;border:var(--border);border-radius:5px;background:var(--paper)}
+.A-seg .s--done{background:var(--ink)}
+.A-seg .s--now{background:var(--yellow)}
+.A-lab{display:flex;gap:6px;margin-bottom:5px}
+.A-lab .l{flex:1;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;opacity:.4}
+.A-lab .l--now{opacity:1}
+.A-lab .l--done{opacity:.75}
+.A-count{font-size:var(--fs-xs);font-weight:700;opacity:.5}
+
+/* ── B: numbered stepper ── */
+.B-step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-2) var(--space-4) var(--space-4)}
+.B-node{display:flex;flex-direction:column;align-items:center;gap:7px;width:66px;flex-shrink:0}
+.B-dot{width:40px;height:40px;border:var(--border-strong);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-md)}
+.B-dot--done{background:var(--ink);color:var(--paper)}
+.B-dot--now{background:var(--yellow)}
+.B-nlab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;opacity:.45}
+.B-nlab--now{opacity:1}
+.B-line{flex:1;height:4px;background:var(--ink);margin-top:18px;min-width:16px;border-radius:2px}
+.B-line--future{opacity:.22}
+
+/* ── C: minimal big title ── */
+.C-hd{display:flex;justify-content:flex-end;padding:var(--space-3) var(--space-4) 0}
+.C-top{padding:var(--space-1) var(--space-4) var(--space-4)}
+.C-count{font-family:var(--mono);font-size:var(--fs-sm);font-weight:700;letter-spacing:.1em;opacity:.5;margin-bottom:7px}
+.C-title{font-size:var(--fs-2xl);font-weight:700;text-transform:uppercase;line-height:.92;margin-bottom:var(--space-4)}
+.C-ticks{display:flex;gap:6px;margin-bottom:var(--space-3)}
+.C-tick{height:9px;background:var(--ink);opacity:.2;border-radius:3px}
+.C-tick--done{opacity:.5}
+.C-tick--now{opacity:1;background:var(--yellow);border:2px solid var(--ink)}
+.C-bc{font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.03em;opacity:.45}
+.C-bc b{opacity:1}
+.C-ft{padding:var(--space-3) var(--space-4) var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);border-top:var(--border)}
+.C-back{align-self:flex-start;background:none;border:none;font-family:var(--font);font-weight:700;font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.04em;cursor:pointer;opacity:.65}
+</style>
+</head>
+<body>
+
+<!-- VARIANT A -->
+<div class="block" id="A">
+  <div class="variant-title">Вариант A — Сегментный прогресс-бар</div>
+  <div class="variant-sub">Под шапкой широкий сегментированный бар: блоки растягиваются ровно на 2 или 3. Готовые залиты ink, текущий — жёлтый, будущие пустые. Подпись каждого шага + «Шаг N из M». Перекликается с floating pill nav. Самый наглядный по «сколько осталось».</div>
+  <div class="row">
+    <div class="col">
+      <div class="caption">Поиск · 3 шага</div>
+      <div class="phone">
+        <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+        <div class="A-wrap">
+          <div class="A-seg"><span class="s s--done"></span><span class="s s--now"></span><span class="s"></span></div>
+          <div class="A-lab"><span class="l l--done">Поиск</span><span class="l l--now">Папка</span><span class="l">Готово</span></div>
+          <div class="A-count">Шаг 2 из 3</div>
+        </div>
+        <div class="body"><div class="content">
+          <div class="steplabel">Куда сохранить</div>
+          <div class="chips"><span class="chip chip--fav">★ Фильмы</span><span class="chip chip--fav">★ Сериалы</span><span class="chip">Загрузки</span></div>
+          <div class="crumbs">/volume1 › downloads ›</div>
+          <div class="folder folder--sel"><span class="ic">📁</span>Фильмы</div>
+          <div class="folder"><span class="ic">📁</span>Сериалы</div>
+          <div class="folder"><span class="ic">📁</span>Музыка</div>
+        </div></div>
+        <div class="ft"><button class="btn">← Назад</button><button class="btn btn--primary">Далее →</button></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="caption">Bot-handoff · 2 шага</div>
+      <div class="phone">
+        <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+        <div class="A-wrap">
+          <div class="A-seg"><span class="s s--now"></span><span class="s"></span></div>
+          <div class="A-lab"><span class="l l--now">Папка</span><span class="l">Готово</span></div>
+          <div class="A-count">Шаг 1 из 2</div>
+        </div>
+        <div class="body"><div class="content">
+          <div class="steplabel">Куда сохранить</div>
+          <div class="chips"><span class="chip chip--fav">★ Фильмы</span><span class="chip chip--fav">★ Сериалы</span><span class="chip">Загрузки</span></div>
+          <div class="crumbs">/volume1 › downloads ›</div>
+          <div class="folder folder--sel"><span class="ic">📁</span>Фильмы</div>
+          <div class="folder"><span class="ic">📁</span>Сериалы</div>
+          <div class="folder"><span class="ic">📁</span>Музыка</div>
+        </div></div>
+        <div class="ft"><button class="btn">← Назад</button><button class="btn btn--primary">Далее →</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VARIANT B -->
+<div class="block" id="B">
+  <div class="variant-title">Вариант B — Нумерованный степпер</div>
+  <div class="variant-sub">Классика: кружки с номерами, соединённые толстыми линиями, подпись под каждым. Готовый = ink-кружок с галочкой, текущий = жёлтый. Самый узнаваемый паттерн; чуть выше по высоте.</div>
+  <div class="row">
+    <div class="col">
+      <div class="caption">Поиск · 3 шага</div>
+      <div class="phone">
+        <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+        <div class="B-step">
+          <div class="B-node"><div class="B-dot B-dot--done">✓</div><div class="B-nlab">Поиск</div></div>
+          <div class="B-line"></div>
+          <div class="B-node"><div class="B-dot B-dot--now">2</div><div class="B-nlab B-nlab--now">Папка</div></div>
+          <div class="B-line B-line--future"></div>
+          <div class="B-node"><div class="B-dot">3</div><div class="B-nlab">Готово</div></div>
+        </div>
+        <div class="body"><div class="content">
+          <div class="steplabel">Куда сохранить</div>
+          <div class="chips"><span class="chip chip--fav">★ Фильмы</span><span class="chip chip--fav">★ Сериалы</span><span class="chip">Загрузки</span></div>
+          <div class="crumbs">/volume1 › downloads ›</div>
+          <div class="folder folder--sel"><span class="ic">📁</span>Фильмы</div>
+          <div class="folder"><span class="ic">📁</span>Сериалы</div>
+          <div class="folder"><span class="ic">📁</span>Музыка</div>
+        </div></div>
+        <div class="ft"><button class="btn">← Назад</button><button class="btn btn--primary">Далее →</button></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="caption">Bot-handoff · 2 шага</div>
+      <div class="phone">
+        <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+        <div class="B-step">
+          <div class="B-node"><div class="B-dot B-dot--now">1</div><div class="B-nlab B-nlab--now">Папка</div></div>
+          <div class="B-line B-line--future"></div>
+          <div class="B-node"><div class="B-dot">2</div><div class="B-nlab">Готово</div></div>
+        </div>
+        <div class="body"><div class="content">
+          <div class="steplabel">Куда сохранить</div>
+          <div class="chips"><span class="chip chip--fav">★ Фильмы</span><span class="chip chip--fav">★ Сериалы</span><span class="chip">Загрузки</span></div>
+          <div class="crumbs">/volume1 › downloads ›</div>
+          <div class="folder folder--sel"><span class="ic">📁</span>Фильмы</div>
+          <div class="folder"><span class="ic">📁</span>Сериалы</div>
+          <div class="folder"><span class="ic">📁</span>Музыка</div>
+        </div></div>
+        <div class="ft"><button class="btn">← Назад</button><button class="btn btn--primary">Далее →</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- VARIANT C -->
+<div class="block" id="C">
+  <div class="variant-title">Вариант C — Минимал, крупный заголовок</div>
+  <div class="variant-sub">Редакторский минимализм: моно-счётчик «02 / 03», огромный заголовок шага, ряд тонких штрихов (текущий — широкий жёлтый) и хлебные крошки. Самый «design-forward», в духе oversized-type брутализма. Широкая CTA внизу.</div>
+  <div class="row">
+    <div class="col">
+      <div class="caption">Поиск · 3 шага</div>
+      <div class="phone">
+        <div class="C-hd"><div class="x">✕</div></div>
+        <div class="C-top">
+          <div class="C-count">02 / 03</div>
+          <div class="C-title">Папка</div>
+          <div class="C-ticks"><span class="C-tick C-tick--done" style="width:36px"></span><span class="C-tick C-tick--now" style="width:68px"></span><span class="C-tick" style="width:36px"></span></div>
+          <div class="C-bc">Поиск › <b>Папка</b> › Готово</div>
+        </div>
+        <div class="body"><div class="content">
+          <div class="chips"><span class="chip chip--fav">★ Фильмы</span><span class="chip chip--fav">★ Сериалы</span><span class="chip">Загрузки</span></div>
+          <div class="crumbs">/volume1 › downloads ›</div>
+          <div class="folder folder--sel"><span class="ic">📁</span>Фильмы</div>
+          <div class="folder"><span class="ic">📁</span>Сериалы</div>
+          <div class="folder"><span class="ic">📁</span>Музыка</div>
+        </div></div>
+        <div class="C-ft"><button class="C-back">← Назад</button><button class="btn btn--primary btn--wide">Далее →</button></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="caption">Bot-handoff · 2 шага</div>
+      <div class="phone">
+        <div class="C-hd"><div class="x">✕</div></div>
+        <div class="C-top">
+          <div class="C-count">01 / 02</div>
+          <div class="C-title">Папка</div>
+          <div class="C-ticks"><span class="C-tick C-tick--now" style="width:68px"></span><span class="C-tick" style="width:36px"></span></div>
+          <div class="C-bc"><b>Папка</b> › Готово</div>
+        </div>
+        <div class="body"><div class="content">
+          <div class="chips"><span class="chip chip--fav">★ Фильмы</span><span class="chip chip--fav">★ Сериалы</span><span class="chip">Загрузки</span></div>
+          <div class="crumbs">/volume1 › downloads ›</div>
+          <div class="folder folder--sel"><span class="ic">📁</span>Фильмы</div>
+          <div class="folder"><span class="ic">📁</span>Сериалы</div>
+          <div class="folder"><span class="ic">📁</span>Музыка</div>
+        </div></div>
+        <div class="C-ft"><button class="C-back">← Назад</button><button class="btn btn--primary btn--wide">Далее →</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

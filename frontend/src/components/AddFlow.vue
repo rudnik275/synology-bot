@@ -182,6 +182,9 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
 
 /** Select a search result and immediately advance to the Folder step (#121). */
 function selectAndAdvance(result: SearchResultView): void {
+  // Dismiss the on-screen keyboard before leaving the search step — tapping a
+  // result advances to the folder step, but iOS otherwise keeps the keyboard up.
+  ;(document.activeElement as HTMLElement | null)?.blur()
   selectedResult.value = result
   goNext()
 }

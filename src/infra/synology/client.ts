@@ -192,10 +192,9 @@ export class SynologyClient {
     form.append('create_list', 'false')
     form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
 
-    const url = `${this.host}/webapi/entry.cgi`
-
-    const res = await fetch(url, { method: 'POST', body: form })
-    const json: SynoEnvelope<SynoDownloadTaskCreateData> = await res.json()
+    const sub = await this.submitDownloadCreate(form, 'create')
+    if (!sub.ok) return sub
+    const json = sub.json
 
     if (!json.success) {
       const code = json.error?.code
@@ -206,10 +205,43 @@ export class SynologyClient {
         return this.createDownloadTaskFromFileOnce(bytes, fileName, destination)
       }
 
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
+      console.error('[synology] create failed', { destination: normalizedDestination, code, error: json.error })
+      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}${json.error ? ` ${JSON.stringify(json.error)}` : ''}` }
     }
 
     return { ok: true }
+  }
+
+  /**
+   * POST a DownloadStation2 create form to entry.cgi with a 45s timeout, so a
+   * hung Synology call returns a structured failure instead of leaving the
+   * request to time out at the Cloudflare gateway (the opaque "HTTP 502" the
+   * owner saw). Also turns a non-JSON body into a clear reason, and logs the
+   * cause so it is visible in the bot logs.
+   */
+  private async submitDownloadCreate(
+    form: FormData,
+    label: string
+  ): Promise<{ ok: true; json: SynoEnvelope<SynoDownloadTaskCreateData> } | { ok: false; reason: string }> {
+    const url = `${this.host}/webapi/entry.cgi`
+    let res: Response
+    try {
+      res = await fetch(url, { method: 'POST', body: form, signal: AbortSignal.timeout(45000) })
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.name === 'TimeoutError'
+          ? 'Synology did not respond within 45s (DownloadStation busy or unreachable)'
+          : `Synology request failed: ${err instanceof Error ? err.message : String(err)}`
+      console.error(`[synology] ${label} request error:`, reason)
+      return { ok: false, reason }
+    }
+    try {
+      const json = (await res.json()) as SynoEnvelope<SynoDownloadTaskCreateData>
+      return { ok: true, json }
+    } catch {
+      console.error(`[synology] ${label} non-JSON response: HTTP ${res.status}`)
+      return { ok: false, reason: `Synology returned a non-JSON response (HTTP ${res.status})` }
+    }
   }
 
   private async createDownloadTaskFromFileOnce(
@@ -228,13 +260,14 @@ export class SynologyClient {
     form.append('create_list', 'false')
     form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
 
-    const url = `${this.host}/webapi/entry.cgi`
-    const res = await fetch(url, { method: 'POST', body: form })
-    const json: SynoEnvelope<SynoDownloadTaskCreateData> = await res.json()
+    const sub = await this.submitDownloadCreate(form, 'create(retry)')
+    if (!sub.ok) return sub
+    const json = sub.json
 
     if (!json.success) {
       const code = json.error?.code
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
+      console.error('[synology] create(retry) failed', { destination: normalizedDestination, code, error: json.error })
+      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}${json.error ? ` ${JSON.stringify(json.error)}` : ''}` }
     }
 
     return { ok: true }

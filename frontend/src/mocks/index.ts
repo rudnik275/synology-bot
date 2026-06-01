@@ -164,6 +164,22 @@ async function route(path: string, query: URLSearchParams, method: string, init?
       setTaskStatus(seg[1]!, 'downloading')
       return json({ ok: true })
     }
+    // #123 — per-file inspect → commit (two-phase). Mock a multi-episode tree.
+    if (seg.length === 2 && seg[1] === 'inspect' && method === 'POST') {
+      return json({
+        listId: 'mock-list-1',
+        files: [
+          { index: 0, path: 'From.S04.1080p.WEB-DL/From.S04E01.1080p.WEB-DL.mkv', size: 2.1 * GB },
+          { index: 1, path: 'From.S04.1080p.WEB-DL/From.S04E02.1080p.WEB-DL.mkv', size: 2.0 * GB },
+          { index: 2, path: 'From.S04.1080p.WEB-DL/From.S04E03.1080p.WEB-DL.mkv', size: 2.2 * GB },
+          { index: 3, path: 'From.S04.1080p.WEB-DL/From.S04E04.1080p.WEB-DL.mkv', size: 1.9 * GB },
+          { index: 4, path: 'From.S04.1080p.WEB-DL/From.S04E05.1080p.WEB-DL.mkv', size: 2.0 * GB },
+          { index: 5, path: 'From.S04.1080p.WEB-DL/Sample.mkv', size: 50 * MB },
+        ],
+      })
+    }
+    if (seg.length === 2 && seg[1] === 'commit' && method === 'POST') return json({ ok: true })
+    if (seg.length === 3 && seg[1] === 'inspect' && method === 'DELETE') return json({ ok: true })
   }
 
   // /torrent-stash/:token

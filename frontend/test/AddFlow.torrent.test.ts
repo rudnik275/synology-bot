@@ -75,8 +75,6 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     // Variant D: drill into a folder, then pick it, then advance to confirm.
     document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
     await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-    await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
@@ -125,8 +123,6 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     // Advance to Confirm (step 3). Variant D: drill into a folder, then pick it.
     document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
     await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-    await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
 
@@ -160,8 +156,6 @@ describe('AddFlow bot handoff — magnet/URL uri (#120)', () => {
 
     // Variant D: drill into a folder, then pick it.
     document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
-    await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()

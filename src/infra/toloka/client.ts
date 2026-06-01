@@ -142,13 +142,25 @@ export class TolokaClient {
     // followed automatically. fetchWithAuth uses redirect:'manual' (needed for
     // login Set-Cookie capture + stale-session detection on search), so we issue
     // a dedicated fetch here. See fix for #92.
-    const res = await fetch(downloadUrl, {
-      headers: {
-        Cookie: this.serializeCookies(),
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-      redirect: 'follow',
-    })
+    // 30s timeout so a hung Toloka download surfaces as a clear error instead of
+    // leaving the /api/tasks request to time out at the Cloudflare gateway (the
+    // opaque "HTTP 502" the owner saw).
+    let res: Response
+    try {
+      res = await fetch(downloadUrl, {
+        headers: {
+          Cookie: this.serializeCookies(),
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(30000),
+      })
+    } catch (err) {
+      if (err instanceof Error && err.name === 'TimeoutError') {
+        throw new Error('Toloka download timed out after 30s')
+      }
+      throw err
+    }
 
     if (!res.ok) {
       throw new Error(`Failed to download torrent: HTTP ${res.status}`)

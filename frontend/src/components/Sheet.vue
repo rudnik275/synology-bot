@@ -99,6 +99,15 @@ onUnmounted(() => {
   border-right: none;
   border-top: none;
   padding-top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+  /* Side gutter moves INTO the header/footer/content so the scroll container
+     (.wizard-body) can hold neo-brutalism offset shadows in its padding box
+     without overflow-x:auto clipping them (or adding a phantom h-scrollbar). */
+  padding-left: 0;
+  padding-right: 0;
+}
+.sheet--fullscreen .sheet-head {
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
 }
 .sheet-head {
   display: flex;

@@ -188,35 +188,21 @@ describe('FolderPicker — no history: tree directly (Variant D)', () => {
     expect(wrapper.text()).toContain('torrents')
   })
 
-  it('shows pick-btn ("Сохранить сюда") after drilling in', async () => {
+  it('selects the folder by drilling into it — the "Сохранить сюда" button is gone', async () => {
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
     await flushPromises()
 
-    // Not at root — no pick button
+    // The duplicate "Сохранить сюда" button was removed (footer "Далее" advances).
     expect(wrapper.find('[data-testid="pick-btn"]').exists()).toBe(false)
 
-    // Drill in
+    // Drilling into a folder now emits its path as the selected destination.
     await wrapper.findAll('[data-testid="folder-item"]')[0]!.trigger('click')
     await flushPromises()
-
-    expect(wrapper.find('[data-testid="pick-btn"]').exists()).toBe(true)
-  })
-
-  it('emits update:modelValue when "Сохранить сюда" is clicked', async () => {
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
-    // Drill in to get the pick button
-    await wrapper.findAll('[data-testid="folder-item"]')[0]!.trigger('click')
-    await flushPromises()
-
-    const pickBtn = wrapper.find('[data-testid="pick-btn"]')
-    expect(pickBtn.exists()).toBe(true)
-    await pickBtn.trigger('click')
 
     const emitted = wrapper.emitted('update:modelValue')
     expect(emitted).toBeTruthy()
-    expect(emitted![0]![0]).toBeTruthy()
+    expect(emitted![emitted!.length - 1]![0]).toBeTruthy()
+    expect(wrapper.find('[data-testid="pick-btn"]').exists()).toBe(false)
   })
 
   it('shows up button after drilling in', async () => {

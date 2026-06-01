@@ -5,7 +5,6 @@
 // #122 Variant D: primary screen = known-folder tiles (favorites+recents).
 // Tree is behind "Выбрать другую папку…". No history → tree shown directly.
 import { ref, computed, watch, onMounted } from 'vue'
-import Button from './Button.vue'
 import { api } from '../api'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import type { FolderView } from '../types'
@@ -148,17 +147,18 @@ function backToTiles(): void {
 
 async function drillInto(folder: FolderView): Promise<void> {
   stack.value = [...stack.value, folder]
+  // Entering a folder selects it as the destination, so the pinned footer
+  // "Далее" already means "save here" — no separate (scroll-away) "Сохранить
+  // сюда" button is needed.
+  emit('update:modelValue', folder.path)
   await loadFolders(folder.path)
 }
 
 async function goUp(): Promise<void> {
   stack.value = stack.value.slice(0, -1)
+  // Track the destination to the new current folder (cleared back at root).
+  emit('update:modelValue', currentPath() ?? '')
   await loadFolders(currentPath())
-}
-
-function pickCurrent(): void {
-  const path = currentPath()
-  if (path) emit('update:modelValue', path)
 }
 
 function pickTile(path: string): void {
@@ -290,17 +290,9 @@ function shortName(path: string): string {
         </li>
       </ul>
 
-      <!-- "Save here" action — available when inside a folder (not at root) -->
-      <Button
-        v-if="stack.length > 0"
-        variant="primary"
-        size="lg"
-        class="pick-btn"
-        data-testid="pick-btn"
-        @click="pickCurrent"
-      >
-        Сохранить сюда
-      </Button>
+      <!-- No "Save here" button: entering a folder selects it, and the pinned
+           wizard footer "Далее" advances with that selection (was a scroll-away
+           duplicate of Далее). -->
     </div>
 
   </div>
@@ -352,6 +344,11 @@ function shortName(path: string): string {
   cursor: pointer;
   text-align: left;
   font-family: var(--font);
+  /* Force ink text + reset native control look (iOS button text → accent blue). */
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
   /* Press via .nb-pressable — sinks 3px (matches --shadow-sm). */
 }
 
@@ -544,6 +541,12 @@ function shortName(path: string): string {
   text-align: left;
   font-family: var(--font);
   font-size: var(--fs-md);
+  /* Force ink text + reset native control look — iOS renders <button> text in
+     the system accent (blue) unless color + -webkit-text-fill-color are set. */
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
   transition:
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);

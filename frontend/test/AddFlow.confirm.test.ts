@@ -92,8 +92,6 @@ async function toConfirm() {
   // Pick a folder.
   document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
   await flushPromises()
-  document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
-  await flushPromises()
   document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click() // → Confirm
   await flushPromises()
 }
@@ -266,8 +264,6 @@ describe('AddFlow confirm step — bot handoff (#123)', () => {
     await flushPromises()
     // Advance: folder → confirm.
     document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
-    await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()

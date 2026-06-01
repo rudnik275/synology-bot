@@ -50,8 +50,9 @@ function openAddWizard(): void {
 .content {
   padding-top: env(safe-area-inset-top, 0px);
   /* Reserve clearance for the FLOATING pill nav: it sits off the bottom edge
-   * (safe-bottom + space-3) and is ~62px tall, so the last row clears it. */
-  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-4));
+   * (safe-bottom + space-3) and is ~62px tall. Extra space-4 so the last row's
+   * offset shadow doesn't crowd / stick to the nav. */
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-4) + var(--space-4));
   min-height: 100dvh;
 }
 

@@ -620,20 +620,8 @@ async function create(): Promise<void> {
 
     <!-- Sticky footer with Back / Next / Add -->
     <div class="wizard-footer">
-      <!-- Back — not shown on the first drawn step (step 1 in-app, step 2 on handoff) -->
-      <Button
-        v-if="step > firstStep"
-        variant="neutral"
-        size="lg"
-        class="footer-btn"
-        data-testid="wizard-back"
-        @click="goBack"
-      >
-        ← Назад
-      </Button>
-      <span v-else class="footer-spacer" aria-hidden="true"></span>
-
-      <!-- Step indicator — numbered stepper, path-aware (Variant B, #119). -->
+      <!-- Step indicator — numbered stepper (Variant B, #119) — own full-width row
+           ABOVE the actions so its circles+labels never collide with the buttons. -->
       <div class="stepper" aria-hidden="true" data-testid="stepper">
         <template v-for="(item, index) in stepperItems" :key="item.stepNum">
           <div class="stepper-node">
@@ -660,31 +648,47 @@ async function create(): Promise<void> {
         </template>
       </div>
 
-      <!-- Next (not last step, not search step — search advances via tap-to-select) / Добавить (last step) -->
-      <Button
-        v-if="step > 1 && step < lastStep"
-        variant="primary"
-        size="lg"
-        class="footer-btn"
-        data-testid="wizard-next"
-        :disabled="!canAdvance"
-        @click="goNext"
-      >
-        Далее →
-      </Button>
-      <!-- On the search step there is no Next button; a spacer keeps the footer balanced. -->
-      <span v-else-if="step === 1" class="footer-spacer" aria-hidden="true"></span>
-      <Button
-        v-else
-        variant="primary"
-        size="lg"
-        class="footer-btn footer-btn--coral"
-        data-testid="create-btn"
-        :disabled="submitting || inspectState === 'inspecting'"
-        @click="create"
-      >
-        {{ submitting ? 'Добавление…' : 'Добавить' }}
-      </Button>
+      <!-- Actions row: Back / Next / Add -->
+      <div class="footer-actions">
+        <!-- Back — not shown on the first drawn step (step 1 in-app, step 2 on handoff) -->
+        <Button
+          v-if="step > firstStep"
+          variant="neutral"
+          size="lg"
+          class="footer-btn"
+          data-testid="wizard-back"
+          @click="goBack"
+        >
+          ← Назад
+        </Button>
+        <span v-else class="footer-spacer" aria-hidden="true"></span>
+
+        <!-- Next (not last step, not search step — search advances via tap-to-select) / Добавить (last step) -->
+        <Button
+          v-if="step > 1 && step < lastStep"
+          variant="primary"
+          size="lg"
+          class="footer-btn"
+          data-testid="wizard-next"
+          :disabled="!canAdvance"
+          @click="goNext"
+        >
+          Далее →
+        </Button>
+        <!-- On the search step there is no Next button; a spacer keeps the footer balanced. -->
+        <span v-else-if="step === 1" class="footer-spacer" aria-hidden="true"></span>
+        <Button
+          v-else
+          variant="primary"
+          size="lg"
+          class="footer-btn footer-btn--coral"
+          data-testid="create-btn"
+          :disabled="submitting || inspectState === 'inspecting'"
+          @click="create"
+        >
+          {{ submitting ? 'Добавление…' : 'Добавить' }}
+        </Button>
+      </div>
     </div>
   </Sheet>
 </template>
@@ -697,6 +701,13 @@ async function create(): Promise<void> {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  /* Side + bottom padding = room for offset shadows inside the scroll/clip box
+     (overflow-y:auto forces overflow-x:auto, which would otherwise clip the
+     bottom-right shadows and add a phantom horizontal scrollbar). The gutter
+     lives here now (Sheet drops its side padding for the fullscreen variant). */
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+  padding-bottom: var(--space-3);
 }
 
 .wizard-step {
@@ -707,14 +718,22 @@ async function create(): Promise<void> {
 
 .wizard-footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-3);
   padding-top: var(--space-4);
   border-top: var(--border);
   margin-top: var(--space-4);
   flex-shrink: 0;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .footer-spacer {
@@ -733,7 +752,7 @@ async function create(): Promise<void> {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 

@@ -89,15 +89,12 @@ async function searchAndSelect() {
 
 /**
  * Pick a folder in the Variant D FolderPicker (no localStorage history).
- * No-history path → tree is shown directly at root. Drill into the first
- * folder-item, then click "Сохранить сюда" (pick-btn) to emit the path.
+ * No-history path → tree is shown directly at root. Drilling into a folder now
+ * selects it as the destination (the separate "Сохранить сюда" button was
+ * removed as a duplicate of the footer "Далее"), so one click is enough.
  */
 async function pickFolderInTree() {
-  // Drill into the first root folder
   document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
-  await flushPromises()
-  // Now inside the folder — pick-btn appears
-  document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
   await flushPromises()
 }
 

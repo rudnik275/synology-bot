@@ -719,12 +719,14 @@ async function create(): Promise<void> {
 .wizard-footer {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
+  gap: var(--space-2);
+  padding-top: var(--space-3);
   border-top: var(--border);
-  margin-top: var(--space-4);
+  margin-top: var(--space-3);
   flex-shrink: 0;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Bottom room so the actions' 5px offset shadow isn't clipped by the
+     sheet-body's overflow:hidden; env() stacks the device safe-area on top. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-2));
   padding-left: var(--space-4);
   padding-right: var(--space-4);
 }
@@ -760,13 +762,13 @@ async function create(): Promise<void> {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
 .stepper-circle {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border: var(--border-strong);
   border-radius: 50%;
   background: var(--paper);
@@ -812,7 +814,8 @@ async function create(): Promise<void> {
   height: 4px;
   background: var(--ink);
   border-radius: 2px;
-  margin-top: 16px;
+  /* Vertically centre on the 28px circle (14px − 2px half-line). */
+  margin-top: 12px;
   min-width: 12px;
   transition: opacity var(--dur-fast) var(--ease-out);
 }

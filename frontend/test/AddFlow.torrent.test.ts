@@ -94,6 +94,40 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     expect(wrapper.find('button.fab').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  // ─── Stepper frame on handoff path (#119) ─────────────────────────────────
+  it('stepper renders 2 circles on the handoff path (Папка · Готово)', async () => {
+    const wrapper = mount(AddFlow, { props: { torrentToken: 'TOK123' } })
+    await flushPromises()
+
+    const stepper = document.querySelector('[data-testid="stepper"]')!
+    expect(stepper).not.toBeNull()
+    const circles = stepper.querySelectorAll('.stepper-circle')
+    expect(circles.length).toBe(2)
+    const labels = Array.from(stepper.querySelectorAll('.stepper-label')).map((el) => el.textContent?.trim())
+    expect(labels).toEqual(['Папка', 'Готово'])
+    wrapper.unmount()
+  })
+
+  it('Add button appears on step 2 (last step of handoff path, not step 3)', async () => {
+    const wrapper = mount(AddFlow, { props: { torrentToken: 'TOK123' } })
+    await flushPromises()
+
+    // On Folder step (step 2) — still Next, no Add.
+    expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
+    expect(document.querySelector('[data-testid="wizard-next"]')).not.toBeNull()
+
+    // Advance to Confirm (step 3).
+    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    // On Confirm step — Add appears, Next gone.
+    expect(document.querySelector('[data-testid="create-btn"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
+    wrapper.unmount()
+  })
 })
 
 describe('AddFlow bot handoff — magnet/URL uri (#120)', () => {

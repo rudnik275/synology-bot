@@ -206,7 +206,7 @@ describe('AddFlow (search-only)', () => {
 
     const createBtn = document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement
     expect(createBtn).not.toBeNull()
-    expect(createBtn.textContent).toMatch(/add/i)
+    expect(createBtn.textContent).toMatch(/добавить/i)
     createBtn.click()
     await flushPromises()
 
@@ -364,6 +364,64 @@ describe('AddFlow (search-only)', () => {
 
     const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
     expect(stored).toContain('Succession')
+    wrapper.unmount()
+  })
+
+  // ─── Stepper frame (#119) ──────────────────────────────────────────────────
+  it('stepper renders 3 circles on the search path (Поиск · Папка · Готово)', async () => {
+    const wrapper = await openWizard()
+    const stepper = document.querySelector('[data-testid="stepper"]')!
+    expect(stepper).not.toBeNull()
+    const circles = stepper.querySelectorAll('.stepper-circle')
+    expect(circles.length).toBe(3)
+    const labels = Array.from(stepper.querySelectorAll('.stepper-label')).map((el) => el.textContent?.trim())
+    expect(labels).toEqual(['Поиск', 'Папка', 'Готово'])
+    wrapper.unmount()
+  })
+
+  it('stepper marks step 1 as current and steps 2–3 as future on open', async () => {
+    const wrapper = await openWizard()
+    const stepper = document.querySelector('[data-testid="stepper"]')!
+    const circles = stepper.querySelectorAll('.stepper-circle')
+    expect(circles[0]?.classList.contains('stepper-circle--current')).toBe(true)
+    expect(circles[1]?.classList.contains('stepper-circle--current')).toBe(false)
+    expect(circles[2]?.classList.contains('stepper-circle--current')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('stepper marks step 1 as done and step 2 as current after advancing', async () => {
+    const wrapper = await openWizard()
+    await searchAndSelect()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+
+    const stepper = document.querySelector('[data-testid="stepper"]')!
+    const circles = stepper.querySelectorAll('.stepper-circle')
+    expect(circles[0]?.classList.contains('stepper-circle--done')).toBe(true)
+    expect(circles[1]?.classList.contains('stepper-circle--current')).toBe(true)
+    expect(circles[2]?.classList.contains('stepper-circle--current')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('Add button appears on step 3 (last step of search path)', async () => {
+    const wrapper = await openWizard()
+    // Step 1 — no Add button.
+    expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
+    expect(document.querySelector('[data-testid="wizard-next"]')).not.toBeNull()
+
+    await searchAndSelect()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+    // Step 2 — still Next, no Add.
+    expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
+
+    document.querySelector<HTMLButtonElement>('[data-testid="pick-btn"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+    // Step 3 — Add appears.
+    expect(document.querySelector('[data-testid="create-btn"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
     wrapper.unmount()
   })
 })

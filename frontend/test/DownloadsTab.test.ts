@@ -1,7 +1,7 @@
 // Tests for DownloadsTab Variant B card (#116) + Variant A skeleton loader (#115):
 //   - One status accent (edge stripe via Card, not badge/tone)
 //   - Exactly one primary action per status group (or none)
-//   - Delete lives in the overflow ⋯ menu behind a confirmation dialog
+//   - Delete is a direct trash-icon button → one tap opens the confirmation dialog
 //   - Quality chips (year/quality/languages from #117) render under the title
 //   - Elevation tiers (#101 D) preserved
 //   - useTasks composable contract unchanged
@@ -142,7 +142,7 @@ describe('DownloadsTab', () => {
     expect(btn.text()).toBe('Продолжить')
   })
 
-  it('shows NO primary action for finished task (only ⋯ overflow)', async () => {
+  it('shows NO primary action for finished task (only delete)', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [finishedTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
@@ -151,12 +151,12 @@ describe('DownloadsTab', () => {
     const primaryBtn = wrapper.find('[data-testid="btn-primary-task-3"]')
     expect(primaryBtn.exists()).toBe(false)
 
-    // overflow button must still be present
-    const overflowBtn = wrapper.find('[data-testid="btn-overflow-task-3"]')
-    expect(overflowBtn.exists()).toBe(true)
+    // delete (trash) button must still be present
+    const deleteBtn = wrapper.find('[data-testid="btn-delete-task-3"]')
+    expect(deleteBtn.exists()).toBe(true)
   })
 
-  it('shows NO primary action for error task (only ⋯ overflow)', async () => {
+  it('shows NO primary action for error task (only delete)', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [errorTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
@@ -165,50 +165,33 @@ describe('DownloadsTab', () => {
     const primaryBtn = wrapper.find('[data-testid="btn-primary-task-4"]')
     expect(primaryBtn.exists()).toBe(false)
 
-    const overflowBtn = wrapper.find('[data-testid="btn-overflow-task-4"]')
-    expect(overflowBtn.exists()).toBe(true)
+    const deleteBtn = wrapper.find('[data-testid="btn-delete-task-4"]')
+    expect(deleteBtn.exists()).toBe(true)
   })
 
-  // ── Old-style Delete-on-face is GONE ─────────────────────────────────────
+  // ── Direct trash-icon delete with confirmation ─────────────────────────────
 
-  it('does NOT show a Delete button directly on the card face', async () => {
+  it('the delete (trash) button is shown directly on the card — no menu reveal', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    // Delete button must NOT be visible without opening the overflow menu
-    const visibleDelete = wrapper.findAll('button').filter((b) => b.text() === 'Delete')
-    expect(visibleDelete).toHaveLength(0)
+    // There is no overflow ⋯ menu trigger anymore; delete is the direct button.
+    expect(wrapper.find('[data-testid="btn-overflow-task-1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="btn-delete-task-1"]').exists()).toBe(true)
   })
 
-  // ── Delete in overflow ⋯ menu with confirmation ───────────────────────────
-
-  it('clicking ⋯ opens the overflow menu with Delete item', async () => {
+  it('clicking the trash button opens the confirmation dialog in one tap', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const overflowBtn = wrapper.find('[data-testid="btn-overflow-task-1"]')
-    await overflowBtn.trigger('click')
-    await wrapper.vm.$nextTick()
+    // No dialog before the tap.
+    expect(document.querySelector('[data-testid="btn-confirm-delete"]')).toBeNull()
 
-    const deleteItem = wrapper.find('[data-testid="btn-delete-task-1"]')
-    expect(deleteItem.exists()).toBe(true)
-  })
-
-  it('clicking Delete in ⋯ menu shows confirmation dialog', async () => {
-    globalThis.fetch = (() =>
-      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
-    const wrapper = mount(DownloadsTab)
-    await flushPromises()
-
-    // Open menu
-    await wrapper.find('[data-testid="btn-overflow-task-1"]').trigger('click')
-    await wrapper.vm.$nextTick()
-
-    // Click Delete in menu
+    // Single tap on the trash button.
     await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -227,9 +210,7 @@ describe('DownloadsTab', () => {
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    // Open overflow → click Delete → cancel
-    await wrapper.find('[data-testid="btn-overflow-task-1"]').trigger('click')
-    await wrapper.vm.$nextTick()
+    // Tap trash → cancel
     await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -255,9 +236,7 @@ describe('DownloadsTab', () => {
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    // Open overflow → click Delete → confirm
-    await wrapper.find('[data-testid="btn-overflow-task-1"]').trigger('click')
-    await wrapper.vm.$nextTick()
+    // Tap trash → confirm
     await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
     await wrapper.vm.$nextTick()
 

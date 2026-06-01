@@ -7,9 +7,10 @@
 //   • EXACTLY ONE primary action per card, status-dependent:
 //       downloading / waiting / finishing → «Пауза» (primary/yellow)
 //       paused                           → «Продолжить» (primary/yellow)
-//       finished / seeding / error       → no primary; just the ⋯ overflow menu
-//   • Everything else in overflow ⋯ menu: Delete (with confirmation), open
-//     folder, copy magnet, retry-on-error.
+//       finished / seeding / error       → no primary; just the delete action
+//   • Delete is a direct trash-icon button (no overflow ⋯ menu): one tap opens
+//     the confirmation dialog. The old ⋯ menu only ever held Delete, so the
+//     extra reveal step was pure indirection and has been removed.
 //   • Quality chips (year / resolution / codec / languages) from #117 under title.
 //   • Bigger % readout, quieter meta.
 //   • Elevation tiers (#101 D) preserved: active+error → raised, settled → flat.
@@ -32,22 +33,13 @@ const props = withDefaults(defineProps<{ onAddClick?: () => void }>(), {
 
 const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
 
-// ── Overflow menu state ──────────────────────────────────────────────────────
-const openMenuId = ref<string | null>(null)
-// Task pending delete confirmation
+// ── Delete confirmation state ────────────────────────────────────────────────
+// Task pending delete confirmation (set by the trash-icon button, cleared on
+// cancel/confirm). The dialog is the only guard before the destructive action.
 const confirmDeleteId = ref<string | null>(null)
-
-function toggleMenu(id: string): void {
-  openMenuId.value = openMenuId.value === id ? null : id
-}
-
-function closeMenu(): void {
-  openMenuId.value = null
-}
 
 function requestDelete(id: string): void {
   confirmDeleteId.value = id
-  closeMenu()
 }
 
 function cancelDelete(): void {
@@ -251,7 +243,7 @@ function qualityChips(task: TaskView): string[] {
           <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
         </div>
 
-        <!-- Action row: 0 or 1 primary button + overflow ⋯ menu -->
+        <!-- Action row: 0 or 1 primary button + direct delete (trash) button -->
         <div class="task-actions">
           <!-- Primary action (Variant B: exactly one per status group, or none) -->
           <Button
@@ -263,37 +255,21 @@ function qualityChips(task: TaskView): string[] {
             @click="onPrimary(task)"
           >{{ primaryLabel(task.status) }}</Button>
 
-          <!-- Overflow ⋯ menu trigger -->
-          <div class="overflow-wrapper">
-            <button
-              class="btn-overflow nb-pressable"
-              :aria-label="`More actions for ${task.title}`"
-              :aria-expanded="openMenuId === task.id"
-              :data-testid="`btn-overflow-${task.id}`"
-              @click.stop="toggleMenu(task.id)"
-            >⋯</button>
-
-            <!-- Dropdown menu -->
-            <Transition name="menu-pop">
-              <div
-                v-if="openMenuId === task.id"
-                class="overflow-menu"
-                role="menu"
-                :aria-label="`Actions for ${task.title}`"
-                @click.stop
-              >
-                <button
-                  class="menu-item menu-item-danger"
-                  role="menuitem"
-                  :data-testid="`btn-delete-${task.id}`"
-                  @click="requestDelete(task.id)"
-                >
-                  <span class="menu-item-icon" aria-hidden="true">🗑</span>
-                  Удалить
-                </button>
-              </div>
-            </Transition>
-          </div>
+          <!-- Delete: a direct trash-icon button → one tap opens the confirm dialog. -->
+          <button
+            class="btn-delete nb-pressable"
+            :aria-label="`Удалить: ${task.title}`"
+            :data-testid="`btn-delete-${task.id}`"
+            @click.stop="requestDelete(task.id)"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18" />
+              <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+          </button>
         </div>
       </Card>
     </TransitionGroup>
@@ -312,9 +288,6 @@ function qualityChips(task: TaskView): string[] {
         </div>
       </Transition>
     </Teleport>
-
-    <!-- Backdrop to close overflow menu when clicking outside -->
-    <div v-if="openMenuId !== null" class="menu-backdrop" @click="closeMenu" />
   </div>
 </template>
 
@@ -437,20 +410,18 @@ function qualityChips(task: TaskView): string[] {
   flex: 1;
 }
 
-/* Overflow menu */
-.overflow-wrapper {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.btn-overflow {
+/* Delete: direct trash-icon button. Black ink icon (the confirmation dialog
+   carries the destructive weight). Sits as the trailing action (margin-left:auto
+   right-aligns it when there is no primary button; when a primary is present its
+   flex:1 pushes this right). */
+.btn-delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  margin-left: auto;
   width: 44px;
   min-height: 44px;
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
   color: var(--ink);
   background: var(--cream);
   border: var(--border);
@@ -458,56 +429,10 @@ function qualityChips(task: TaskView): string[] {
   box-shadow: var(--shadow-sm);
   cursor: pointer;
   user-select: none;
-  /* letter-spacing trick: "⋯" three-dot ellipsis */
-  letter-spacing: -0.1em;
 }
-
-.overflow-menu {
-  position: absolute;
-  bottom: calc(100% + var(--space-1));
-  right: 0;
-  min-width: 160px;
-  background: var(--paper);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
-  z-index: 10;
-  overflow: hidden;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-3) var(--space-3);
-  min-height: 44px;
-  font-family: var(--font);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--ink);
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-}
-.menu-item:hover,
-.menu-item:focus-visible {
-  background: var(--cream);
-  outline: none;
-}
-.menu-item-danger {
-  color: var(--red);
-}
-.menu-item-icon {
-  font-size: var(--fs-md);
-}
-
-/* Invisible backdrop to dismiss open menu on outside click */
-.menu-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9;
+.btn-delete svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* ── Delete confirmation dialog ── */
@@ -546,26 +471,6 @@ function qualityChips(task: TaskView): string[] {
   display: flex;
   gap: var(--space-2);
   justify-content: flex-end;
-}
-
-/* ── Overflow menu pop animation ── */
-.menu-pop-enter-active {
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-}
-.menu-pop-leave-active {
-  transition:
-    opacity var(--dur-fast) var(--ease-in),
-    transform var(--dur-fast) var(--ease-in);
-}
-.menu-pop-enter-from {
-  opacity: 0;
-  transform: scale(0.9) translateY(4px);
-}
-.menu-pop-leave-to {
-  opacity: 0;
-  transform: scale(0.9) translateY(4px);
 }
 
 /* ── Confirm dialog pop ── */
@@ -787,7 +692,9 @@ function qualityChips(task: TaskView): string[] {
   --press: 3px;
 }
 
-/* Yellow «+» chip — the sole accent colour per ADR 0006 addendum */
+/* Yellow «+» chip — the sole accent colour per ADR 0006 addendum. Round chip
+   with a thin border: the heavy rounded-square + thick border read as chunky
+   next to the row's dashed frame, so this is a crisp circle on a hairline. */
 .add-row-chip {
   display: inline-flex;
   align-items: center;
@@ -795,8 +702,8 @@ function qualityChips(task: TaskView): string[] {
   width: 28px;
   height: 28px;
   background: var(--yellow);
-  border: var(--border-strong);
-  border-radius: var(--radius);
+  border: var(--border);
+  border-radius: 50%;
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   line-height: 1;

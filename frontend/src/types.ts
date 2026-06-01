@@ -9,6 +9,12 @@ export interface TaskView {
   speedBytesPerSec: number
   pct: number
   destination: string | null
+  /** Release year extracted from torrent name (#117) */
+  year?: number
+  /** Resolution / source / codec / HDR tokens extracted from torrent name (#117) */
+  quality?: string[]
+  /** Language codes extracted from torrent name (#117) */
+  languages?: string[]
 }
 
 export interface SearchResultView {

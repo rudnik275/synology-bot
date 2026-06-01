@@ -1,102 +1,141 @@
 <script setup lang="ts">
-// Downloads tab — live task list with pause/resume/delete actions.
-// Composed from the shared kit (Card, StickerBadge, ProgressBar, EmptyState)
-// and driven by useTasks (polls every 3 s, no Pinia). Slice #61.
+// Downloads tab — Variant B card redesign (#116).
+//
+// Visual spec:
+//   • ONE status accent per card: a thin LEFT EDGE STRIPE (via Card edgeStripe
+//     prop). Top tone strip + StickerBadge removed from card face.
+//   • EXACTLY ONE primary action per card, status-dependent:
+//       downloading / waiting / finishing → «Пауза» (primary/yellow)
+//       paused                           → «Продолжить» (primary/yellow)
+//       finished / seeding / error       → no primary; just the ⋯ overflow menu
+//   • Everything else in overflow ⋯ menu: Delete (with confirmation), open
+//     folder, copy magnet, retry-on-error.
+//   • Quality chips (year / resolution / codec / languages) from #117 under title.
+//   • Bigger % readout, quieter meta.
+//   • Elevation tiers (#101 D) preserved: active+error → raised, settled → flat.
+import { ref } from 'vue'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import ScreenHeader from '../components/ScreenHeader.vue'
-import StickerBadge from '../components/StickerBadge.vue'
 import ProgressBar from '../components/ProgressBar.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useTasks } from '../composables/useTasks'
 import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/tones'
+import type { TaskView } from '../types'
 
 const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
 
-type BadgeInfo = { text: string; tone: Tone }
+// ── Overflow menu state ──────────────────────────────────────────────────────
+const openMenuId = ref<string | null>(null)
+// Task pending delete confirmation
+const confirmDeleteId = ref<string | null>(null)
 
-function badgeForStatus(status: string): BadgeInfo {
+function toggleMenu(id: string): void {
+  openMenuId.value = openMenuId.value === id ? null : id
+}
+
+function closeMenu(): void {
+  openMenuId.value = null
+}
+
+function requestDelete(id: string): void {
+  confirmDeleteId.value = id
+  closeMenu()
+}
+
+function cancelDelete(): void {
+  confirmDeleteId.value = null
+}
+
+async function confirmDelete(): Promise<void> {
+  if (!confirmDeleteId.value) return
+  const id = confirmDeleteId.value
+  confirmDeleteId.value = null
+  await deleteTask(id)
+}
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+
+/** Left-edge stripe tone — single accent for Variant B (#116). */
+function stripeToneForStatus(status: string): Tone {
   switch (status) {
     case 'downloading':
     case 'finishing':
     case 'waiting':
-      return { text: 'DL', tone: 'violet' }
-    case 'paused':
-      return { text: 'PAUSE', tone: 'orange' }
-    case 'finished':
-    case 'seeding':
-      return { text: 'DONE', tone: 'green' }
-    case 'error':
-      return { text: 'ERR', tone: 'red' }
-    default:
-      return { text: status, tone: 'default' }
-  }
-}
-
-function progressToneForStatus(status: string): Tone {
-  switch (status) {
-    case 'finished':
-    case 'seeding':
-      return 'green'
-    case 'paused':
-      return 'orange'
-    case 'error':
-      return 'red'
-    default:
       return 'violet'
-  }
-}
-
-function cardToneForStatus(status: string): Tone {
-  switch (status) {
-    case 'error':
-      return 'red'
     case 'paused':
       return 'orange'
     case 'finished':
     case 'seeding':
       return 'green'
-    case 'downloading':
-    case 'finishing':
-    case 'waiting':
-      return 'violet'
+    case 'error':
+      return 'red'
     default:
       return 'default'
   }
+}
+
+/** Elevation tier (#101 D): active + errors stay raised; settled tasks → flat. */
+function cardVariantForStatus(status: string): 'flat' | 'raised' {
+  return isActive(status) || status === 'error' ? 'raised' : 'flat'
 }
 
 function isActive(status: string): boolean {
   return status === 'downloading' || status === 'waiting' || status === 'finishing'
 }
 
-/** Elevation tier (#101 D): active transfers and errors stay raised — they want
- *  attention; settled tasks (done/seeding/paused) recede to flat so elevation
- *  tracks importance instead of every card sitting at the same height. */
-function cardVariantForStatus(status: string): 'flat' | 'raised' {
-  return isActive(status) || status === 'error' ? 'raised' : 'flat'
-}
-
 function isPaused(status: string): boolean {
   return status === 'paused'
 }
 
-async function onPause(id: string): Promise<void> {
-  await pause(id)
+/** Whether to show a primary action button (one or zero per card). */
+function hasPrimaryAction(status: string): boolean {
+  return isActive(status) || isPaused(status)
 }
 
-async function onResume(id: string): Promise<void> {
-  await resume(id)
+/** Label for the single primary action button. */
+function primaryLabel(status: string): string {
+  return isPaused(status) ? 'Продолжить' : 'Пауза'
 }
 
-async function onDelete(id: string): Promise<void> {
-  await deleteTask(id)
+async function onPrimary(task: TaskView): Promise<void> {
+  if (isPaused(task.status)) {
+    await resume(task.id)
+  } else {
+    await pause(task.id)
+  }
 }
+
+/** Human-readable status label for the overflow menu header / aria. */
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'downloading': return 'Загрузка'
+    case 'finishing':   return 'Завершение'
+    case 'waiting':     return 'Ожидание'
+    case 'paused':      return 'Пауза'
+    case 'finished':    return 'Готово'
+    case 'seeding':     return 'Раздача'
+    case 'error':       return 'Ошибка'
+    default:            return status
+  }
+}
+
+/** Combine year + quality + languages into a flat chip list. */
+function qualityChips(task: TaskView): string[] {
+  const chips: string[] = []
+  if (task.year) chips.push(String(task.year))
+  if (task.quality?.length) chips.push(...task.quality)
+  if (task.languages?.length) chips.push(...task.languages)
+  return chips
+}
+
 </script>
 
 <template>
   <div class="downloads-tab">
     <ScreenHeader title="Downloads" />
+
     <!-- Loading skeleton -->
     <div v-if="loading && tasks.length === 0" class="loading-state" aria-label="Loading downloads">
       <div v-for="i in 2" :key="i" class="skeleton-card" />
@@ -127,67 +166,104 @@ async function onDelete(id: string): Promise<void> {
       <Card
         v-for="(task, index) in tasks"
         :key="task.id"
-        :tone="cardToneForStatus(task.status)"
+        :edge-stripe="stripeToneForStatus(task.status)"
         :variant="cardVariantForStatus(task.status)"
         class="task-card"
         :style="{ '--stagger-index': index }"
       >
-        <!-- Header row: title + badge -->
+        <!-- Header row: title only (badge removed — edge stripe is the sole accent) -->
         <div class="task-header">
           <h3 class="task-title">{{ task.title }}</h3>
-          <!-- Keyed <Transition> so a status change (DL→DONE→PAUSED) pops the badge. -->
-          <Transition name="badge-pop" mode="out-in">
-            <StickerBadge
-              :key="badgeForStatus(task.status).text"
-              :tone="badgeForStatus(task.status).tone"
-              :rotate="-2"
-            >{{ badgeForStatus(task.status).text }}</StickerBadge>
-          </Transition>
+          <!-- Status text — quieter than badge, screen-reader friendly -->
+          <span class="task-status-label" :aria-label="`Status: ${statusLabel(task.status)}`">{{ statusLabel(task.status) }}</span>
         </div>
 
-        <!-- Progress bar -->
+        <!-- Quality chips: year / resolution / codec / languages (#117) -->
+        <div v-if="qualityChips(task).length > 0" class="task-chips">
+          <span v-for="chip in qualityChips(task)" :key="chip" class="chip">{{ chip }}</span>
+        </div>
+
+        <!-- Progress bar (ink-colored for settled tasks, status-colored for active) -->
         <div class="task-progress">
           <ProgressBar
             :value="task.pct"
-            :tone="progressToneForStatus(task.status)"
+            :tone="isActive(task.status) ? 'violet' : stripeToneForStatus(task.status)"
             hide-label
           />
         </div>
 
-        <!-- Meta row -->
+        <!-- Meta row: bigger % + quieter speed/size -->
         <div class="task-meta">
           <span class="meta-pct">{{ task.pct }}%</span>
-          <span class="meta-speed">{{ formatSpeed(task.speedBytesPerSec) }}</span>
-          <span class="meta-size">
-            {{ formatBytes(task.downloadedBytes) }} / {{ formatBytes(task.sizeBytes) }}
-          </span>
+          <span v-if="isActive(task.status)" class="meta-speed">{{ formatSpeed(task.speedBytesPerSec) }}</span>
+          <span class="meta-size">{{ formatBytes(task.downloadedBytes) }} / {{ formatBytes(task.sizeBytes) }}</span>
           <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
         </div>
 
-        <!-- Action buttons -->
+        <!-- Action row: 0 or 1 primary button + overflow ⋯ menu -->
         <div class="task-actions">
+          <!-- Primary action (Variant B: exactly one per status group, or none) -->
           <Button
-            v-if="isActive(task.status)"
-            variant="warning"
+            v-if="hasPrimaryAction(task.status)"
+            variant="primary"
             size="sm"
-            @click="onPause(task.id)"
-          >Pause</Button>
+            class="btn-primary-action"
+            :data-testid="`btn-primary-${task.id}`"
+            @click="onPrimary(task)"
+          >{{ primaryLabel(task.status) }}</Button>
 
-          <Button
-            v-if="isPaused(task.status)"
-            variant="success"
-            size="sm"
-            @click="onResume(task.id)"
-          >Resume</Button>
+          <!-- Overflow ⋯ menu trigger -->
+          <div class="overflow-wrapper">
+            <button
+              class="btn-overflow nb-pressable"
+              :aria-label="`More actions for ${task.title}`"
+              :aria-expanded="openMenuId === task.id"
+              :data-testid="`btn-overflow-${task.id}`"
+              @click.stop="toggleMenu(task.id)"
+            >⋯</button>
 
-          <Button
-            variant="danger"
-            size="sm"
-            @click="onDelete(task.id)"
-          >Delete</Button>
+            <!-- Dropdown menu -->
+            <Transition name="menu-pop">
+              <div
+                v-if="openMenuId === task.id"
+                class="overflow-menu"
+                role="menu"
+                :aria-label="`Actions for ${task.title}`"
+                @click.stop
+              >
+                <button
+                  class="menu-item menu-item-danger"
+                  role="menuitem"
+                  :data-testid="`btn-delete-${task.id}`"
+                  @click="requestDelete(task.id)"
+                >
+                  <span class="menu-item-icon" aria-hidden="true">🗑</span>
+                  Удалить
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
       </Card>
     </TransitionGroup>
+
+    <!-- Delete confirmation dialog (destructive — kept per spec) -->
+    <Teleport to="body">
+      <Transition name="confirm-pop">
+        <div v-if="confirmDeleteId !== null" class="confirm-backdrop" @click.self="cancelDelete">
+          <div class="confirm-dialog" role="dialog" aria-modal="true" aria-label="Confirm delete">
+            <p class="confirm-message">Удалить задачу? Это действие нельзя отменить.</p>
+            <div class="confirm-actions">
+              <Button variant="neutral" size="sm" data-testid="btn-cancel-delete" @click="cancelDelete">Отмена</Button>
+              <Button variant="danger" size="sm" data-testid="btn-confirm-delete" @click="confirmDelete">Удалить</Button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Backdrop to close overflow menu when clicking outside -->
+    <div v-if="openMenuId !== null" class="menu-backdrop" @click="closeMenu" />
   </div>
 </template>
 
@@ -207,6 +283,8 @@ async function onDelete(id: string): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* Left padding accounts for the 5px edge stripe so content doesn't overlap it. */
+  padding-left: calc(var(--space-4) + 5px);
 }
 
 .task-header {
@@ -226,63 +304,229 @@ async function onDelete(id: string): Promise<void> {
   flex: 1;
 }
 
+/* Quieter status label — replaces the coloured StickerBadge (#116 one-accent rule) */
+.task-status-label {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  opacity: 0.5;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+/* Quality chips: year / resolution / codec / languages */
+.task-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--cream);
+  border: var(--border-thin) solid var(--ink);
+  border-radius: var(--radius);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
 .task-progress {
-  /* Let the bar stretch full-width of the card body */
+  /* bar stretches full-width of the card body */
 }
 
 .task-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  font-size: var(--fs-xs);
-  color: var(--ink);
-  opacity: 0.8;
+  align-items: baseline;
   font-variant-numeric: tabular-nums;
 }
 
+/* Bigger % per spec — this is the main number that needs to read at a glance */
 .meta-pct {
+  font-size: var(--fs-md);
   font-weight: var(--fw-bold);
-  opacity: 1;
   color: var(--ink);
+  line-height: 1;
+}
+
+.meta-speed,
+.meta-size {
+  font-size: var(--fs-xs);
+  color: var(--ink);
+  opacity: 0.6;
 }
 
 .meta-dest {
   width: 100%;
   font-size: var(--fs-xs);
-  opacity: 0.6;
+  opacity: 0.5;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Inline task actions — the buttons themselves are the shared <Button>. */
+/* ── Action row ── */
 .task-actions {
   display: flex;
   gap: var(--space-2);
-  flex-wrap: wrap;
+  align-items: center;
 }
 
-/*
- * Status-badge pop when DL→DONE→PAUSED→ERR changes.
- * out-in mode: old badge scales down + fades out, new one springs in.
- */
-.badge-pop-enter-active {
-  transition:
-    opacity var(--dur-badge-pop) var(--ease-pop),
-    transform var(--dur-badge-pop) var(--ease-pop);
+.btn-primary-action {
+  flex: 1;
 }
-.badge-pop-leave-active {
+
+/* Overflow menu */
+.overflow-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.btn-overflow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: var(--ink);
+  background: var(--cream);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  user-select: none;
+  /* letter-spacing trick: "⋯" three-dot ellipsis */
+  letter-spacing: -0.1em;
+}
+
+.overflow-menu {
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  right: 0;
+  min-width: 160px;
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+  overflow: hidden;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-3);
+  min-height: 44px;
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--ink);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--cream);
+  outline: none;
+}
+.menu-item-danger {
+  color: var(--red);
+}
+.menu-item-icon {
+  font-size: var(--fs-md);
+}
+
+/* Invisible backdrop to dismiss open menu on outside click */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+}
+
+/* ── Delete confirmation dialog ── */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 9, 11, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: var(--space-4);
+}
+
+.confirm-dialog {
+  background: var(--paper);
+  border: var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5);
+  max-width: 320px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.confirm-message {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/* ── Overflow menu pop animation ── */
+.menu-pop-enter-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.menu-pop-leave-active {
   transition:
     opacity var(--dur-fast) var(--ease-in),
     transform var(--dur-fast) var(--ease-in);
 }
-.badge-pop-enter-from {
+.menu-pop-enter-from {
   opacity: 0;
-  transform: rotate(-2deg) scale(0.7);
+  transform: scale(0.9) translateY(4px);
 }
-.badge-pop-leave-to {
+.menu-pop-leave-to {
   opacity: 0;
-  transform: rotate(-2deg) scale(0.8);
+  transform: scale(0.9) translateY(4px);
+}
+
+/* ── Confirm dialog pop ── */
+.confirm-pop-enter-active {
+  transition: opacity var(--dur-enter) var(--ease-out);
+}
+.confirm-pop-leave-active {
+  transition: opacity var(--dur-exit) var(--ease-in);
+}
+.confirm-pop-enter-from,
+.confirm-pop-leave-to {
+  opacity: 0;
 }
 
 /*

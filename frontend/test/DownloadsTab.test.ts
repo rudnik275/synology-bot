@@ -1,5 +1,11 @@
-// Tests for DownloadsTab (#61): task rows, status badges, progress values,
-// action buttons (pause/resume/delete), empty state. Mocks globalThis.fetch.
+// Tests for DownloadsTab Variant B (#116):
+//   - One status accent (edge stripe via Card, not badge/tone)
+//   - Exactly one primary action per status group (or none)
+//   - Delete lives in the overflow ⋯ menu behind a confirmation dialog
+//   - Quality chips (year/quality/languages from #117) render under the title
+//   - Elevation tiers (#101 D) preserved
+//   - useTasks composable contract unchanged
+// Mocks globalThis.fetch.
 import { describe, it, expect, afterEach } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createApp } from 'vue'
@@ -40,6 +46,9 @@ const downloadingTask: TaskView = {
   speedBytesPerSec: 5_242_880,
   pct: 50,
   destination: '/downloads/movies',
+  year: 2008,
+  quality: ['1080p', 'BluRay', 'x264'],
+  languages: ['ENG'],
 }
 
 const pausedTask: TaskView = {
@@ -97,42 +106,6 @@ describe('DownloadsTab', () => {
     expect(wrapper.text()).toContain(pausedTask.title)
   })
 
-  it('shows DL badge for downloading task', async () => {
-    globalThis.fetch = (() =>
-      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
-    const wrapper = mount(DownloadsTab)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('DL')
-  })
-
-  it('shows PAUSE badge for paused task', async () => {
-    globalThis.fetch = (() =>
-      Promise.resolve(jsonResponse({ tasks: [pausedTask] }))) as typeof fetch
-    const wrapper = mount(DownloadsTab)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('PAUSE')
-  })
-
-  it('shows DONE badge for finished task', async () => {
-    globalThis.fetch = (() =>
-      Promise.resolve(jsonResponse({ tasks: [finishedTask] }))) as typeof fetch
-    const wrapper = mount(DownloadsTab)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('DONE')
-  })
-
-  it('shows ERR badge for error task', async () => {
-    globalThis.fetch = (() =>
-      Promise.resolve(jsonResponse({ tasks: [errorTask] }))) as typeof fetch
-    const wrapper = mount(DownloadsTab)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('ERR')
-  })
-
   it('renders a ProgressBar with the correct pct value', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
@@ -144,49 +117,134 @@ describe('DownloadsTab', () => {
     expect(progressbar.attributes('aria-valuenow')).toBe(String(downloadingTask.pct))
   })
 
-  it('shows Pause button for downloading task', async () => {
+  // ── Primary action — exactly one per status group ─────────────────────────
+
+  it('shows «Пауза» as primary action for downloading task', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const buttons = wrapper.findAll('button')
-    const pauseBtn = buttons.find((b) => b.text() === 'Pause')
-    expect(pauseBtn).toBeDefined()
-    expect(pauseBtn!.exists()).toBe(true)
+    const btn = wrapper.find('[data-testid="btn-primary-task-1"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.text()).toBe('Пауза')
   })
 
-  it('shows Resume button for paused task', async () => {
+  it('shows «Продолжить» as primary action for paused task', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [pausedTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const buttons = wrapper.findAll('button')
-    const resumeBtn = buttons.find((b) => b.text() === 'Resume')
-    expect(resumeBtn).toBeDefined()
-    expect(resumeBtn!.exists()).toBe(true)
+    const btn = wrapper.find('[data-testid="btn-primary-task-2"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.text()).toBe('Продолжить')
   })
 
-  it('always shows a Delete button', async () => {
+  it('shows NO primary action for finished task (only ⋯ overflow)', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [finishedTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    const primaryBtn = wrapper.find('[data-testid="btn-primary-task-3"]')
+    expect(primaryBtn.exists()).toBe(false)
+
+    // overflow button must still be present
+    const overflowBtn = wrapper.find('[data-testid="btn-overflow-task-3"]')
+    expect(overflowBtn.exists()).toBe(true)
+  })
+
+  it('shows NO primary action for error task (only ⋯ overflow)', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [errorTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    const primaryBtn = wrapper.find('[data-testid="btn-primary-task-4"]')
+    expect(primaryBtn.exists()).toBe(false)
+
+    const overflowBtn = wrapper.find('[data-testid="btn-overflow-task-4"]')
+    expect(overflowBtn.exists()).toBe(true)
+  })
+
+  // ── Old-style Delete-on-face is GONE ─────────────────────────────────────
+
+  it('does NOT show a Delete button directly on the card face', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const buttons = wrapper.findAll('button')
-    const deleteBtn = buttons.find((b) => b.text() === 'Delete')
-    expect(deleteBtn).toBeDefined()
-    expect(deleteBtn!.exists()).toBe(true)
+    // Delete button must NOT be visible without opening the overflow menu
+    const visibleDelete = wrapper.findAll('button').filter((b) => b.text() === 'Delete')
+    expect(visibleDelete).toHaveLength(0)
   })
 
-  it('clicking Pause issues POST /api/tasks/:id/pause', async () => {
+  // ── Delete in overflow ⋯ menu with confirmation ───────────────────────────
+
+  it('clicking ⋯ opens the overflow menu with Delete item', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    const overflowBtn = wrapper.find('[data-testid="btn-overflow-task-1"]')
+    await overflowBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const deleteItem = wrapper.find('[data-testid="btn-delete-task-1"]')
+    expect(deleteItem.exists()).toBe(true)
+  })
+
+  it('clicking Delete in ⋯ menu shows confirmation dialog', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // Open menu
+    await wrapper.find('[data-testid="btn-overflow-task-1"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // Click Delete in menu
+    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // Confirmation dialog should appear (renders in Teleport, look at document)
+    const confirmBtn = document.querySelector('[data-testid="btn-confirm-delete"]')
+    expect(confirmBtn).not.toBeNull()
+  })
+
+  it('Cancel in confirmation dialog closes it without deleting', async () => {
     const calls: { url: string; init?: RequestInit }[] = []
-    let callCount = 0
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       calls.push({ url, init: init ? { ...init } : undefined })
-      callCount++
-      // First call: GET /api/tasks; subsequent: mutation + refetch
+      return Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))
+    }) as typeof fetch
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // Open overflow → click Delete → cancel
+    await wrapper.find('[data-testid="btn-overflow-task-1"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const cancelBtn = document.querySelector('[data-testid="btn-cancel-delete"]') as HTMLButtonElement
+    cancelBtn.click()
+    await flushPromises()
+
+    // No DELETE call should have been issued
+    const deleteCalls = calls.filter((c) => c.init?.method === 'DELETE')
+    expect(deleteCalls).toHaveLength(0)
+  })
+
+  it('Confirm delete in dialog issues DELETE /api/tasks/:id', async () => {
+    const calls: { url: string; init?: RequestInit }[] = []
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      calls.push({ url, init: init ? { ...init } : undefined })
       if ((init?.method ?? 'GET') === 'GET' || !init?.method) {
         return Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))
       }
@@ -196,9 +254,39 @@ describe('DownloadsTab', () => {
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const buttons = wrapper.findAll('button')
-    const pauseBtn = buttons.find((b) => b.text() === 'Pause')!
-    await pauseBtn.trigger('click')
+    // Open overflow → click Delete → confirm
+    await wrapper.find('[data-testid="btn-overflow-task-1"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const confirmBtn = document.querySelector('[data-testid="btn-confirm-delete"]') as HTMLButtonElement
+    confirmBtn.click()
+    await flushPromises()
+
+    const deleteCall = calls.find(
+      (c) =>
+        c.url.startsWith(`/api/tasks/${downloadingTask.id}`) && c.init?.method === 'DELETE',
+    )
+    expect(deleteCall).toBeDefined()
+  })
+
+  // ── Primary action triggers correct API call ──────────────────────────────
+
+  it('clicking Пауза issues POST /api/tasks/:id/pause', async () => {
+    const calls: { url: string; init?: RequestInit }[] = []
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      calls.push({ url, init: init ? { ...init } : undefined })
+      if ((init?.method ?? 'GET') === 'GET' || !init?.method) {
+        return Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))
+      }
+      return Promise.resolve(jsonResponse({ ok: true }))
+    }) as typeof fetch
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    await wrapper.find('[data-testid="btn-primary-task-1"]').trigger('click')
     await flushPromises()
 
     const pauseCall = calls.find(
@@ -207,7 +295,7 @@ describe('DownloadsTab', () => {
     expect(pauseCall).toBeDefined()
   })
 
-  it('clicking Resume issues POST /api/tasks/:id/resume', async () => {
+  it('clicking Продолжить issues POST /api/tasks/:id/resume', async () => {
     const calls: { url: string; init?: RequestInit }[] = []
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       calls.push({ url, init: init ? { ...init } : undefined })
@@ -220,9 +308,7 @@ describe('DownloadsTab', () => {
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const buttons = wrapper.findAll('button')
-    const resumeBtn = buttons.find((b) => b.text() === 'Resume')!
-    await resumeBtn.trigger('click')
+    await wrapper.find('[data-testid="btn-primary-task-2"]').trigger('click')
     await flushPromises()
 
     const resumeCall = calls.find(
@@ -231,29 +317,44 @@ describe('DownloadsTab', () => {
     expect(resumeCall).toBeDefined()
   })
 
-  it('clicking Delete issues DELETE /api/tasks/:id', async () => {
-    const calls: { url: string; init?: RequestInit }[] = []
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      calls.push({ url, init: init ? { ...init } : undefined })
-      if ((init?.method ?? 'GET') === 'GET' || !init?.method) {
-        return Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))
-      }
-      return Promise.resolve(jsonResponse({ ok: true }))
-    }) as typeof fetch
+  // ── Quality chips (#117 fields) ───────────────────────────────────────────
 
+  it('renders quality chips (year, resolution, codec, languages) under title', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const buttons = wrapper.findAll('button')
-    const deleteBtn = buttons.find((b) => b.text() === 'Delete')!
-    await deleteBtn.trigger('click')
+    const chips = wrapper.findAll('.chip')
+    const chipTexts = chips.map((c) => c.text())
+    expect(chipTexts).toContain('2008')
+    expect(chipTexts).toContain('1080p')
+    expect(chipTexts).toContain('BluRay')
+    expect(chipTexts).toContain('x264')
+    expect(chipTexts).toContain('ENG')
+  })
+
+  it('renders no chips when task has no year/quality/languages', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [pausedTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    const deleteCall = calls.find(
-      (c) =>
-        c.url.startsWith(`/api/tasks/${downloadingTask.id}`) && c.init?.method === 'DELETE',
-    )
-    expect(deleteCall).toBeDefined()
+    const chips = wrapper.findAll('.chip')
+    expect(chips).toHaveLength(0)
+  })
+
+  // ── No StickerBadge on card face (Variant B one-accent rule) ─────────────
+
+  it('does NOT render StickerBadge DL/PAUSE/DONE/ERR text on card face', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask, pausedTask, finishedTask, errorTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // These are the old badge texts — they must not appear as sticker chips
+    // (status is now shown as quieter text, not bold badges)
+    expect(wrapper.findAll('.sticker')).toHaveLength(0)
   })
 })
 

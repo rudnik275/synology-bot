@@ -36,7 +36,8 @@ describe('formatDashboard', () => {
     })
 
     const result = formatDashboard([task])
-    expect(result.text).toContain('⬇️ Big.Buck.Bunny.2008.mkv')
+    // cleanReleaseTitle strips dots, year, and .mkv extension remnant
+    expect(result.text).toContain('⬇️ Big Buck Bunny')
     expect(result.text).toMatch(/4[67]%/) // ~46-47% depending on rounding
     expect(result.text).toContain('MB/s')
     expect(result.text).toContain('GB')
@@ -59,7 +60,8 @@ describe('formatDashboard', () => {
     })
 
     const result = formatDashboard([task])
-    expect(result.text).toContain('⏸ Some.Other.Show')
+    // cleanReleaseTitle normalises dots → spaces
+    expect(result.text).toContain('⏸ Some Other Show')
     expect(result.text).toContain('приостановлено')
     expect(result.text).toContain('0 B')
   })

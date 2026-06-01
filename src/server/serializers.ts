@@ -7,6 +7,7 @@ import type {
 } from '../infra/synology/types.ts'
 import type { TolokaResult } from '../infra/toloka/types.ts'
 import type { Subscription } from '../domain/subscription.ts'
+import { cleanReleaseTitle } from '../domain/clean-release-title.ts'
 
 /**
  * Pure serializers mapping infra/domain types to the frozen Mini App API
@@ -19,6 +20,7 @@ import type { Subscription } from '../domain/subscription.ts'
 
 export interface TaskView {
   id: string
+  /** Human-readable title with scene tokens stripped (#117) */
   title: string
   status: string
   sizeBytes: number
@@ -26,6 +28,12 @@ export interface TaskView {
   speedBytesPerSec: number
   pct: number
   destination: string | null
+  /** Release year extracted from torrent name (#117) */
+  year?: number
+  /** Resolution / source / codec / HDR tokens extracted from torrent name (#117) */
+  quality?: string[]
+  /** Language codes extracted from torrent name (#117) */
+  languages?: string[]
 }
 
 export function serializeTask(t: Task): TaskView {
@@ -33,15 +41,19 @@ export function serializeTask(t: Task): TaskView {
   const downloadedBytes = t.additional?.transfer?.size_downloaded ?? 0
   const speedBytesPerSec = t.additional?.transfer?.speed_download ?? 0
   const pct = sizeBytes > 0 ? Math.min(100, Math.round((downloadedBytes / sizeBytes) * 100)) : 0
+  const cleaned = cleanReleaseTitle(t.title)
   return {
     id: t.id,
-    title: t.title,
+    title: cleaned.title,
     status: t.status,
     sizeBytes,
     downloadedBytes,
     speedBytesPerSec,
     pct,
     destination: t.additional?.detail?.destination ?? null,
+    ...(cleaned.year !== undefined && { year: cleaned.year }),
+    ...(cleaned.quality.length > 0 && { quality: cleaned.quality }),
+    ...(cleaned.languages.length > 0 && { languages: cleaned.languages }),
   }
 }
 
@@ -49,6 +61,7 @@ export function serializeTask(t: Task): TaskView {
 
 export interface SearchResultView {
   id: string
+  /** Human-readable title with scene tokens stripped (#117) */
   title: string
   size: string
   seeders: number
@@ -56,17 +69,27 @@ export interface SearchResultView {
   /** Absolute URL to the .torrent. (Toloka yields no magnets — the #58 `magnet?` field was wrong.) */
   downloadUrl: string
   category: string
+  /** Release year extracted from torrent name (#117) */
+  year?: number
+  /** Resolution / source / codec / HDR tokens extracted from torrent name (#117) */
+  quality?: string[]
+  /** Language codes extracted from torrent name (#117) */
+  languages?: string[]
 }
 
 export function serializeSearchResult(r: TolokaResult): SearchResultView {
+  const cleaned = cleanReleaseTitle(r.title)
   return {
     id: r.id,
-    title: r.title,
+    title: cleaned.title,
     size: r.size,
     seeders: r.seeders,
     leechers: r.leechers,
     downloadUrl: r.downloadUrl,
     category: r.category,
+    ...(cleaned.year !== undefined && { year: cleaned.year }),
+    ...(cleaned.quality.length > 0 && { quality: cleaned.quality }),
+    ...(cleaned.languages.length > 0 && { languages: cleaned.languages }),
   }
 }
 

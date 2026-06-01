@@ -1,5 +1,6 @@
 import type { Task } from '../infra/synology/types.ts'
 import type { TaskDetector } from './task-monitor/task-monitor.ts'
+import { cleanReleaseTitle } from './clean-release-title.ts'
 
 export interface StuckDetectorStore {
   wasNotifFired(taskId: string, event: string): boolean
@@ -67,7 +68,7 @@ export class StuckDetector implements TaskDetector {
         if (elapsed >= this.zeroSpeedThresholdMs) {
           if (!this.store.wasNotifFired(task.id, 'stuck')) {
             await this.sendAlert({
-              text: `⏸ Зависло: ${task.title}\nСкорость 0 уже 5 мин`,
+              text: `⏸ Зависло: ${cleanReleaseTitle(task.title).title}\nСкорость 0 уже 5 мин`,
               taskId: task.id,
             })
             this.store.markNotifFired(task.id, 'stuck')

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Confirm — final (border diet)</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff; --yellow:#ffd23f; --violet:#9b6dff; --coral:#ff6b5e;
+  --tag:#f1ece0; --hairline:rgba(9,9,11,.13);
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-sm:14px; --fs-md:16px; --fs-lg:20px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;display:flex;gap:48px;align-items:flex-start;flex-wrap:wrap;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center;color:#1a7a3a}
+svg.s{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+/* phone = device mockup only (the cream Sheet bg); not a real in-app border */
+.phone{width:360px;height:720px;background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(rgba(9,9,11,.06) 1.5px,transparent 1.5px);background-size:22px 22px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2)}
+.hd h2{font-size:var(--fs-lg);font-weight:700;text-transform:uppercase}
+.x{width:38px;height:38px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700}
+
+.step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-1) var(--space-4) var(--space-4)}
+.node{display:flex;flex-direction:column;align-items:center;gap:5px;width:64px}
+.ndot{width:32px;height:32px;border:var(--border);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm)}
+.ndot.now{background:var(--yellow);border:var(--border-strong)}
+.ndot.done{background:var(--ink);color:var(--paper)}
+.nlab{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.45}.nlab.now{opacity:1}
+.line{flex:1;height:3px;background:var(--ink);margin-top:15px;min-width:14px;border-radius:2px}
+
+/* overflow:visible + bottom gap so the card's 5px offset shadow isn't clipped against the footer */
+.body{flex:1;min-height:0;overflow:visible;padding:0 var(--space-4) var(--space-2);display:flex;flex-direction:column}
+.foot{padding:var(--space-3) var(--space-4) var(--space-4);display:flex;gap:var(--space-3)}
+
+/* THE one heavy container */
+.bigcard{border:var(--border-strong);border-radius:var(--radius-lg);background:var(--paper);box-shadow:var(--shadow-md);padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3);min-height:0;flex:1}
+.bc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-2)}
+.bc-title{font-size:var(--fs-lg);font-weight:700;line-height:1.18;overflow-wrap:anywhere}
+/* accent kept: sticker */
+.sticker{display:inline-flex;align-items:center;padding:3px 9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);transform:rotate(-3deg);white-space:nowrap;background:var(--violet);color:var(--cream)}
+
+/* chips: FLAT tags — no border, no shadow */
+.bc-chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;background:var(--tag);color:#4a4636}
+
+/* section divider instead of nested boxes */
+.hr{border-top:2px solid var(--hairline);margin:var(--space-1) 0}
+
+/* files: NO outer box — header rule + rows live directly in the card */
+.files{display:flex;flex-direction:column;min-height:0;flex:1}
+.files-hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);padding-bottom:var(--space-2);border-bottom:2px solid var(--hairline)}
+.files-hd .t{display:flex;align-items:center;gap:7px;font-weight:700;font-size:var(--fs-sm)}
+.files-hd .t svg{width:17px;height:17px}
+.files-hd .sz{font-family:var(--mono);font-size:12px;font-weight:700;opacity:.6}
+.tree{overflow-y:auto;min-height:0;margin:0 calc(var(--space-4) * -1);padding:0 var(--space-4)}
+
+.trow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--hairline)}
+.trow:last-child{border-bottom:0}
+.ck{flex:0 0 auto;width:18px;height:18px;border:2px solid var(--ink);border-radius:5px;background:var(--yellow);display:flex;align-items:center;justify-content:center}
+.ck svg{width:12px;height:12px}
+.gly{flex:0 0 auto;display:flex;opacity:.6}.gly svg{width:16px;height:16px}
+.fsz{font-family:var(--mono);font-size:11px;opacity:.5;flex:0 0 auto;white-space:nowrap}
+.caret{flex:0 0 auto;width:14px;display:flex;justify-content:center;transition:transform .15s}.caret svg{width:13px;height:13px}
+.folder-row{cursor:pointer}
+.node-folder.collapsed > .folder-row .caret{transform:rotate(-90deg)}
+.node-folder.collapsed > .children{display:none}
+.children{padding-left:12px;border-left:1px solid var(--hairline);margin-left:14px}
+.fileindent{width:8px;flex:0 0 auto}
+.nm{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.nm .lbl{font-size:13px;font-weight:700}
+.nm .raw{font-size:10px;font-family:var(--mono);opacity:.42;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* destination: NOT a box — hairline above, only the «Изменить» control is bordered */
+.dest{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding-top:var(--space-3);border-top:2px solid var(--hairline)}
+.dest .info{min-width:0}
+.dest .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.42}
+.dest .path{font-family:var(--mono);font-size:var(--fs-sm);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dest .edit{flex:0 0 auto;font-size:11px;font-weight:700;text-transform:uppercase;padding:7px 13px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow)}
+
+/* footer = the action bar (kept loud) */
+.btn{min-height:54px;border:var(--border-strong);border-radius:999px;font-family:var(--font);font-weight:700;font-size:var(--fs-md);text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.add{flex:1;background:var(--coral);box-shadow:var(--shadow-md)}
+.btn.back{flex:0 0 auto;width:60px;background:var(--paper);box-shadow:var(--shadow-sm)}
+.btn svg{width:20px;height:20px}
+.legend{font-size:11px;opacity:.6;text-align:center;max-width:360px}
+</style>
+</head>
+<body>
+<div class="col">
+  <div class="cap">Confirm — финал · диета по бордерам</div>
+  <div class="phone">
+    <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+    <div class="step">
+      <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+      <div class="line"></div>
+      <div class="node"><div class="ndot done">✓</div><div class="nlab">Папка</div></div>
+      <div class="line"></div>
+      <div class="node"><div class="ndot now">3</div><div class="nlab now">Готово</div></div>
+    </div>
+    <div class="body">
+      <div class="bigcard">
+        <div class="bc-head">
+          <div class="bc-title">Андор — Сезон 2 (S02E01–E08)</div>
+          <span class="sticker">К&nbsp;загрузке</span>
+        </div>
+        <div class="bc-chips"><span class="chip">2025</span><span class="chip">1080p</span><span class="chip">WEB-DL</span><span class="chip">Ukr/Eng</span></div>
+
+        <div class="files">
+          <div class="files-hd"><span class="t"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы · 11</span><span class="sz">24.3 GB</span></div>
+          <div class="tree">
+            <div class="node-folder">
+              <div class="trow folder-row"><span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm"><span class="lbl">Andor.S02.1080p.WEB-DL</span></span><span class="fsz">24.3 GB</span></div>
+              <div class="children">
+                <div class="node-folder">
+                  <div class="trow folder-row"><span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm"><span class="lbl">Season 2</span></span><span class="fsz">21.5 GB</span></div>
+                  <div class="children">
+                    <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E01</span><span class="raw">Andor.S02E01.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">3.1 GB</span></div>
+                    <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E02</span><span class="raw">Andor.S02E02.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">2.9 GB</span></div>
+                    <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E03</span><span class="raw">Andor.S02E03.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">3.0 GB</span></div>
+                    <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E04</span><span class="raw">Andor.S02E04.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">3.2 GB</span></div>
+                    <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E05</span><span class="raw">Andor.S02E05.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">2.8 GB</span></div>
+                  </div>
+                </div>
+                <div class="node-folder collapsed">
+                  <div class="trow folder-row"><span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm"><span class="lbl">Extras</span></span><span class="fsz">2.8 GB</span></div>
+                  <div class="children">
+                    <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">featurette</span><span class="raw">featurette.mkv</span></span><span class="fsz">1.5 GB</span></div>
+                  </div>
+                </div>
+                <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">poster</span><span class="raw">poster.jpg</span></span><span class="fsz">1.2 MB</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dest">
+          <div class="info"><div class="lab">Папка на NAS</div><div class="path">/media/TV/Andor</div></div>
+          <span class="edit">Изменить</span>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <span class="btn back"><svg class="s" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></span>
+      <span class="btn add"><svg class="s" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Добавить</span>
+    </div>
+  </div>
+  <div class="legend">одна громкая рамка (карточка) · внутри — hairline-разделители и плоские чипы вместо вложенных коробок</div>
+</div>
+<script>
+document.querySelectorAll('.folder-row').forEach(function(r){
+  r.addEventListener('click', function(){ r.closest('.node-folder').classList.toggle('collapsed'); });
+});
+</script>
+</body>
+</html>

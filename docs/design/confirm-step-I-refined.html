@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Confirm — variant I refined (tree + dest)</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff;
+  --yellow:#ffd23f; --violet:#9b6dff; --coral:#ff6b5e; --hairline:rgba(9,9,11,.14);
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-xs:12px; --fs-sm:14px; --fs-md:16px; --fs-lg:20px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --radius-sm:6px; --radius:12px; --radius-lg:16px;
+  --border:3px solid var(--ink); --border-strong:5px solid var(--ink);
+  --shadow-sm:3px 3px 0 var(--ink); --shadow-md:5px 5px 0 var(--ink);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:48px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center;color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;max-width:360px}
+
+.phone{width:360px;height:720px;background:var(--cream);border:var(--border-strong);border-radius:var(--radius-lg);display:flex;flex-direction:column;overflow:hidden;
+  background-image:radial-gradient(rgba(9,9,11,.07) 1.5px,transparent 1.5px);background-size:22px 22px}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-2)}
+.hd h2{font-size:var(--fs-lg);font-weight:700;text-transform:uppercase}
+.x{width:38px;height:38px;border:var(--border);border-radius:var(--radius);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;box-shadow:var(--shadow-sm)}
+
+.step{display:flex;align-items:flex-start;justify-content:center;padding:var(--space-1) var(--space-4) var(--space-4)}
+.node{display:flex;flex-direction:column;align-items:center;gap:5px;width:64px}
+.ndot{width:34px;height:34px;border:var(--border);border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:var(--fs-sm)}
+.ndot.now{background:var(--yellow);border:var(--border-strong)}
+.ndot.done{background:var(--ink);color:var(--paper)}
+.nlab{font-size:9px;font-weight:700;text-transform:uppercase;opacity:.45}
+.nlab.now{opacity:1}
+.line{flex:1;height:3px;background:var(--ink);margin-top:16px;min-width:14px;border-radius:2px}
+
+.body{flex:1;min-height:0;overflow:hidden;padding:0 var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
+.foot{padding:var(--space-3) var(--space-4) var(--space-4);display:flex;gap:var(--space-3)}
+svg.s{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+.sticker{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);transform:rotate(-3deg);white-space:nowrap;background:var(--violet);color:var(--cream)}
+.chip{font-size:11px;font-weight:700;padding:4px 10px;border:var(--border);border-radius:999px;background:var(--cream);box-shadow:var(--shadow-sm)}
+
+.bigcard{border:var(--border-strong);border-radius:var(--radius-lg);background:var(--paper);box-shadow:var(--shadow-md);padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3);min-height:0;flex:1}
+.bc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--space-2)}
+.bc-title{font-size:var(--fs-lg);font-weight:700;line-height:1.18;overflow-wrap:anywhere}
+.bc-chips{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ---- FILE TREE (recursive, collapsible) ---- */
+.files{display:flex;flex-direction:column;min-height:0;flex:1;border:var(--border);border-radius:var(--radius);background:var(--cream);overflow:hidden}
+.files-hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-bottom:2px solid var(--ink);background:var(--paper)}
+.files-hd .t{display:flex;align-items:center;gap:7px;font-weight:700;font-size:var(--fs-sm)}
+.files-hd .t svg{width:17px;height:17px}
+.files-hd .sz{font-family:var(--mono);font-size:var(--fs-xs);font-weight:700;opacity:.7}
+.tree{overflow-y:auto;min-height:0;padding:var(--space-1) 0}
+
+.trow{display:flex;align-items:center;gap:8px;padding:7px var(--space-3);border-bottom:1px solid var(--hairline)}
+.trow:last-child{border-bottom:0}
+.trow .ck{flex:0 0 auto;width:18px;height:18px;border:2px solid var(--ink);border-radius:5px;background:var(--yellow);display:flex;align-items:center;justify-content:center}
+.trow .ck svg{width:12px;height:12px}
+.trow .nm{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trow .fsz{font-family:var(--mono);font-size:11px;opacity:.6;flex:0 0 auto}
+.trow .gly{flex:0 0 auto;display:flex;opacity:.7}
+.trow .gly svg{width:16px;height:16px}
+
+/* folder rows: clickable, bold, with a rotating caret */
+.folder-row{cursor:pointer;font-weight:700}
+.folder-row .nm{font-weight:700}
+.caret{flex:0 0 auto;width:16px;display:flex;justify-content:center;transition:transform .15s}
+.caret svg{width:13px;height:13px}
+.node-folder.collapsed > .folder-row .caret{transform:rotate(-90deg)}
+.node-folder.collapsed > .children{display:none}
+/* nesting indent */
+.children{padding-left:18px;border-left:2px solid var(--hairline);margin-left:20px}
+.spacer{width:16px;flex:0 0 auto}
+
+/* ---- DESTINATION block — three treatments (a/b/c) ---- */
+.destwrap{display:flex;flex-direction:column;gap:6px}
+/* A: field with explicit Изменить pill — no folder icon */
+.dest-a{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:10px var(--space-3);border:var(--border);border-radius:var(--radius);background:var(--paper);box-shadow:var(--shadow-sm)}
+.dest-a .info{min-width:0}
+.dest-a .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.45}
+.dest-a .path{font-family:var(--mono);font-size:var(--fs-sm);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dest-a .edit{flex:0 0 auto;font-size:11px;font-weight:700;text-transform:uppercase;padding:6px 12px;border:2px solid var(--ink);border-radius:999px;background:var(--yellow)}
+
+/* B: inline label + path as a breadcrumb pill, tap-anywhere */
+.dest-b{display:flex;align-items:baseline;gap:8px;padding:8px var(--space-1)}
+.dest-b .lab{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;opacity:.5}
+.dest-b .path{font-family:var(--mono);font-size:var(--fs-sm);font-weight:700;border-bottom:2px dashed var(--ink);padding-bottom:1px}
+
+/* C: split-pill — "В папку" segment + path segment, like a token */
+.dest-c{display:inline-flex;align-items:stretch;border:var(--border);border-radius:999px;overflow:hidden;box-shadow:var(--shadow-sm);align-self:flex-start;max-width:100%}
+.dest-c .seg1{background:var(--ink);color:var(--cream);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;display:flex;align-items:center}
+.dest-c .seg2{background:var(--paper);font-family:var(--mono);font-size:var(--fs-sm);font-weight:700;padding:8px 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.btn{min-height:54px;border:var(--border-strong);border-radius:999px;background:var(--paper);box-shadow:var(--shadow-md);font-family:var(--font);font-weight:700;font-size:var(--fs-md);text-transform:uppercase;letter-spacing:.03em;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.add{flex:1;background:var(--coral)}
+.btn.back{flex:0 0 auto;width:60px;box-shadow:var(--shadow-sm)}
+.btn svg{width:20px;height:20px}
+.legend{font-size:11px;opacity:.6;text-align:center;margin-top:2px;max-width:360px}
+
+/* swatch board */
+.board{display:flex;flex-direction:column;gap:18px;width:360px}
+.swatch{background:var(--cream);border:var(--border);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow-sm)}
+.swatch h4{font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;opacity:.7}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- Main refined phone: variant I + file tree + destination treatment A -->
+  <div class="col">
+    <div class="cap">I — refined · дерево файлов + новый блок «Папка»</div>
+    <div class="sub">Файлы = сворачиваемое дерево (тапни папку — свернётся). Блок «Папка» внизу переделан: без пин-иконки, как поле с кнопкой «Изменить» (треатмент A). Квадраты — задел под выбор файлов #126.</div>
+    <div class="phone">
+      <div class="hd"><h2>Добавить</h2><div class="x">✕</div></div>
+      <div class="step">
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Поиск</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot done">✓</div><div class="nlab">Папка</div></div>
+        <div class="line"></div>
+        <div class="node"><div class="ndot now">3</div><div class="nlab now">Готово</div></div>
+      </div>
+      <div class="body">
+        <div class="bigcard">
+          <div class="bc-head">
+            <div class="bc-title">Андор — Сезон 2 (S02E01–E08)</div>
+            <span class="sticker">К&nbsp;загрузке</span>
+          </div>
+          <div class="bc-chips"><span class="chip">2025</span><span class="chip">1080p</span><span class="chip">WEB-DL</span><span class="chip">Ukr/Eng</span></div>
+
+          <div class="files">
+            <div class="files-hd"><span class="t"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы · 11</span><span class="sz">24.3 GB</span></div>
+            <div class="tree">
+              <!-- root folder -->
+              <div class="node-folder">
+                <div class="trow folder-row">
+                  <span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+                  <span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span>
+                  <span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span>
+                  <span class="nm">Andor.S02.1080p.WEB-DL</span><span class="fsz">24.3 GB</span>
+                </div>
+                <div class="children">
+                  <!-- Season 2 (expanded) -->
+                  <div class="node-folder">
+                    <div class="trow folder-row">
+                      <span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+                      <span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span>
+                      <span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span>
+                      <span class="nm">Season 2</span><span class="fsz">21.5 GB</span>
+                    </div>
+                    <div class="children">
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E01.mkv</span><span class="fsz">3.1 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E02.mkv</span><span class="fsz">2.9 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E03.mkv</span><span class="fsz">3.0 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E04.mkv</span><span class="fsz">3.2 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E05.mkv</span><span class="fsz">2.8 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E06.mkv</span><span class="fsz">3.0 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E07.mkv</span><span class="fsz">3.1 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E08.mkv</span><span class="fsz">2.4 GB</span></div>
+                    </div>
+                  </div>
+                  <!-- Extras (collapsed by default) -->
+                  <div class="node-folder collapsed">
+                    <div class="trow folder-row">
+                      <span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span>
+                      <span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span>
+                      <span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span>
+                      <span class="nm">Extras</span><span class="fsz">2.8 GB</span>
+                    </div>
+                    <div class="children">
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">featurette.mkv</span><span class="fsz">1.5 GB</span></div>
+                      <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">behind-the-scenes.mkv</span><span class="fsz">1.3 GB</span></div>
+                    </div>
+                  </div>
+                  <!-- a loose file at root -->
+                  <div class="trow"><span class="spacer"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">poster.jpg</span><span class="fsz">1.2 MB</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dest-a">
+            <div class="info"><div class="lab">Папка на NAS</div><div class="path">/media/TV/Andor</div></div>
+            <span class="edit">Изменить</span>
+          </div>
+        </div>
+      </div>
+      <div class="foot">
+        <span class="btn back"><svg class="s" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></span>
+        <span class="btn add"><svg class="s" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Добавить</span>
+      </div>
+    </div>
+    <div class="legend">тапни «Andor.S02…» или «Season 2» / «Extras» — папки сворачиваются</div>
+  </div>
+
+  <!-- Destination block — three treatments to choose from -->
+  <div class="col">
+    <div class="cap">Блок «Папка» — 3 оформления</div>
+    <div class="sub">Тот блок, что не нравился. Все без пин-иконки. Какой ставим в карточку?</div>
+    <div class="board">
+      <div class="swatch">
+        <h4>A — поле + кнопка «Изменить»</h4>
+        <div class="dest-a">
+          <div class="info"><div class="lab">Папка на NAS</div><div class="path">/media/TV/Andor</div></div>
+          <span class="edit">Изменить</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <h4>B — подпись + путь (пунктир, тап по строке)</h4>
+        <div class="dest-b">
+          <span class="lab">Папка</span><span class="path">/media/TV/Andor</span>
+        </div>
+      </div>
+      <div class="swatch">
+        <h4>C — токен-пилюля «В папку | путь»</h4>
+        <div class="dest-c">
+          <span class="seg1">В папку</span><span class="seg2">/media/TV/Andor</span>
+        </div>
+      </div>
+    </div>
+    <div class="legend">A — самое «кнопочное» и явное · B — самое тихое · C — компактный токен</div>
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll('.folder-row').forEach(function(r){
+  r.addEventListener('click', function(){
+    r.closest('.node-folder').classList.toggle('collapsed');
+  });
+});
+</script>
+</body>
+</html>

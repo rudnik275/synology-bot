@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>File tree — row legibility</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --cream:#fffdf5; --ink:#09090b; --paper:#fff; --yellow:#ffd23f; --hairline:rgba(9,9,11,.14);
+  --font:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',monospace;
+  --fs-sm:14px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --radius:12px; --border:3px solid var(--ink); --shadow-sm:3px 3px 0 var(--ink);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#efe9d8;font-family:var(--font);color:var(--ink);padding:30px;
+  background-image:radial-gradient(rgba(9,9,11,.10) 1.5px,transparent 1.5px);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+.row{display:flex;gap:48px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;align-items:center}
+.cap{font-weight:700;font-size:15px;text-transform:uppercase;letter-spacing:.03em;text-align:center;color:#1a7a3a}
+.sub{font-size:12px;opacity:.62;text-align:center;line-height:1.5;max-width:360px;min-height:40px}
+svg.s{fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+.files{width:360px;display:flex;flex-direction:column;max-height:560px;border:var(--border);border-radius:var(--radius);background:var(--cream);overflow:hidden;box-shadow:var(--shadow-sm)}
+.files-hd{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);padding:var(--space-2) var(--space-3);border-bottom:2px solid var(--ink);background:var(--paper)}
+.files-hd .t{display:flex;align-items:center;gap:7px;font-weight:700;font-size:var(--fs-sm)}
+.files-hd .t svg{width:17px;height:17px}
+.files-hd .sz{font-family:var(--mono);font-size:12px;font-weight:700;opacity:.7}
+/* the collapsed-root breadcrumb — shows the wrapper folder name once, no indent cost */
+.root-crumb{display:flex;align-items:center;gap:6px;padding:6px var(--space-3);font-family:var(--mono);font-size:11px;opacity:.55;border-bottom:1px dashed var(--hairline)}
+.root-crumb svg{width:14px;height:14px}
+.tree{overflow-y:auto;min-height:0;padding:2px 0}
+
+.trow{display:flex;align-items:center;gap:8px;padding:8px var(--space-3);border-bottom:1px solid var(--hairline)}
+.trow:last-child{border-bottom:0}
+.ck{flex:0 0 auto;width:18px;height:18px;border:2px solid var(--ink);border-radius:5px;background:var(--yellow);display:flex;align-items:center;justify-content:center}
+.ck svg{width:12px;height:12px}
+.gly{flex:0 0 auto;display:flex;opacity:.7}.gly svg{width:16px;height:16px}
+.fsz{font-family:var(--mono);font-size:11px;opacity:.55;flex:0 0 auto;white-space:nowrap}
+.caret{flex:0 0 auto;width:14px;display:flex;justify-content:center;transition:transform .15s}.caret svg{width:13px;height:13px}
+.folder-row{cursor:pointer}.folder-row .nm{font-weight:700}
+.node-folder.collapsed > .folder-row .caret{transform:rotate(-90deg)}
+.node-folder.collapsed > .children{display:none}
+/* SLIM indent — only 12px per level, thin guide */
+.children{padding-left:12px;border-left:2px solid var(--hairline);margin-left:14px}
+.fileindent{width:8px;flex:0 0 auto}
+
+/* ---- Variant 1: wrap full name (2 lines) ---- */
+.v1 .nm{flex:1;min-width:0;font-size:13px;line-height:1.25;word-break:break-all;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.v1 .trow{align-items:flex-start}
+.v1 .ck,.v1 .gly,.v1 .caret{margin-top:1px}
+.v1 .fsz{margin-top:2px}
+
+/* ---- Variant 2: parsed label + faded raw ---- */
+.v2 .nm{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.v2 .lbl{font-size:13px;font-weight:700}
+.v2 .raw{font-size:10px;font-family:var(--mono);opacity:.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend{font-size:11px;opacity:.6;text-align:center;max-width:360px}
+</style>
+</head>
+<body>
+<div class="row">
+
+  <!-- VARIANT 1: wrap -->
+  <div class="col">
+    <div class="cap">1 — перенос в 2 строки</div>
+    <div class="sub">Полное имя видно целиком (до 2 строк). Корневая папка схлопнута в «крошку» сверху, вложенность тоньше — имени больше места.</div>
+    <div class="files v1">
+      <div class="files-hd"><span class="t"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы · 11</span><span class="sz">24.3 GB</span></div>
+      <div class="root-crumb"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>Andor.S02.1080p.WEB-DL/</div>
+      <div class="tree">
+        <div class="node-folder">
+          <div class="trow folder-row"><span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Season 2</span><span class="fsz">21.5 GB</span></div>
+          <div class="children">
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E01.1080p.WEB-DL.DDP5.1.x265.mkv</span><span class="fsz">3.1 GB</span></div>
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E02.1080p.WEB-DL.DDP5.1.x265.mkv</span><span class="fsz">2.9 GB</span></div>
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E03.1080p.WEB-DL.DDP5.1.x265.mkv</span><span class="fsz">3.0 GB</span></div>
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">Andor.S02E04.1080p.WEB-DL.DDP5.1.x265.mkv</span><span class="fsz">3.2 GB</span></div>
+          </div>
+        </div>
+        <div class="node-folder collapsed">
+          <div class="trow folder-row"><span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm">Extras</span><span class="fsz">2.8 GB</span></div>
+          <div class="children">
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">featurette.mkv</span><span class="fsz">1.5 GB</span></div>
+          </div>
+        </div>
+        <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm">poster.jpg</span><span class="fsz">1.2 MB</span></div>
+      </div>
+    </div>
+    <div class="legend">всегда видно полное имя · строки выше</div>
+  </div>
+
+  <!-- VARIANT 2: parsed label + faded raw -->
+  <div class="col">
+    <div class="cap">2 — ярлык серии + тусклое имя</div>
+    <div class="sub">Жирный различитель (S02E01 / имя файла) — сразу понятно, где какая серия. Полное имя — тускло строкой ниже, обрезается, т.к. ярлык уже всё сказал.</div>
+    <div class="files v2">
+      <div class="files-hd"><span class="t"><svg class="s" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Файлы · 11</span><span class="sz">24.3 GB</span></div>
+      <div class="root-crumb"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg>Andor.S02.1080p.WEB-DL/</div>
+      <div class="tree">
+        <div class="node-folder">
+          <div class="trow folder-row"><span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm"><span class="lbl">Season 2</span></span><span class="fsz">21.5 GB</span></div>
+          <div class="children">
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E01</span><span class="raw">Andor.S02E01.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">3.1 GB</span></div>
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E02</span><span class="raw">Andor.S02E02.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">2.9 GB</span></div>
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E03</span><span class="raw">Andor.S02E03.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">3.0 GB</span></div>
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">S02E04</span><span class="raw">Andor.S02E04.1080p.WEB-DL.DDP5.1.x265.mkv</span></span><span class="fsz">3.2 GB</span></div>
+          </div>
+        </div>
+        <div class="node-folder collapsed">
+          <div class="trow folder-row"><span class="caret"><svg class="s" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="gly"><svg class="s" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z"/></svg></span><span class="nm"><span class="lbl">Extras</span></span><span class="fsz">2.8 GB</span></div>
+          <div class="children">
+            <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">featurette</span><span class="raw">featurette.mkv</span></span><span class="fsz">1.5 GB</span></div>
+          </div>
+        </div>
+        <div class="trow"><span class="fileindent"></span><span class="ck"><svg class="s" viewBox="0 0 24 24"><path d="M5 13l4 4 10-10"/></svg></span><span class="nm"><span class="lbl">poster</span><span class="raw">poster.jpg</span></span><span class="fsz">1.2 MB</span></div>
+      </div>
+    </div>
+    <div class="legend">серия читается мгновенно · полное имя тускло под ярлыком</div>
+  </div>
+
+</div>
+<script>
+document.querySelectorAll('.folder-row').forEach(function(r){
+  r.addEventListener('click', function(){ r.closest('.node-folder').classList.toggle('collapsed'); });
+});
+</script>
+</body>
+</html>

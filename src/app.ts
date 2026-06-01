@@ -181,8 +181,8 @@ export async function startApp(): Promise<void> {
   // createServer also serves the built Vue SPA from ./frontend/dist (the
   // default staticRoot) with an index.html fallback — see server.ts.
 
-  Bun.serve({ port: config.miniappPort, hostname: '127.0.0.1', fetch: server.fetch })
-  console.log(`[server] Mini App API on http://127.0.0.1:${config.miniappPort}`)
+  Bun.serve({ port: config.miniappPort, hostname: config.miniappHost, fetch: server.fetch })
+  console.log(`[server] Mini App API on http://${config.miniappHost}:${config.miniappPort}`)
 
   // Start bot first, then begin polling loops
   const botPromise = bot.start()

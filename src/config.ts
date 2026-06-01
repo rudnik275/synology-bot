@@ -46,6 +46,7 @@ export interface Config {
   autoCleanerPollMs: number
   autoCleanerRetentionDays: number
   miniappPort: number
+  miniappHost: string
   miniappUrl: string
 }
 
@@ -77,6 +78,11 @@ export function loadConfig(): Config {
     autoCleanerPollMs: parseInt(optional('AUTOCLEANER_POLL_MS', '3600000'), 10),
     autoCleanerRetentionDays: parseInt(optional('AUTOCLEANER_RETENTION_DAYS', '7'), 10),
     miniappPort: parseInt(optional('MINIAPP_PORT', '8080'), 10),
+    // Bind address for the Hono server. Defaults to loopback (safe for bare /
+    // non-container runs). The container deploy sets MINIAPP_HOST=0.0.0.0 so the
+    // sibling cloudflared container reaches it over the compose bridge as
+    // `http://bot:8080` (ADR 0010); the port is never published to the host.
+    miniappHost: optional('MINIAPP_HOST', '127.0.0.1'),
     miniappUrl: optional('MINIAPP_URL', ''),
   }
 }

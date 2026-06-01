@@ -1,9 +1,14 @@
 <script setup lang="ts">
-// Add-flow wizard overlay (#95): FAB → fullscreen Sheet → 4-step wizard.
-// Step 1: Choose source (Search default, Magnet, Torrent)
-// Step 2: Source-specific input
-// Step 3: FolderPicker (destination)
-// Step 4: Confirm summary + Add button
+// Add-flow wizard overlay — search-only Mini App intake (ADR 0008, #120).
+//
+// In-app path (FAB → fullscreen Sheet): Search → Folder → Confirm (3 steps).
+// The source-chooser step, the magnet/URL input, and the in-wizard .torrent
+// upload were removed; magnet/.torrent now arrive via the bot handoff below.
+//
+// Bot-handoff path (deep-link with a stash token): the bot stashed a .torrent's
+// bytes (#99) or a magnet/URL (#120). The wizard opens directly at the Folder
+// step with the source pre-loaded, then Confirm (2 steps; Search is not drawn).
+//
 // Mounted by App.vue as a fixed overlay on the Downloads surface.
 import { ref, computed, onMounted } from 'vue'
 import Sheet from './Sheet.vue'
@@ -17,7 +22,11 @@ import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import type { SearchResultView } from '../types'
 
-type Mode = 'magnet' | 'torrent' | 'search'
+// How the add source was supplied:
+//   'search' — in-app Toloka search (the only in-app mode)
+//   'file'   — a .torrent's bytes handed off by the bot (#99)
+//   'uri'    — a magnet/URL handed off by the bot (#120)
+type Mode = 'search' | 'file' | 'uri'
 
 // `deepLinkToken` injection seam: defaults to the token parsed from the Telegram
 // start_param (#99); overridable so the auto-open path is testable without a
@@ -31,14 +40,18 @@ const { lastFolder, recordRecent } = useFolderShortcuts()
 const { history: searchHistory, recordQuery, clearHistory: clearSearchHistory } = useSearchHistory()
 
 const open = ref(false)
-const step = ref<1 | 2 | 3 | 4>(1)
+// Steps are renumbered search-first:
+//   in-app:   1 Search · 2 Folder · 3 Confirm
+//   handoff:  (Search skipped) · 2 Folder · 3 Confirm — Search is not drawn.
+const step = ref<1 | 2 | 3>(1)
 const mode = ref<Mode>('search')
 
-// Magnet/URL input
-const magnetUri = ref('')
+// True for the bot-handoff path: source is pre-loaded, Search step is skipped.
+const handoff = ref(false)
 
-// .torrent file
+// Pre-loaded source for the handoff path: a reconstructed .torrent File OR a URI.
 const selectedFile = ref<File | null>(null)
+const handoffUri = ref('')
 
 // Destination path from FolderPicker
 const destination = ref('')
@@ -64,18 +77,26 @@ const filteredHistory = computed<string[]>(() => {
   return searchHistory.value.filter((item) => item.toLowerCase().includes(q))
 })
 
+// ─── Step model ────────────────────────────────────────────────
+
+/** Human label for the pre-loaded handoff source, shown on Confirm. */
+const handoffSourceLabel = computed<string>(() =>
+  mode.value === 'file' ? '.torrent File' : 'Magnet / URL'
+)
+
+/** The first drawn step: 1 (Search) in-app, 2 (Folder) on the bot handoff. */
+const firstStep = computed<1 | 2>(() => (handoff.value ? 2 : 1))
+
+/** Steps shown in the stepper — handoff hides Search (only Folder · Confirm). */
+const drawnSteps = computed<number[]>(() => (handoff.value ? [2, 3] : [1, 2, 3]))
+
 // ─── Navigation gating ────────────────────────────────────────────────
 
 /** Whether the current step has a valid value so Next can advance. */
 const canAdvance = computed<boolean>(() => {
-  if (step.value === 1) return true
-  if (step.value === 2) {
-    if (mode.value === 'magnet') return magnetUri.value.trim().length > 0
-    if (mode.value === 'torrent') return selectedFile.value !== null
-    if (mode.value === 'search') return selectedResult.value !== null
-  }
-  if (step.value === 3) return destination.value.trim().length > 0
-  return true
+  if (step.value === 1) return selectedResult.value !== null // Search
+  if (step.value === 2) return destination.value.trim().length > 0 // Folder
+  return true // Confirm
 })
 
 // ─── Actions ────────────────────────────────────────────────
@@ -93,8 +114,9 @@ function openSheet(): void {
 function resetForm(): void {
   step.value = 1
   mode.value = 'search'
-  magnetUri.value = ''
+  handoff.value = false
   selectedFile.value = null
+  handoffUri.value = ''
   destination.value = ''
   errorMsg.value = null
   searchQuery.value = ''
@@ -107,11 +129,14 @@ function resetForm(): void {
 
 function goNext(): void {
   if (!canAdvance.value) return
-  if (step.value < 4) step.value = (step.value + 1) as 1 | 2 | 3 | 4
+  if (step.value < 3) step.value = (step.value + 1) as 1 | 2 | 3
 }
 
 function goBack(): void {
-  if (step.value > 1) step.value = (step.value - 1) as 1 | 2 | 3 | 4
+  // On the handoff path the Folder step (2) is the first drawn step, so Back
+  // from Confirm lands on Folder, and there is no Back on Folder itself.
+  const floor = handoff.value ? 2 : 1
+  if (step.value > floor) step.value = (step.value - 1) as 1 | 2 | 3
 }
 
 async function runSearch(): Promise<void> {
@@ -151,11 +176,6 @@ function onClearHistory(): void {
   clearSearchHistory()
 }
 
-function onFileChange(e: Event): void {
-  const input = e.target as HTMLInputElement
-  selectedFile.value = input.files?.[0] ?? null
-}
-
 /** Rebuild a File from the base64 payload the bot stashed (#99). */
 function base64ToFile(base64: string, name: string): File {
   const bin = atob(base64)
@@ -165,22 +185,32 @@ function base64ToFile(base64: string, name: string): File {
 }
 
 /**
- * Deep-link entry (#99): the bot forwarded a .torrent and opened the Mini App
- * with a stash token. Open the wizard in torrent mode with the file already
- * loaded, jumping straight to the folder step. On failure fall back to the
- * file-input step so the user can pick the file manually.
+ * Deep-link entry (#99, generalized #120): the bot stashed an add source and
+ * opened the Mini App with a stash token. The stash holds either a .torrent's
+ * bytes (`kind: 'bytes'`) or a magnet/URL string (`kind: 'uri'`). Either way the
+ * wizard opens at the Folder step with the source pre-loaded; Search is skipped.
+ * On failure fall back to the in-app search flow so the owner can recover.
  */
 async function startFromStashedTorrent(token: string): Promise<void> {
   open.value = true
-  mode.value = 'torrent'
+  handoff.value = true
   if (lastFolder.value) destination.value = lastFolder.value
   try {
-    const { name, base64 } = await api.torrentStash(token)
-    selectedFile.value = base64ToFile(base64, name)
-    step.value = 3
+    const stash = await api.torrentStash(token)
+    if (stash.kind === 'uri') {
+      mode.value = 'uri'
+      handoffUri.value = stash.uri
+    } else {
+      mode.value = 'file'
+      selectedFile.value = base64ToFile(stash.base64, stash.name)
+    }
+    step.value = 2 // Folder
   } catch (e) {
+    // Recovery: drop back to the normal in-app search flow.
+    handoff.value = false
+    mode.value = 'search'
     errorMsg.value = e instanceof Error ? e.message : String(e)
-    step.value = 2
+    step.value = 1
   }
 }
 
@@ -193,24 +223,24 @@ async function create(): Promise<void> {
 
   submitting.value = true
   try {
-    if (mode.value === 'torrent') {
+    if (mode.value === 'file') {
       if (!selectedFile.value) {
-        errorMsg.value = 'Please select a .torrent file.'
+        errorMsg.value = 'No .torrent file loaded.'
         return
       }
       await api.createTaskFromFile(selectedFile.value, destination.value)
-    } else if (mode.value === 'search') {
+    } else if (mode.value === 'uri') {
+      if (!handoffUri.value.trim()) {
+        errorMsg.value = 'No magnet link or URL loaded.'
+        return
+      }
+      await api.createTask(handoffUri.value.trim(), destination.value)
+    } else {
       if (!selectedResult.value) {
         errorMsg.value = 'Please select a search result.'
         return
       }
       await api.createTask(selectedResult.value.downloadUrl, destination.value)
-    } else {
-      if (!magnetUri.value.trim()) {
-        errorMsg.value = 'Please enter a magnet link or URL.'
-        return
-      }
-      await api.createTask(magnetUri.value.trim(), destination.value)
     }
     // Success: record the destination as a recent BEFORE resetForm clears it.
     if (destination.value) recordRecent(destination.value)
@@ -235,87 +265,9 @@ async function create(): Promise<void> {
     <div class="wizard-body">
       <component :is="'div'" :class="['wizard-step', { 'wizard-step--animated': !prefersReducedMotion }]">
 
-        <!-- ── Step 1: Choose source ── -->
-        <div v-if="step === 1" class="step-source">
-          <p class="step-label">Choose source</p>
-          <div class="source-cards" role="group" aria-label="Add source">
-            <button
-              type="button"
-              class="source-card nb-pressable"
-              :class="{ 'source-card--selected': mode === 'search' }"
-              :aria-pressed="mode === 'search'"
-              data-testid="mode-search"
-              @click="mode = 'search'"
-            >
-              <span class="source-icon">🔍</span>
-              <span class="source-name">Search</span>
-              <span class="source-desc">Find by title</span>
-            </button>
-            <button
-              type="button"
-              class="source-card nb-pressable"
-              :class="{ 'source-card--selected': mode === 'magnet' }"
-              :aria-pressed="mode === 'magnet'"
-              data-testid="mode-magnet"
-              @click="mode = 'magnet'"
-            >
-              <span class="source-icon">🔗</span>
-              <span class="source-name">Magnet / URL</span>
-              <span class="source-desc">Paste a magnet link or URL</span>
-            </button>
-            <button
-              type="button"
-              class="source-card nb-pressable"
-              :class="{ 'source-card--selected': mode === 'torrent' }"
-              :aria-pressed="mode === 'torrent'"
-              data-testid="mode-torrent"
-              @click="mode = 'torrent'"
-            >
-              <span class="source-icon">📄</span>
-              <span class="source-name">.torrent File</span>
-              <span class="source-desc">Upload a .torrent file</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- ── Step 2: Input ── -->
-        <div v-else-if="step === 2" class="step-input">
-          <!-- Magnet -->
-          <div v-if="mode === 'magnet'" class="field">
-            <label class="field-label" for="magnet-uri">Magnet link or URL</label>
-            <textarea
-              id="magnet-uri"
-              v-model="magnetUri"
-              class="field-input field-textarea"
-              placeholder="magnet:?xt=…"
-              rows="4"
-              autocomplete="off"
-              spellcheck="false"
-              data-testid="magnet-input"
-            />
-          </div>
-
-          <!-- .torrent file -->
-          <div v-else-if="mode === 'torrent'" class="field">
-            <label class="field-label" for="torrent-file">.torrent file</label>
-            <label class="file-upload-label nb-pressable" for="torrent-file">
-              <span class="file-upload-icon">📄</span>
-              <span class="file-upload-text">
-                {{ selectedFile ? selectedFile.name : 'Tap to select a .torrent file' }}
-              </span>
-              <input
-                id="torrent-file"
-                type="file"
-                accept=".torrent"
-                class="file-upload-native"
-                data-testid="torrent-input"
-                @change="onFileChange"
-              />
-            </label>
-          </div>
-
-          <!-- Search -->
-          <div v-else-if="mode === 'search'" class="field search-field">
+        <!-- ── Step 1: Search (in-app primary entry; skipped on bot handoff) ── -->
+        <div v-if="step === 1" class="step-input">
+          <div class="field search-field">
             <label class="field-label" for="search-query">Search</label>
             <div class="search-row" style="position: relative;">
               <input
@@ -416,8 +368,8 @@ async function create(): Promise<void> {
           </div>
         </div>
 
-        <!-- ── Step 3: Destination folder ── -->
-        <div v-else-if="step === 3" class="step-folder">
+        <!-- ── Step 2: Destination folder ── -->
+        <div v-else-if="step === 2" class="step-folder">
           <p class="step-label">Destination folder</p>
           <FolderPicker v-model="destination" />
           <p v-if="destination" class="destination-preview">
@@ -425,23 +377,23 @@ async function create(): Promise<void> {
           </p>
         </div>
 
-        <!-- ── Step 4: Confirm ── -->
-        <div v-else-if="step === 4" class="step-confirm">
+        <!-- ── Step 3: Confirm ── -->
+        <div v-else-if="step === 3" class="step-confirm">
           <p class="step-label">Confirm</p>
           <div class="confirm-summary">
             <div class="confirm-row">
               <span class="confirm-key">Source</span>
-              <span class="confirm-val">{{ mode === 'search' ? 'Search' : mode === 'magnet' ? 'Magnet / URL' : '.torrent File' }}</span>
+              <span class="confirm-val">{{ mode === 'search' ? 'Search' : handoffSourceLabel }}</span>
             </div>
             <div v-if="mode === 'search' && selectedResult" class="confirm-row">
               <span class="confirm-key">Title</span>
               <span class="confirm-val">{{ selectedResult.title }}</span>
             </div>
-            <div v-else-if="mode === 'magnet'" class="confirm-row">
+            <div v-else-if="mode === 'uri'" class="confirm-row">
               <span class="confirm-key">Link</span>
-              <span class="confirm-val confirm-val--mono">{{ magnetUri }}</span>
+              <span class="confirm-val confirm-val--mono">{{ handoffUri }}</span>
             </div>
-            <div v-else-if="mode === 'torrent' && selectedFile" class="confirm-row">
+            <div v-else-if="mode === 'file' && selectedFile" class="confirm-row">
               <span class="confirm-key">File</span>
               <span class="confirm-val">{{ selectedFile.name }}</span>
             </div>
@@ -460,9 +412,9 @@ async function create(): Promise<void> {
 
     <!-- Sticky footer with Back / Next / Add -->
     <div class="wizard-footer">
-      <!-- Back -->
+      <!-- Back — not shown on the first drawn step (step 1 in-app, step 2 on handoff) -->
       <Button
-        v-if="step > 1"
+        v-if="step > firstStep"
         variant="neutral"
         size="lg"
         class="footer-btn"
@@ -473,19 +425,19 @@ async function create(): Promise<void> {
       </Button>
       <span v-else class="footer-spacer" aria-hidden="true"></span>
 
-      <!-- Step indicator -->
+      <!-- Step indicator — only the drawn steps (handoff hides Search). -->
       <div class="step-dots" aria-hidden="true">
         <span
-          v-for="n in 4"
-          :key="n"
+          v-for="s in drawnSteps"
+          :key="s"
           class="step-dot"
-          :class="{ 'step-dot--active': n === step }"
+          :class="{ 'step-dot--active': s === step }"
         ></span>
       </div>
 
-      <!-- Next (steps 1-3) / Add (step 4) -->
+      <!-- Next (Search/Folder) / Add (Confirm) -->
       <Button
-        v-if="step < 4"
+        v-if="step < 3"
         variant="primary"
         size="lg"
         class="footer-btn"
@@ -576,61 +528,7 @@ async function create(): Promise<void> {
   opacity: 0.6;
 }
 
-/* ── Step 1: Source cards ── */
-.step-source {
-  flex: 1;
-}
-
-.source-cards {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.source-card {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  min-height: 64px;
-  padding: var(--space-3) var(--space-4);
-  background: var(--paper);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--font);
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical),
-    background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
-}
-.source-card--selected {
-  background: var(--yellow);
-  border-color: var(--ink);
-  border-width: var(--border-thick);
-  box-shadow: var(--shadow-md);
-}
-
-.source-icon {
-  font-size: 24px;
-  flex-shrink: 0;
-}
-
-.source-name {
-  font-size: var(--fs-md);
-  font-weight: var(--fw-bold);
-  flex: 1;
-}
-
-.source-desc {
-  font-size: var(--fs-sm);
-  opacity: 0.6;
-}
-
-/* ── Step 2: Input ── */
+/* ── Step 1: Search input ── */
 .step-input {
   flex: 1;
 }
@@ -648,8 +546,7 @@ async function create(): Promise<void> {
   letter-spacing: 0.04em;
 }
 
-.field-input,
-.field-textarea {
+.field-input {
   width: 100%;
   min-height: 44px;
   padding: var(--space-2) var(--space-3);
@@ -660,54 +557,10 @@ async function create(): Promise<void> {
   font-family: var(--font);
   font-size: var(--fs-md);
   color: var(--ink);
-  resize: vertical;
 }
-.field-textarea {
-  resize: vertical;
-  line-height: 1.5;
-}
-.field-input:focus,
-.field-textarea:focus {
+.field-input:focus {
   outline: none;
   box-shadow: var(--shadow-md);
-}
-
-/* Styled file upload — hides native input, shows custom label */
-.file-upload-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  min-height: 64px;
-  padding: var(--space-3) var(--space-4);
-  background: var(--paper);
-  border: var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: var(--fs-md);
-  color: var(--ink);
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.file-upload-native {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-.file-upload-icon {
-  font-size: 24px;
-  flex-shrink: 0;
-}
-.file-upload-text {
-  flex: 1;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  word-break: break-all;
 }
 
 /* Search */

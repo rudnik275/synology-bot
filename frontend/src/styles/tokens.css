@@ -19,6 +19,9 @@
   --yellow: #ffd23f;
   --green: #2fd86b;
   --violet: #9b6dff;
+  /* Coral: the confirm-step primary CTA («Добавить»). Reserved for that one
+   * commit action so it reads as the loud, terminal step of the add flow. */
+  --coral: #ff6b5e;
 
   /* --- Semantic health (chip + status) ---
    * Severity owns the traffic-light triad green/amber/red. Warn is amber

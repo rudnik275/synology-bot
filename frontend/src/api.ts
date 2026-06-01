@@ -1,5 +1,5 @@
 import { initData } from './telegram'
-import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView } from './types'
+import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView, InspectResultView } from './types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -37,6 +37,24 @@ export const api = {
     // Do NOT set Content-Type — browser sets it with the multipart boundary.
     return request<{ ok: true }>('/tasks', { method: 'POST', body: form })
   },
+
+  // #123 — per-file selection: a two-phase create. `inspect*` creates an
+  // INSPECTING task (create_list=true) and returns its listId + file tree; the
+  // confirm step lets the owner pick a subset; `commitTask` selects that subset
+  // and starts the download; `cancelInspect` removes an uncommitted inspect so
+  // no orphaned list lingers on the NAS when the owner backs out.
+  inspectTaskFromFile: (file: File, destination: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('destination', destination)
+    return request<InspectResultView>('/tasks/inspect', { method: 'POST', body: form })
+  },
+  inspectTask: (uri: string, destination: string, title?: string) =>
+    request<InspectResultView>('/tasks/inspect', jsonBody({ uri, destination, title })),
+  commitTask: (listId: string, indices: number[]) =>
+    request<{ ok: true }>('/tasks/commit', jsonBody({ listId, indices })),
+  cancelInspect: (listId: string) =>
+    request<{ ok: true }>(`/tasks/inspect/${encodeURIComponent(listId)}`, { method: 'DELETE' }),
 
   // #99/#120 — fetch what the bot stashed for the add-flow handoff. A stash holds
   // either a .torrent's bytes (kind 'bytes' → base64 + filename, rebuilt into a

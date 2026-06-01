@@ -276,6 +276,38 @@ describe('TolokaClient', () => {
     expect(cookieHeader).toContain('PHPSESSID=dl-sess')
   })
 
+  it('downloadTorrent() re-logins and retries when a stale session returns a login page', async () => {
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'stale' }))
+    const torrentBytes = new Uint8Array([100, 56, 58, 97]) // 'd8:a' — bencode dict
+    let dlCalls = 0
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/login.php')) {
+        return Promise.resolve(makeHtmlResponse('<html>ok</html>', 302, ['PHPSESSID=fresh; Path=/']))
+      }
+      dlCalls++
+      // First download.php hit → HTML login page (stale); after re-login → torrent.
+      return Promise.resolve(dlCalls === 1 ? makeHtmlResponse('<!DOCTYPE html><html>login</html>') : makeBytesResponse(torrentBytes))
+    })
+
+    const client = new TolokaClient(CONFIG, store)
+    const result = await client.downloadTorrent(`${BASE_URL}/download.php?id=1001`)
+
+    expect(Array.from(result)).toEqual([100, 56, 58, 97])
+    expect(dlCalls).toBe(2) // retried after re-login
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/login.php'))).toBe(true)
+  })
+
+  it('downloadTorrent() throws a clear error when still a login page after re-login', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/login.php')) {
+        return Promise.resolve(makeHtmlResponse('<html>ok</html>', 302, ['PHPSESSID=fresh; Path=/']))
+      }
+      return Promise.resolve(makeHtmlResponse('<html>login</html>')) // never a torrent
+    })
+    const client = new TolokaClient(CONFIG, store)
+    await expect(client.downloadTorrent(`${BASE_URL}/download.php?id=1`)).rejects.toThrow(/non-torrent|session expired/i)
+  })
+
   it('downloadTorrent() throws on non-200 status', async () => {
     store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
 

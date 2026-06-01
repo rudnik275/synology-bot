@@ -5,6 +5,17 @@ import { parseSearchPage, isLoginPage, isAuthenticated } from './parser.ts'
 const COOKIE_KEY = 'toloka_cookie'
 
 /**
+ * A bencoded `.torrent` is a dict, so it starts with `d` (0x64). An HTML login
+ * page (what download.php returns on a stale session) starts with `<` or
+ * whitespace. Used to detect a non-torrent download before feeding it to DSM.
+ */
+function looksLikeTorrent(bytes: Uint8Array): boolean {
+  let i = 0
+  while (i < bytes.length && (bytes[i] === 0x20 || bytes[i] === 0x09 || bytes[i] === 0x0a || bytes[i] === 0x0d)) i++
+  return bytes[i] === 0x64
+}
+
+/**
  * HTTP-only Toloka client. Uses fetch + cookie jar stored in PersistentStore.
  *
  * Why no browser automation: see docs/integrations/toloka-defences.md (probed 2026-05-24).
@@ -106,10 +117,31 @@ export class TolokaClient {
   }
 
   async downloadTorrent(downloadUrl: string): Promise<Uint8Array> {
-    // Use redirect:'follow' so Toloka's download.php 3xx redirect to the actual
-    // .torrent file is followed automatically. fetchWithAuth uses redirect:'manual'
-    // (needed for login Set-Cookie capture and stale-session detection on search),
-    // so we issue a dedicated fetch here. See fix for #92.
+    let bytes = await this.fetchTorrentBytes(downloadUrl)
+
+    // A stale session makes download.php return an HTML login page (HTTP 200),
+    // NOT a .torrent — `res.ok` passes and DSM is fed garbage bytes, which fails
+    // both the #123 file-list inspect ("couldn't read file list") and the create
+    // (the HTTP 502 the owner hit). The search path re-logins on a stale session;
+    // download must too. A bencoded torrent starts with 'd'; if it doesn't,
+    // re-login once and retry, then give up with a clear error rather than
+    // returning a login page as a torrent.
+    if (!looksLikeTorrent(bytes)) {
+      await this.login()
+      bytes = await this.fetchTorrentBytes(downloadUrl)
+      if (!looksLikeTorrent(bytes)) {
+        throw new Error('Toloka session expired: download returned a non-torrent response (login page?) even after re-login')
+      }
+    }
+
+    return bytes
+  }
+
+  private async fetchTorrentBytes(downloadUrl: string): Promise<Uint8Array> {
+    // redirect:'follow' so Toloka's download.php 3xx to the actual .torrent is
+    // followed automatically. fetchWithAuth uses redirect:'manual' (needed for
+    // login Set-Cookie capture + stale-session detection on search), so we issue
+    // a dedicated fetch here. See fix for #92.
     const res = await fetch(downloadUrl, {
       headers: {
         Cookie: this.serializeCookies(),

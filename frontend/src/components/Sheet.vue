@@ -136,6 +136,17 @@ onUnmounted(() => {
   min-height: 0;
 }
 
+/* Fullscreen (the Add wizard) pins the header + footer and scrolls ONLY the
+   inner content block, so the stepper + Назад/Далее/Добавить stay on screen
+   while the results list / folder tree / file list scrolls. The content owns
+   its own overflow (e.g. AddFlow's .wizard-body); the partial 'sheet' variant
+   keeps scrolling its whole body as before. */
+.sheet--fullscreen .sheet-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 /* scrim fades; sheet slides up + springs (modal-from-source feel). */
 .sheet-enter-active .sheet {
   transition: transform var(--dur-enter) var(--ease-pop);

@@ -1,130 +1,244 @@
 <script setup lang="ts">
-// Shows tab — subscriptions CRUD + today-airing block (#64).
-// Composes useSubscriptions (which wraps useApi) and the shared component kit.
-// Does NOT build name-search — add UI takes a numeric showId only.
-import { ref } from 'vue'
+/**
+ * Shows tab — search-first around a Show detail page (ADR 0009).
+ *
+ * Two modes driven by a single search field:
+ *   - Empty query → show Subscriptions list (default)
+ *   - Non-empty query → show Show search results
+ *
+ * Tapping any row opens the Show detail sub-view (list hides, detail shows).
+ * Subscribe / Unsubscribe lives ONLY on the detail page.
+ * The in-app "today" block is removed; daily push covers same-day airings.
+ */
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useSubscriptions } from '../composables/useSubscriptions'
+import { useShowSearch } from '../composables/useShowSearch'
+import { useShowDetail } from '../composables/useShowDetail'
+import ShowDetail from '../components/ShowDetail.vue'
 import Card from '../components/Card.vue'
-import Button from '../components/Button.vue'
 import ScreenHeader from '../components/ScreenHeader.vue'
 import StickerBadge from '../components/StickerBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 
-const { subscriptions, todayEpisodes, loading, error, add, remove } = useSubscriptions()
+const { subscriptions, loading: subsLoading, error: subsError, add, remove } = useSubscriptions()
+const { results: searchResults, loading: searchLoading, error: searchError, debouncedSearch } = useShowSearch()
+const { data: showDetail, loading: detailLoading, error: detailError, load: loadDetail, clear: clearDetail } = useShowDetail()
 
-const showIdInput = ref('')
-const addError = ref<string | null>(null)
+const query = ref('')
+const selectedShowId = ref<number | null>(null)
+const subscribing = ref(false)
+
+// When query changes, trigger debounced search and clear detail
+watch(query, (q) => {
+  debouncedSearch(q)
+  if (selectedShowId.value !== null) {
+    selectedShowId.value = null
+    clearDetail()
+    hideTgBackButton()
+  }
+})
+
+const isSearchMode = computed(() => query.value.trim().length >= 2)
+const hasDetail = computed(() => selectedShowId.value !== null)
+
+const error = computed(() => detailError.value ?? searchError.value ?? subsError.value)
 
 /** Zero-padded SxxEyy string */
 function fmtEp(season: number, episode: number): string {
   return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
 }
 
-async function handleAdd() {
-  addError.value = null
-  const id = Number(showIdInput.value)
-  if (!Number.isInteger(id) || id <= 0) {
-    addError.value = 'Enter a valid numeric show ID'
-    return
-  }
+// --- Telegram BackButton wiring ---
+
+function showTgBackButton(): void {
+  const btn = window.Telegram?.WebApp?.BackButton
+  if (!btn) return
+  btn.show()
+  btn.onClick(handleBack)
+}
+
+function hideTgBackButton(): void {
+  const btn = window.Telegram?.WebApp?.BackButton
+  if (!btn) return
+  btn.hide()
+  btn.offClick(handleBack)
+}
+
+onUnmounted(() => {
+  hideTgBackButton()
+})
+
+// --- Row tap: open detail ---
+
+async function openShow(showId: number): Promise<void> {
+  selectedShowId.value = showId
+  await loadDetail(showId)
+  showTgBackButton()
+}
+
+function handleBack(): void {
+  selectedShowId.value = null
+  clearDetail()
+  hideTgBackButton()
+}
+
+// --- Subscribe / Unsubscribe from detail page ---
+
+async function handleSubscribe(): Promise<void> {
+  if (!showDetail.value) return
+  subscribing.value = true
   try {
-    await add(id)
-    showIdInput.value = ''
-  } catch (e) {
-    addError.value = e instanceof Error ? e.message : String(e)
+    await add(showDetail.value.id)
+    // Reload detail to get updated isSubscribed state
+    await loadDetail(showDetail.value.id)
+  } catch {
+    // swallow — refetch keeps list consistent
+  } finally {
+    subscribing.value = false
   }
 }
 
-async function handleRemove(id: string) {
+async function handleUnsubscribe(): Promise<void> {
+  if (!showDetail.value) return
+  subscribing.value = true
   try {
-    await remove(id)
+    await remove(String(showDetail.value.id))
+    // Reload detail to get updated isSubscribed state
+    await loadDetail(showDetail.value.id)
   } catch {
-    // swallow — refetch will keep list consistent
+    // swallow — refetch keeps list consistent
+  } finally {
+    subscribing.value = false
   }
 }
 </script>
 
 <template>
   <div class="shows-tab">
-    <ScreenHeader title="Shows" />
+    <!-- Show detail sub-view: covers the list -->
+    <template v-if="hasDetail">
+      <ScreenHeader title="Шоу" />
+      <div v-if="detailLoading" class="loading-hint">Загрузка…</div>
+      <div v-else-if="detailError" class="fetch-error">{{ detailError }}</div>
+      <ShowDetail
+        v-else-if="showDetail"
+        :show="showDetail"
+        :subscribing="subscribing"
+        @subscribe="handleSubscribe"
+        @unsubscribe="handleUnsubscribe"
+      />
+    </template>
 
-    <!-- Today-airing block — the one hero per screen (#101 elevation tiers):
-         most time-relevant info, raised to the top tier. Prominence comes from
-         elevation, not a yellow fill (accent stays reserved for actions). -->
-    <section v-if="todayEpisodes.length > 0" class="today-section">
-      <h2 class="section-title">Today</h2>
-      <Card variant="hero">
-        <ul class="episode-list">
-          <li v-for="ep in todayEpisodes" :key="`${ep.showId}-${ep.season}-${ep.episode}`" class="episode-row">
-            <span class="ep-title">{{ ep.title }}</span>
-            <span class="ep-meta">{{ fmtEp(ep.season, ep.episode) }}</span>
-            <span class="ep-time">{{ ep.airTime }}</span>
+    <!-- List view (search or subscriptions) -->
+    <template v-else>
+      <ScreenHeader title="Shows" />
+
+      <!-- Pinned search field -->
+      <div class="search-wrapper">
+        <input
+          v-model="query"
+          data-testid="search-input"
+          type="search"
+          placeholder="Поиск шоу…"
+          class="search-input"
+          autocomplete="off"
+        />
+      </div>
+
+      <!-- Fetch error banner -->
+      <p v-if="error" class="fetch-error">{{ error }}</p>
+
+      <!-- Search results mode -->
+      <template v-if="isSearchMode">
+        <div v-if="searchLoading" class="loading-hint">Поиск…</div>
+        <EmptyState
+          v-else-if="!searchLoading && (searchResults?.length ?? 0) === 0"
+          title="Ничего не найдено"
+          message="Попробуйте другой запрос."
+        >
+          <template #icon>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </template>
+        </EmptyState>
+        <ul v-else class="show-list">
+          <li
+            v-for="result in searchResults"
+            :key="result.id"
+            :data-testid="`search-result-${result.id}`"
+            class="show-item"
+            role="button"
+            tabindex="0"
+            @click="openShow(result.id)"
+            @keydown.enter="openShow(result.id)"
+          >
+            <Card>
+              <div class="show-row">
+                <img v-if="result.poster" :src="result.poster" class="show-thumb" :alt="result.title" />
+                <div v-else class="show-thumb-placeholder" aria-hidden="true" />
+                <div class="show-info">
+                  <span class="show-title">{{ result.title }}</span>
+                  <span v-if="result.titleOriginal" class="show-title-orig">{{ result.titleOriginal }}</span>
+                </div>
+                <StickerBadge v-if="result.isSubscribed" tone="green" class="subscribed-badge">
+                  ✓
+                </StickerBadge>
+              </div>
+            </Card>
           </li>
         </ul>
-      </Card>
-    </section>
-
-    <!-- Add form -->
-    <section class="add-section">
-      <h2 class="section-title">Add show</h2>
-      <Card>
-        <div class="add-form">
-          <input
-            v-model="showIdInput"
-            type="number"
-            placeholder="Show ID (numeric)"
-            class="id-input"
-            min="1"
-            @keydown.enter="handleAdd"
-          />
-          <Button data-testid="add-btn" variant="primary" size="lg" :disabled="loading" @click="handleAdd">Add</Button>
-        </div>
-        <p v-if="addError" class="add-error">{{ addError }}</p>
-      </Card>
-    </section>
-
-    <!-- Fetch error banner -->
-    <p v-if="error" class="fetch-error">{{ error }}</p>
-
-    <!-- Empty state -->
-    <EmptyState
-      v-if="!loading && subscriptions.length === 0"
-      title="No shows"
-      message="Subscribe to a show by its numeric ID to track new episodes."
-    >
-      <template #icon>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="7" width="18" height="13" rx="1.5" />
-          <path d="M8 3l4 4 4-4" />
-        </svg>
       </template>
-    </EmptyState>
 
-    <!-- Subscriptions list -->
-    <section v-if="subscriptions.length > 0" class="subs-section">
-      <h2 class="section-title">Subscriptions</h2>
-      <TransitionGroup tag="ul" name="sub-list" class="subs-list">
-        <li v-for="(sub, index) in subscriptions" :key="sub.id" class="sub-item" :style="{ '--stagger-index': index }">
-          <Card>
-            <div class="sub-row">
-              <span class="sub-title">{{ sub.title }}</span>
-              <StickerBadge :tone="sub.lastNotifiedEpisode ? 'green' : 'orange'">
-                {{ sub.lastNotifiedEpisode ? fmtEp(sub.lastNotifiedEpisode.season, sub.lastNotifiedEpisode.episode) : 'NEW' }}
-              </StickerBadge>
-              <Button
-                data-testid="remove-btn"
-                variant="danger"
-                size="md"
-                :aria-label="`Remove ${sub.title}`"
-                @click="handleRemove(sub.id)"
-              >
-                Remove
-              </Button>
-            </div>
-          </Card>
-        </li>
-      </TransitionGroup>
-    </section>
+      <!-- Subscriptions mode (default: empty query) -->
+      <template v-else>
+        <div v-if="subsLoading" class="loading-hint">Загрузка…</div>
+
+        <EmptyState
+          v-else-if="subscriptions.length === 0"
+          title="Нет подписок"
+          message="Найдите шоу через поиск и подпишитесь."
+        >
+          <template #icon>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="7" width="18" height="13" rx="1.5" />
+              <path d="M8 3l4 4 4-4" />
+            </svg>
+          </template>
+        </EmptyState>
+
+        <ul v-else class="show-list">
+          <li
+            v-for="(sub, index) in subscriptions"
+            :key="sub.id"
+            :data-testid="`subscription-row-${sub.id}`"
+            class="show-item"
+            :style="{ '--stagger-index': index }"
+            role="button"
+            tabindex="0"
+            @click="openShow(sub.showId)"
+            @keydown.enter="openShow(sub.showId)"
+          >
+            <Card>
+              <div class="show-row">
+                <img v-if="sub.poster" :src="sub.poster" class="show-thumb" :alt="sub.title" />
+                <div v-else class="show-thumb-placeholder" aria-hidden="true" />
+                <div class="show-info">
+                  <span class="show-title">{{ sub.title }}</span>
+                </div>
+                <StickerBadge
+                  :tone="sub.latestAiredEpisode ? 'green' : 'orange'"
+                  class="episode-badge"
+                >
+                  {{ sub.latestAiredEpisode ? fmtEp(sub.latestAiredEpisode.season, sub.latestAiredEpisode.episode) : '—' }}
+                </StickerBadge>
+              </div>
+            </Card>
+          </li>
+        </ul>
+      </template>
+    </template>
   </div>
 </template>
 
@@ -136,81 +250,37 @@ async function handleRemove(id: string) {
   padding: var(--space-4);
 }
 
-.section-title {
-  margin: 0 0 var(--space-2) 0;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink);
+.search-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--cream);
+  padding: var(--space-1) 0 var(--space-2);
 }
 
-/* Today block */
-.episode-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.episode-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.ep-title {
-  font-weight: var(--fw-medium);
-  flex: 1 1 auto;
-}
-
-.ep-meta {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  font-variant-numeric: tabular-nums;
-  text-transform: uppercase;
-}
-
-.ep-time {
-  font-size: var(--fs-xs);
-  color: var(--ink);
-  opacity: 0.7;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Add form */
-.add-form {
-  display: flex;
-  gap: var(--space-2);
-  align-items: stretch;
-}
-
-.id-input {
-  flex: 1 1 auto;
+.search-input {
+  width: 100%;
   padding: var(--space-2) var(--space-3);
   font-family: var(--font);
   font-size: var(--fs-md);
   font-weight: var(--fw-medium);
   color: var(--ink);
-  background: var(--cream);
+  background: var(--paper);
   border: var(--border);
   border-radius: var(--radius);
   outline: none;
-  min-width: 0;
+  box-sizing: border-box;
 }
 
-.id-input:focus {
+.search-input:focus {
   box-shadow: var(--shadow-sm);
 }
 
-.add-error {
-  margin: var(--space-2) 0 0 0;
+.loading-hint {
+  text-align: center;
+  opacity: 0.6;
   font-size: var(--fs-sm);
-  color: var(--red);
-  font-weight: var(--fw-medium);
+  padding: var(--space-4) 0;
 }
 
 .fetch-error {
@@ -224,55 +294,75 @@ async function handleRemove(id: string) {
   background: var(--paper);
 }
 
-/* Subscriptions list */
-.subs-list {
+/* Show list */
+.show-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  position: relative; /* needed for leaving items pulled to absolute */
 }
 
-/*
- * Subscriptions TransitionGroup (FLIP-capable).
- * Same recipe as the Downloads task list for visual consistency.
- */
-.sub-list-enter-active {
-  transition:
-    opacity var(--dur-enter) var(--ease-out),
-    transform var(--dur-enter) var(--ease-out);
-  transition-delay: calc(var(--stagger-index, 0) * var(--stagger-step));
-}
-.sub-list-leave-active {
-  transition:
-    opacity var(--dur-list-leave) var(--ease-in),
-    transform var(--dur-list-leave) var(--ease-in);
-  position: absolute;
-  width: 100%;
-}
-.sub-list-move {
-  transition: transform var(--dur-enter) var(--ease-out);
-}
-.sub-list-enter-from {
-  opacity: 0;
-  transform: translateY(10px);
-}
-.sub-list-leave-to {
-  opacity: 0;
-  transform: translateY(-6px);
+.show-item {
+  cursor: pointer;
 }
 
-.sub-row {
+.show-card-btn {
+  cursor: pointer;
+}
+
+.show-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  flex-wrap: wrap;
 }
 
-.sub-title {
-  font-weight: var(--fw-medium);
+.show-thumb {
+  width: 44px;
+  height: 66px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: var(--border);
+  flex-shrink: 0;
+}
+
+.show-thumb-placeholder {
+  width: 44px;
+  height: 66px;
+  border-radius: 4px;
+  border: var(--border);
+  background: var(--cream);
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.show-info {
   flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.show-title {
+  font-weight: var(--fw-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.show-title-orig {
+  font-size: var(--fs-xs);
+  opacity: 0.6;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subscribed-badge,
+.episode-badge {
+  flex-shrink: 0;
 }
 </style>

@@ -11,6 +11,13 @@ interface TelegramWebApp {
   setHeaderColor?: (color: string) => void
   setBackgroundColor?: (color: string) => void
   disableVerticalSwipes?: () => void
+  // BackButton for detail navigation (ADR 0009)
+  BackButton?: {
+    show: () => void
+    hide: () => void
+    onClick: (cb: () => void) => void
+    offClick: (cb: () => void) => void
+  }
 }
 
 // The Neo-Brutalism cream. Kept in sync with --cream in styles/tokens.css; used to

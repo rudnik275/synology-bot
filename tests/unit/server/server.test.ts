@@ -6,6 +6,7 @@ import type { DockerClient } from '../../../src/infra/docker/client.ts'
 import type { Task } from '../../../src/infra/synology/types.ts'
 import type { TolokaResult } from '../../../src/infra/toloka/types.ts'
 import type { Subscription } from '../../../src/domain/subscription.ts'
+import type { MyShowsShowDetailed, MyShowsSearchResult } from '../../../src/infra/myshows/client.ts'
 import { buildInitData, TEST_BOT_TOKEN } from '../../helpers/init-data.ts'
 
 const OWNER_ID = 42
@@ -55,11 +56,21 @@ function makeDocker(overrides: Partial<DockerClient> = {}): DockerClient {
   return { ...base, ...overrides } as unknown as DockerClient
 }
 
+function makeDefaultShow(overrides: Partial<MyShowsShowDetailed> = {}): MyShowsShowDetailed {
+  return {
+    id: 1,
+    title: 'Default Show',
+    episodes: [],
+    ...overrides,
+  }
+}
+
 interface AppExtras {
   store?: SubscriptionStore
   docker?: DockerClient
-  getShowById?: (showId: number) => Promise<{ title: string }>
+  getShowById?: (showId: number) => Promise<MyShowsShowDetailed>
   getTodayEpisodes?: (showId: number) => Promise<TodayEpisode[]>
+  searchShows?: (query: string) => Promise<MyShowsSearchResult[]>
   tolokaBaseUrl?: string
 }
 
@@ -73,8 +84,9 @@ function makeApp(
     toloka,
     docker: extra.docker ?? makeDocker(),
     store: extra.store ?? makeStore(),
-    getShowById: extra.getShowById ?? (async () => ({ title: 'Default Show' })),
+    getShowById: extra.getShowById ?? (async () => makeDefaultShow()),
     getTodayEpisodes: extra.getTodayEpisodes ?? (async () => []),
+    searchShows: extra.searchShows ?? (async () => []),
     tolokaBaseUrl: extra.tolokaBaseUrl ?? 'https://toloka.to',
     botToken: TEST_BOT_TOKEN,
     ownerId: OWNER_ID,
@@ -353,43 +365,36 @@ describe('Mini App server — subscriptions', () => {
     const app = makeApp(makeSynology(), makeToloka(), { store: makeStore({ listSubscriptions: () => subs }) })
     const res = await app.request('/api/subscriptions', { headers: ownerHeaders() })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      subscriptions: [{ id: '1', showId: 1, title: 'Show One', lastNotifiedEpisode: { season: 2, episode: 3 } }],
-    })
+    const body = await res.json() as { subscriptions: unknown[] }
+    expect(body.subscriptions).toHaveLength(1)
+    expect((body.subscriptions[0] as Record<string, unknown>).id).toBe('1')
+    expect((body.subscriptions[0] as Record<string, unknown>).title).toBe('Show One')
   })
 
-  it('GET /api/subscriptions/today flattens episodes airing today across shows', async () => {
-    const subs: Subscription[] = [
-      { id: '1', showId: 1, title: 'Show One' },
-      { id: '2', showId: 2, title: 'Show Two' },
-    ]
-    const today: Record<number, TodayEpisode[]> = {
-      1: [{ season: 1, episode: 5, title: 'Ep', airTime: '2026-05-28T20:00:00Z' }],
-      2: [],
-    }
-    const app = makeApp(makeSynology(), makeToloka(), {
-      store: makeStore({ listSubscriptions: () => subs }),
-      getTodayEpisodes: async (showId) => today[showId] ?? [],
-    })
-    const res = await app.request('/api/subscriptions/today', { headers: ownerHeaders() })
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      episodes: [{ showId: 1, title: 'Show One', season: 1, episode: 5, airTime: '2026-05-28T20:00:00Z' }],
-    })
+  it('GET /api/subscriptions/today is retired and returns 404', async () => {
+    const res = await makeApp().request('/api/subscriptions/today', { headers: ownerHeaders() })
+    expect(res.status).toBe(404)
   })
 
   it('POST /api/subscriptions resolves the title and stores it', async () => {
     let added: Subscription | undefined
     const store = makeStore({ addSubscription: (s) => { added = s } })
-    const app = makeApp(makeSynology(), makeToloka(), { store, getShowById: async () => ({ title: 'The Expanse' }) })
+    const app = makeApp(makeSynology(), makeToloka(), {
+      store,
+      getShowById: async () => makeDefaultShow({ id: 7, title: 'The Expanse' }),
+    })
     const res = await app.request('/api/subscriptions', {
       method: 'POST',
       headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ showId: 7 }),
     })
     expect(res.status).toBe(201)
-    expect(added).toEqual({ id: '7', showId: 7, title: 'The Expanse' })
-    expect(await res.json()).toEqual({ subscription: { id: '7', showId: 7, title: 'The Expanse', lastNotifiedEpisode: null } })
+    expect(added?.id).toBe('7')
+    expect(added?.showId).toBe(7)
+    expect(added?.title).toBe('The Expanse')
+    const body = await res.json() as { subscription: { id: string; showId: number; title: string } }
+    expect(body.subscription.id).toBe('7')
+    expect(body.subscription.title).toBe('The Expanse')
   })
 
   it('POST /api/subscriptions is idempotent when already subscribed', async () => {
@@ -404,7 +409,8 @@ describe('Mini App server — subscriptions', () => {
     })
     expect(res.status).toBe(200)
     expect(addCalled).toBe(false)
-    expect(await res.json()).toEqual({ subscription: { id: '7', showId: 7, title: 'Already', lastNotifiedEpisode: null } })
+    const body = await res.json() as { subscription: { id: string } }
+    expect(body.subscription.id).toBe('7')
   })
 
   it('POST /api/subscriptions 400 on a non-integer showId', async () => {
@@ -417,7 +423,7 @@ describe('Mini App server — subscriptions', () => {
   })
 
   it('POST /api/subscriptions 502 when the show lookup fails', async () => {
-    const app = makeApp(makeSynology(), makeToloka(), { getShowById: async () => { throw new Error('myshows down') } })
+    const app = makeApp(makeSynology(), makeToloka(), { getShowById: async (): Promise<MyShowsShowDetailed> => { throw new Error('myshows down') } })
     const res = await app.request('/api/subscriptions', {
       method: 'POST',
       headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
@@ -441,6 +447,91 @@ describe('Mini App server — subscriptions', () => {
   it('DELETE /api/subscriptions/:id 404 when not found', async () => {
     const res = await makeApp().request('/api/subscriptions/99', { method: 'DELETE', headers: ownerHeaders() })
     expect(res.status).toBe(404)
+  })
+})
+
+describe('Mini App server — shows search & detail (ADR 0009)', () => {
+  const SEARCH_RESULTS: MyShowsSearchResult[] = [
+    { id: 1396, title: 'Во все тяжкие', titleOriginal: 'Breaking Bad', image: 'https://myshows.me/img/1396.jpg' },
+    { id: 99, title: 'Some Show' },
+  ]
+
+  const DETAIL_SHOW: MyShowsShowDetailed = {
+    id: 1396,
+    title: 'Во все тяжкие',
+    titleOriginal: 'Breaking Bad',
+    image: 'https://myshows.me/img/1396.jpg',
+    description: 'Chemistry.',
+    episodes: [
+      { id: 1, title: 'Pilot', seasonNumber: 1, episodeNumber: 1, airDateUTC: '2008-01-20T02:00:00Z' },
+    ],
+  }
+
+  it('GET /api/shows/search returns results with isSubscribed marker', async () => {
+    const subs: Subscription[] = [{ id: '1396', showId: 1396, title: 'Во все тяжкие' }]
+    const app = makeApp(makeSynology(), makeToloka(), {
+      store: makeStore({ listSubscriptions: () => subs }),
+      searchShows: async () => SEARCH_RESULTS,
+    })
+    const res = await app.request('/api/shows/search?q=Breaking+Bad', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { results: Array<{ id: number; isSubscribed: boolean }> }
+    expect(body.results).toHaveLength(2)
+    expect(body.results[0].id).toBe(1396)
+    expect(body.results[0].isSubscribed).toBe(true)
+    expect(body.results[1].isSubscribed).toBe(false)
+  })
+
+  it('GET /api/shows/search 400 without a query', async () => {
+    const res = await makeApp().request('/api/shows/search', { headers: ownerHeaders() })
+    expect(res.status).toBe(400)
+  })
+
+  it('GET /api/shows/search 502 when myshows throws', async () => {
+    const app = makeApp(makeSynology(), makeToloka(), { searchShows: async () => { throw new Error('rpc error') } })
+    const res = await app.request('/api/shows/search?q=test', { headers: ownerHeaders() })
+    expect(res.status).toBe(502)
+  })
+
+  it('GET /api/shows/:id returns the detail view', async () => {
+    const app = makeApp(makeSynology(), makeToloka(), {
+      getShowById: async () => DETAIL_SHOW,
+    })
+    const res = await app.request('/api/shows/1396', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { id: number; title: string; seasons: unknown[] }
+    expect(body.id).toBe(1396)
+    expect(body.title).toBe('Во все тяжкие')
+    expect(body.seasons).toHaveLength(1)
+  })
+
+  it('GET /api/shows/:id self-heals poster and latestAiredEpisode for subscribed show', async () => {
+    const sub: Subscription = { id: '1396', showId: 1396, title: 'Во все тяжкие' }
+    let savedSub: Subscription | undefined
+    const store = makeStore({
+      listSubscriptions: () => [sub],
+      getSubscription: () => sub,
+      addSubscription: (s) => { savedSub = s },
+    })
+    const app = makeApp(makeSynology(), makeToloka(), {
+      store,
+      getShowById: async () => DETAIL_SHOW,
+    })
+    const res = await app.request('/api/shows/1396', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    // Self-heal should have written the poster
+    expect(savedSub?.poster).toBe('https://myshows.me/img/1396.jpg')
+  })
+
+  it('GET /api/shows/:id 400 for non-integer id', async () => {
+    const res = await makeApp().request('/api/shows/notanid', { headers: ownerHeaders() })
+    expect(res.status).toBe(400)
+  })
+
+  it('GET /api/shows/:id 502 when myshows throws', async () => {
+    const app = makeApp(makeSynology(), makeToloka(), { getShowById: async (): Promise<MyShowsShowDetailed> => { throw new Error('offline') } })
+    const res = await app.request('/api/shows/1', { headers: ownerHeaders() })
+    expect(res.status).toBe(502)
   })
 })
 

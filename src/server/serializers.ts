@@ -8,6 +8,7 @@ import type {
 import type { TolokaResult } from '../infra/toloka/types.ts'
 import type { Subscription } from '../domain/subscription.ts'
 import { cleanReleaseTitle } from '../domain/clean-release-title.ts'
+import type { MyShowsSearchResult, MyShowsShowDetailed } from '../infra/myshows/client.ts'
 
 /**
  * Pure serializers mapping infra/domain types to the frozen Mini App API
@@ -100,6 +101,8 @@ export interface SubscriptionView {
   showId: number
   title: string
   lastNotifiedEpisode: { season: number; episode: number } | null
+  poster: string | null
+  latestAiredEpisode: { season: number; episode: number; airDate: string } | null
 }
 
 export function serializeSubscription(s: Subscription): SubscriptionView {
@@ -108,6 +111,99 @@ export function serializeSubscription(s: Subscription): SubscriptionView {
     showId: s.showId,
     title: s.title,
     lastNotifiedEpisode: s.lastNotifiedEpisode ?? null,
+    poster: s.poster ?? null,
+    latestAiredEpisode: s.latestAiredEpisode ?? null,
+  }
+}
+
+// --- Show search (myshows catalog) ---
+
+export interface ShowSearchResultView {
+  id: number
+  title: string
+  titleOriginal: string | null
+  poster: string | null
+  isSubscribed: boolean
+}
+
+export function serializeShowSearchResult(
+  r: MyShowsSearchResult,
+  subscribedIds: Set<number>
+): ShowSearchResultView {
+  return {
+    id: r.id,
+    title: r.title,
+    titleOriginal: r.titleOriginal ?? null,
+    poster: r.image ?? null,
+    isSubscribed: subscribedIds.has(r.id),
+  }
+}
+
+// --- Show detail (full show page) ---
+
+export interface ShowEpisodeView {
+  episode: number
+  title: string
+  airDate: string | null
+  aired: boolean
+}
+
+export interface ShowSeasonView {
+  season: number
+  episodes: ShowEpisodeView[]
+}
+
+export interface ShowDetailView {
+  id: number
+  title: string
+  titleOriginal: string | null
+  poster: string | null
+  description: string | null
+  isSubscribed: boolean
+  seasons: ShowSeasonView[]
+}
+
+export function serializeShowDetail(
+  show: MyShowsShowDetailed,
+  subscribedIds: Set<number>,
+  now: Date
+): ShowDetailView {
+  const nowMs = now.getTime()
+
+  // Group episodes by season
+  const seasonMap = new Map<number, ShowEpisodeView[]>()
+  for (const ep of show.episodes) {
+    const airDateMs = ep.airDateUTC ? new Date(ep.airDateUTC).getTime() : NaN
+    const aired = !isNaN(airDateMs) && airDateMs <= nowMs
+
+    const view: ShowEpisodeView = {
+      episode: ep.episodeNumber,
+      title: ep.title,
+      airDate: ep.airDateUTC || null,
+      aired,
+    }
+
+    const list = seasonMap.get(ep.seasonNumber) ?? []
+    list.push(view)
+    seasonMap.set(ep.seasonNumber, list)
+  }
+
+  // Sort seasons descending (latest first in the accordion)
+  const seasons: ShowSeasonView[] = [...seasonMap.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([season, episodes]) => ({
+      season,
+      episodes: episodes.sort((a, b) => a.episode - b.episode),
+    }))
+
+  return {
+    id: show.id,
+    title: show.title,
+    titleOriginal: show.titleOriginal ?? null,
+    poster: show.image ?? null,
+    description: show.description ?? null,
+    isSubscribed: subscribedIds.has(show.id),
+    seasons,
   }
 }
 

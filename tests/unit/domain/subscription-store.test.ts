@@ -67,4 +67,29 @@ describe('PersistentStore — subscription helpers', () => {
     expect(list).toHaveLength(1)
     expect(list[0].title).toBe('New Title')
   })
+
+  it('round-trips poster and latestAiredEpisode (new optional fields)', () => {
+    const sub: Subscription = {
+      id: 'show-100',
+      showId: 100,
+      title: 'New Show',
+      poster: 'https://img.example.com/poster.jpg',
+      latestAiredEpisode: { season: 2, episode: 5, airDate: '2024-09-15T20:00:00Z' },
+    }
+    store.addSubscription(sub)
+    const retrieved = store.getSubscription('show-100')
+    expect(retrieved?.poster).toBe('https://img.example.com/poster.jpg')
+    expect(retrieved?.latestAiredEpisode).toEqual({ season: 2, episode: 5, airDate: '2024-09-15T20:00:00Z' })
+  })
+
+  it('reads an old blob without poster/latestAiredEpisode without throwing', () => {
+    // Simulate a pre-existing blob that lacks the new fields (old format)
+    const oldBlob = JSON.stringify({ id: 'old-1', showId: 55, title: 'Old Show' })
+    store['db'].run('INSERT OR REPLACE INTO subscriptions (id, data) VALUES (?, ?)', ['old-1', oldBlob])
+    const retrieved = store.getSubscription('old-1')
+    expect(retrieved).toBeDefined()
+    expect(retrieved?.title).toBe('Old Show')
+    expect(retrieved?.poster).toBeUndefined()
+    expect(retrieved?.latestAiredEpisode).toBeUndefined()
+  })
 })

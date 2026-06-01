@@ -3,6 +3,8 @@ import {
   serializeTask,
   serializeSearchResult,
   serializeSubscription,
+  serializeShowSearchResult,
+  serializeShowDetail,
   serializeCpu,
   serializeMemory,
   serializeVolumes,
@@ -10,6 +12,7 @@ import {
   serializeProcesses,
 } from '../../../src/server/serializers.ts'
 import type { Task } from '../../../src/infra/synology/types.ts'
+import type { MyShowsSearchResult, MyShowsShowDetailed } from '../../../src/infra/myshows/client.ts'
 
 describe('serializeTask', () => {
   it('derives pct, downloaded and speed from the transfer block', () => {
@@ -54,16 +57,133 @@ describe('serializeSearchResult', () => {
 })
 
 describe('serializeSubscription', () => {
-  it('nulls a missing lastNotifiedEpisode', () => {
+  it('nulls missing optional fields', () => {
     expect(serializeSubscription({ id: '1', showId: 1, title: 'S' })).toEqual({
-      id: '1', showId: 1, title: 'S', lastNotifiedEpisode: null,
+      id: '1', showId: 1, title: 'S', lastNotifiedEpisode: null, poster: null, latestAiredEpisode: null,
     })
   })
 
   it('keeps lastNotifiedEpisode when present', () => {
     expect(serializeSubscription({ id: '1', showId: 1, title: 'S', lastNotifiedEpisode: { season: 2, episode: 4 } })).toEqual({
-      id: '1', showId: 1, title: 'S', lastNotifiedEpisode: { season: 2, episode: 4 },
+      id: '1', showId: 1, title: 'S', lastNotifiedEpisode: { season: 2, episode: 4 }, poster: null, latestAiredEpisode: null,
     })
+  })
+
+  it('includes poster and latestAiredEpisode when present', () => {
+    expect(serializeSubscription({
+      id: '1', showId: 1, title: 'S',
+      poster: 'https://img.example.com/p.jpg',
+      latestAiredEpisode: { season: 3, episode: 7, airDate: '2024-09-15T20:00:00Z' },
+    })).toEqual({
+      id: '1', showId: 1, title: 'S',
+      lastNotifiedEpisode: null,
+      poster: 'https://img.example.com/p.jpg',
+      latestAiredEpisode: { season: 3, episode: 7, airDate: '2024-09-15T20:00:00Z' },
+    })
+  })
+})
+
+describe('serializeShowSearchResult', () => {
+  const FIXTURE: MyShowsSearchResult = {
+    id: 1396,
+    title: 'Во все тяжкие',
+    titleOriginal: 'Breaking Bad',
+    image: 'https://myshows.me/img/1396.jpg',
+  }
+
+  it('maps basic fields', () => {
+    const result = serializeShowSearchResult(FIXTURE, new Set())
+    expect(result.id).toBe(1396)
+    expect(result.title).toBe('Во все тяжкие')
+    expect(result.titleOriginal).toBe('Breaking Bad')
+    expect(result.poster).toBe('https://myshows.me/img/1396.jpg')
+  })
+
+  it('isSubscribed = false when not in subscribedIds', () => {
+    expect(serializeShowSearchResult(FIXTURE, new Set()).isSubscribed).toBe(false)
+  })
+
+  it('isSubscribed = true when id is in subscribedIds', () => {
+    expect(serializeShowSearchResult(FIXTURE, new Set([1396])).isSubscribed).toBe(true)
+  })
+
+  it('nulls absent optional fields', () => {
+    const partial: MyShowsSearchResult = { id: 99, title: 'Some Show' }
+    const result = serializeShowSearchResult(partial, new Set())
+    expect(result.titleOriginal).toBeNull()
+    expect(result.poster).toBeNull()
+  })
+})
+
+describe('serializeShowDetail', () => {
+  const NOW = new Date('2024-09-20T12:00:00Z')
+
+  const FIXTURE: MyShowsShowDetailed = {
+    id: 1396,
+    title: 'Во все тяжкие',
+    titleOriginal: 'Breaking Bad',
+    image: 'https://myshows.me/img/1396.jpg',
+    description: 'A chemistry teacher turned drug lord.',
+    episodes: [
+      { id: 1, title: 'Pilot', seasonNumber: 1, episodeNumber: 1, airDateUTC: '2008-01-20T02:00:00Z' },
+      { id: 2, title: 'Cat\'s in the Bag', seasonNumber: 1, episodeNumber: 2, airDateUTC: '2008-01-27T02:00:00Z' },
+      { id: 50, title: 'Ozymandias', seasonNumber: 5, episodeNumber: 14, airDateUTC: '2013-09-15T00:00:00Z' },
+      { id: 60, title: 'Felina', seasonNumber: 5, episodeNumber: 16, airDateUTC: '2013-09-29T00:00:00Z' },
+    ],
+  }
+
+  it('maps top-level fields', () => {
+    const result = serializeShowDetail(FIXTURE, new Set(), NOW)
+    expect(result.id).toBe(1396)
+    expect(result.title).toBe('Во все тяжкие')
+    expect(result.titleOriginal).toBe('Breaking Bad')
+    expect(result.poster).toBe('https://myshows.me/img/1396.jpg')
+    expect(result.description).toBe('A chemistry teacher turned drug lord.')
+  })
+
+  it('isSubscribed reflects subscribedIds set', () => {
+    expect(serializeShowDetail(FIXTURE, new Set(), NOW).isSubscribed).toBe(false)
+    expect(serializeShowDetail(FIXTURE, new Set([1396]), NOW).isSubscribed).toBe(true)
+  })
+
+  it('groups episodes into seasons sorted ascending', () => {
+    const result = serializeShowDetail(FIXTURE, new Set(), NOW)
+    expect(result.seasons).toHaveLength(2)
+    expect(result.seasons[0].season).toBe(1)
+    expect(result.seasons[1].season).toBe(5)
+  })
+
+  it('marks past episodes as aired and future episodes as not aired', () => {
+    // All fixture episodes are in the past relative to NOW (2024-09-20)
+    const result = serializeShowDetail(FIXTURE, new Set(), NOW)
+    for (const season of result.seasons) {
+      for (const ep of season.episodes) {
+        expect(ep.aired).toBe(true)
+      }
+    }
+  })
+
+  it('marks upcoming episodes as not aired', () => {
+    const showWithFuture: MyShowsShowDetailed = {
+      ...FIXTURE,
+      episodes: [
+        { id: 1, title: 'Ep 1', seasonNumber: 1, episodeNumber: 1, airDateUTC: '2024-09-15T00:00:00Z' }, // aired
+        { id: 2, title: 'Ep 2', seasonNumber: 1, episodeNumber: 2, airDateUTC: '2025-01-01T00:00:00Z' }, // upcoming
+      ],
+    }
+    const result = serializeShowDetail(showWithFuture, new Set(), NOW)
+    const eps = result.seasons[0].episodes
+    expect(eps[0].aired).toBe(true)
+    expect(eps[1].aired).toBe(false)
+  })
+
+  it('nulls absent optional fields', () => {
+    const minimal: MyShowsShowDetailed = { id: 99, title: 'X', episodes: [] }
+    const result = serializeShowDetail(minimal, new Set(), NOW)
+    expect(result.titleOriginal).toBeNull()
+    expect(result.poster).toBeNull()
+    expect(result.description).toBeNull()
+    expect(result.seasons).toEqual([])
   })
 })
 

@@ -12,7 +12,7 @@ import { createBot } from './bot.ts'
 import { ReachabilityMonitor } from './domain/reachability-monitor.ts'
 import { migrateJsonSubscriptions } from './infra/migration/subscriptions-migration.ts'
 import { runDigest, scheduleDailyDigest } from './domain/digest-scheduler.ts'
-import { getTodayEpisodes, getShowById } from './infra/myshows/client.ts'
+import { getTodayEpisodes, getShowById, searchShows } from './infra/myshows/client.ts'
 import { DiskUsageWatcher } from './domain/disk-usage-watcher.ts'
 import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
@@ -172,6 +172,7 @@ export async function startApp(): Promise<void> {
     store,
     getShowById,
     getTodayEpisodes,
+    searchShows,
     tolokaBaseUrl: config.toloka.baseUrl,
     botToken: config.botToken,
     ownerId: config.ownerChatId,

@@ -7,6 +7,7 @@
 // globals are inert for backend tests and the .vue loader only fires on
 // `.vue` imports, so this preload is harmless to the server suite.
 import { plugin } from 'bun'
+import { afterEach } from 'bun:test'
 import { GlobalRegistrator } from '@happy-dom/global-registrator'
 import { parse, compileScript } from '@vue/compiler-sfc'
 
@@ -64,4 +65,17 @@ plugin({
       return { contents: compiled.content, loader: isTs ? 'ts' : 'js' }
     })
   },
+})
+
+// Guarantee DOM + storage isolation between tests, regardless of file order.
+// `bun test` discovers files in a filesystem-dependent order that differs
+// between macOS (local) and Linux (CI). A test that mounts a component which
+// teleports into <body> (e.g. the AddFlow dialog) or writes localStorage can
+// otherwise leak into a later test that assumes a clean slate — which is why CI
+// (Linux order) went red while local (macOS order) stayed green. A global
+// afterEach makes the suite order-independent. Inert for the backend suite
+// (it neither touches document.body nor localStorage).
+afterEach(() => {
+  document.body.innerHTML = ''
+  localStorage.clear()
 })

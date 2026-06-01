@@ -87,8 +87,28 @@ const handoffSourceLabel = computed<string>(() =>
 /** The first drawn step: 1 (Search) in-app, 2 (Folder) on the bot handoff. */
 const firstStep = computed<1 | 2>(() => (handoff.value ? 2 : 1))
 
+/** The last drawn step (always 3 = Confirm for both paths). */
+const lastStep = computed<number>(() => 3)
+
 /** Steps shown in the stepper — handoff hides Search (only Folder · Confirm). */
 const drawnSteps = computed<number[]>(() => (handoff.value ? [2, 3] : [1, 2, 3]))
+
+/** Russian labels for each step by step number. */
+const STEP_LABELS: Record<number, string> = {
+  1: 'Поиск',
+  2: 'Папка',
+  3: 'Готово',
+}
+
+/** Stepper items for the UI: 1-indexed display position, label, state. */
+const stepperItems = computed(() =>
+  drawnSteps.value.map((stepNum, index) => ({
+    stepNum,
+    displayNum: index + 1,
+    label: STEP_LABELS[stepNum],
+    state: stepNum < step.value ? 'done' : stepNum === step.value ? 'current' : 'future',
+  }))
+)
 
 // ─── Navigation gating ────────────────────────────────────────────────
 
@@ -260,7 +280,7 @@ async function create(): Promise<void> {
   <FAB label="Add download" @click="openSheet" />
 
   <!-- Fullscreen Add Wizard -->
-  <Sheet v-model:open="open" title="Add Download" variant="fullscreen" @close="resetForm">
+  <Sheet v-model:open="open" title="Добавить" variant="fullscreen" @close="resetForm">
     <!-- Step content — wrapped in Transition unless reduced motion -->
     <div class="wizard-body">
       <component :is="'div'" :class="['wizard-step', { 'wizard-step--animated': !prefersReducedMotion }]">
@@ -421,23 +441,40 @@ async function create(): Promise<void> {
         data-testid="wizard-back"
         @click="goBack"
       >
-        Back
+        ← Назад
       </Button>
       <span v-else class="footer-spacer" aria-hidden="true"></span>
 
-      <!-- Step indicator — only the drawn steps (handoff hides Search). -->
-      <div class="step-dots" aria-hidden="true">
-        <span
-          v-for="s in drawnSteps"
-          :key="s"
-          class="step-dot"
-          :class="{ 'step-dot--active': s === step }"
-        ></span>
+      <!-- Step indicator — numbered stepper, path-aware (Variant B, #119). -->
+      <div class="stepper" aria-hidden="true" data-testid="stepper">
+        <template v-for="(item, index) in stepperItems" :key="item.stepNum">
+          <div class="stepper-node">
+            <div
+              class="stepper-circle"
+              :class="{
+                'stepper-circle--done': item.state === 'done',
+                'stepper-circle--current': item.state === 'current',
+              }"
+            >
+              <span v-if="item.state === 'done'" class="stepper-check">✓</span>
+              <span v-else>{{ item.displayNum }}</span>
+            </div>
+            <span
+              class="stepper-label"
+              :class="{ 'stepper-label--current': item.state === 'current' }"
+            >{{ item.label }}</span>
+          </div>
+          <div
+            v-if="index < stepperItems.length - 1"
+            class="stepper-line"
+            :class="{ 'stepper-line--future': item.state === 'future' }"
+          ></div>
+        </template>
       </div>
 
-      <!-- Next (Search/Folder) / Add (Confirm) -->
+      <!-- Next (not last step) / Добавить (last step) -->
       <Button
-        v-if="step < 3"
+        v-if="step < lastStep"
         variant="primary"
         size="lg"
         class="footer-btn"
@@ -445,7 +482,7 @@ async function create(): Promise<void> {
         :disabled="!canAdvance"
         @click="goNext"
       >
-        Next
+        Далее →
       </Button>
       <Button
         v-else
@@ -456,7 +493,7 @@ async function create(): Promise<void> {
         :disabled="submitting"
         @click="create"
       >
-        {{ submitting ? 'Adding…' : 'Add' }}
+        {{ submitting ? 'Добавление…' : 'Добавить' }}
       </Button>
     </div>
   </Sheet>
@@ -500,22 +537,78 @@ async function create(): Promise<void> {
   min-width: 80px;
 }
 
-/* Step dots */
-.step-dots {
+/* ── Numbered stepper (#119, Variant B) ── */
+.stepper {
   display: flex;
-  gap: var(--space-1);
-  align-items: center;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
 }
-.step-dot {
-  width: 8px;
-  height: 8px;
+
+.stepper-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.stepper-circle {
+  width: 36px;
+  height: 36px;
+  border: var(--border-strong);
   border-radius: 50%;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.stepper-circle--done {
   background: var(--ink);
-  opacity: 0.2;
+  color: var(--paper);
+}
+
+.stepper-circle--current {
+  background: var(--yellow);
+}
+
+.stepper-check {
+  font-size: var(--fs-md);
+  line-height: 1;
+}
+
+.stepper-label {
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.45;
+  white-space: nowrap;
+}
+
+.stepper-label--current {
+  opacity: 1;
+}
+
+.stepper-line {
+  flex: 1;
+  height: 4px;
+  background: var(--ink);
+  border-radius: 2px;
+  margin-top: 16px;
+  min-width: 12px;
   transition: opacity var(--dur-fast) var(--ease-out);
 }
-.step-dot--active {
-  opacity: 1;
+
+.stepper-line--future {
+  opacity: 0.22;
 }
 
 /* ── Step label ── */

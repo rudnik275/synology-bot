@@ -114,10 +114,23 @@ const stepperItems = computed(() =>
 
 /** Whether the current step has a valid value so Next can advance. */
 const canAdvance = computed<boolean>(() => {
-  if (step.value === 1) return selectedResult.value !== null // Search
+  if (step.value === 1) return selectedResult.value !== null // Search (used internally by goNext)
   if (step.value === 2) return destination.value.trim().length > 0 // Folder
   return true // Confirm
 })
+
+/** Seed-health level for a seeder count. */
+function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
+  if (seeders >= 20) return 'green'
+  if (seeders >= 5) return 'amber'
+  return 'red'
+}
+
+/** Select a search result and immediately advance to the Folder step (#121). */
+function selectAndAdvance(result: SearchResultView): void {
+  selectedResult.value = result
+  goNext()
+}
 
 // ─── Actions ────────────────────────────────────────────────
 
@@ -359,32 +372,35 @@ async function create(): Promise<void> {
               Ничего не найдено
             </div>
 
-            <!-- Results -->
-            <ul v-else-if="searchResults.length > 0" class="search-results" role="list" data-testid="search-results">
-              <li
+            <!-- Results — grouped card with hairline dividers (Variant B, #121) -->
+            <div v-else-if="searchResults.length > 0" class="search-results" role="list" data-testid="search-results">
+              <button
                 v-for="result in searchResults"
                 :key="result.id"
+                type="button"
+                class="result-row nb-pressable"
+                role="listitem"
+                :data-testid="`result-${result.id}`"
+                @click="selectAndAdvance(result)"
               >
-                <button
-                  type="button"
-                  class="result-card nb-pressable"
-                  :class="{ 'result-card--selected': selectedResult?.id === result.id }"
-                  :data-testid="`result-${result.id}`"
-                  @click="selectedResult = result"
-                >
+                <div class="result-row-content">
                   <span class="result-title" data-testid="result-title">{{ result.title }}</span>
                   <span class="result-meta">
-                    <span data-testid="result-size">{{ result.size }}</span>
-                    <span class="result-sep">·</span>
-                    <span>S: <span data-testid="result-seeders">{{ result.seeders }}</span></span>
-                    <span class="result-sep">·</span>
-                    <span>L: <span data-testid="result-leechers">{{ result.leechers }}</span></span>
-                    <span class="result-sep">·</span>
-                    <span data-testid="result-category">{{ result.category }}</span>
+                    <span
+                      v-if="result.quality && result.quality.length > 0"
+                      class="result-chip"
+                      data-testid="result-quality"
+                    >{{ result.quality[0] }}</span>
+                    <span class="result-health" :data-health="seedHealth(result.seeders)">
+                      <span class="result-health-dot" :class="`result-health-dot--${seedHealth(result.seeders)}`" aria-hidden="true"></span>
+                      <span data-testid="result-seeders">{{ result.seeders }}</span>
+                    </span>
+                    <span class="result-size" data-testid="result-size">{{ result.size }}</span>
                   </span>
-                </button>
-              </li>
-            </ul>
+                </div>
+                <svg class="result-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -472,9 +488,9 @@ async function create(): Promise<void> {
         </template>
       </div>
 
-      <!-- Next (not last step) / Добавить (last step) -->
+      <!-- Next (not last step, not search step — search advances via tap-to-select) / Добавить (last step) -->
       <Button
-        v-if="step < lastStep"
+        v-if="step > 1 && step < lastStep"
         variant="primary"
         size="lg"
         class="footer-btn"
@@ -484,6 +500,8 @@ async function create(): Promise<void> {
       >
         Далее →
       </Button>
+      <!-- On the search step there is no Next button; a spacer keeps the footer balanced. -->
+      <span v-else-if="step === 1" class="footer-spacer" aria-hidden="true"></span>
       <Button
         v-else
         variant="primary"
@@ -761,55 +779,122 @@ async function create(): Promise<void> {
   background: var(--yellow);
 }
 
-.search-results {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
+/* ── Grouped results card (Variant B, #121) ── */
 
-.result-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  background: var(--paper);
+/* Outer container: single border, single shadow — the "one grouped card" */
+.search-results {
   border: var(--border);
   border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper);
   box-shadow: var(--shadow-sm);
+}
+
+/* Each row is a full-width button with a hairline divider beneath it */
+.result-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px; /* touch target */
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(9, 9, 11, 0.12); /* --hairline */
+  border-radius: 0;
   cursor: pointer;
   text-align: left;
   font-family: var(--font);
+  color: var(--ink);
   transition:
     transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
+    box-shadow var(--dur-press) var(--ease-mechanical),
+    background var(--dur-fast) var(--ease-out);
 }
-.result-card--selected {
-  border-color: var(--ink);
-  border-width: var(--border-thick);
-  background: var(--yellow);
-  box-shadow: var(--shadow-md);
+.result-row:last-child {
+  border-bottom: none;
+}
+.result-row:active {
+  background: rgba(9, 9, 11, 0.04);
 }
 
+/* Content column: takes all remaining width */
+.result-row-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Title: bold, single line, ellipsis */
 .result-title {
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
-  line-height: 1.3;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Meta row: quality chip + seed health + size */
 .result-meta {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  font-size: var(--fs-xs);
-  opacity: 0.7;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
-.result-sep {
+/* Quality chip (resolution badge) */
+.result-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  padding: 2px 7px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Seed-health indicator: dot + count */
+.result-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: var(--fw-bold);
+  flex-shrink: 0;
+}
+
+.result-health-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  flex-shrink: 0;
+}
+.result-health-dot--green  { background: var(--green); }
+.result-health-dot--amber  { background: var(--orange); }
+.result-health-dot--red    { background: var(--red); }
+
+/* File size */
+.result-size {
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  opacity: 0.7;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Chevron affordance */
+.result-chevron {
+  width: 16px;
+  height: 16px;
   opacity: 0.4;
+  flex-shrink: 0;
 }
 
 /* ── Step 3: Folder ── */

@@ -62,7 +62,11 @@ async function openWizard() {
   return wrapper
 }
 
-/** Run a search and select the first result so Next is enabled (step 1). */
+/**
+ * Run a search and tap the first result — tapping a result selects it AND
+ * advances straight to the Folder step in one tap (#121 tap-to-advance).
+ * After this helper the wizard is on step 2 (Folder).
+ */
 async function searchAndSelect() {
   const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
   queryInput.value = 'Movie'
@@ -70,8 +74,10 @@ async function searchAndSelect() {
   await flushPromises()
   document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
   await flushPromises()
+  // Tapping the result row selects the result AND advances to Folder (#121).
   document.querySelector<HTMLButtonElement>('[data-testid="result-r1"]')!.click()
   await flushPromises()
+  // Wizard is now on step 2 (Folder) — no wizard-next click needed.
 }
 
 /**
@@ -119,17 +125,20 @@ describe('AddFlow (search-only)', () => {
     wrapper.unmount()
   })
 
-  it('step 1 (Search): Next is disabled until a result is selected', async () => {
+  it('step 1 (Search): no Next button on the search step — result tap advances (#121)', async () => {
     const wrapper = await openWizard()
-    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
-    expect(nextBtn.disabled).toBe(true)
+    // The search step has no Далее/Next button — row tap IS the advance.
+    expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
+    // After tapping a result the wizard advances straight to the Folder step.
     await searchAndSelect()
-    expect(nextBtn.disabled).toBe(false)
+    // Now on step 2 (Folder): folder tree is visible, Next button appears.
+    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="wizard-next"]')).not.toBeNull()
     wrapper.unmount()
   })
 
   // ─── Search results rendering ────────────────────────────────────────────────
-  it('renders search results with title, size, seeders, leechers, category', async () => {
+  it('renders search results: grouped card, title, seeders (health), size, chevron (#121)', async () => {
     const wrapper = await openWizard()
     const queryInput = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
     queryInput.value = 'Movie'
@@ -138,10 +147,16 @@ describe('AddFlow (search-only)', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
     await flushPromises()
 
-    expect(document.querySelector('[data-testid="result-r1"]')).not.toBeNull()
+    // One grouped card, not N separate boxes.
+    const resultsContainer = document.querySelector('[data-testid="search-results"]')!
+    expect(resultsContainer).not.toBeNull()
+    const rows = resultsContainer.querySelectorAll('[data-testid="result-r1"]')
+    expect(rows.length).toBe(1)
+
+    // Row content: title, seeders (health indicator), size.
     expect(document.querySelector('[data-testid="result-title"]')!.textContent).toContain('Movie One')
-    expect(document.querySelector('[data-testid="result-size"]')!.textContent).toContain('2.1 GB')
     expect(document.querySelector('[data-testid="result-seeders"]')!.textContent).toContain('10')
+    expect(document.querySelector('[data-testid="result-size"]')!.textContent).toContain('2.1 GB')
     wrapper.unmount()
   })
 
@@ -192,9 +207,8 @@ describe('AddFlow (search-only)', () => {
   // ─── Step 2: Folder ────────────────────────────────────────────────
   it('step 2 (Folder): shows FolderPicker (tree mode — no history); Next disabled until a folder is picked', async () => {
     const wrapper = await openWizard()
+    // searchAndSelect() taps a result — auto-advances to Folder step (#121).
     await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
 
     // Variant D with no history: tree is shown directly (no tiles)
     expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
@@ -210,9 +224,8 @@ describe('AddFlow (search-only)', () => {
   // ─── Step 3: Confirm + create ────────────────────────────────────────────────
   it('search happy path: Search → Folder → Confirm posts the result downloadUrl', async () => {
     const wrapper = await openWizard()
+    // searchAndSelect() taps a result — auto-advances to Folder (#121).
     await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
 
     // Variant D: drill in, then pick
     await pickFolderInTree()
@@ -236,9 +249,8 @@ describe('AddFlow (search-only)', () => {
 
   it('successful create closes the sheet', async () => {
     const wrapper = await openWizard()
+    // searchAndSelect() taps a result — auto-advances to Folder (#121).
     await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
     await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
@@ -259,9 +271,8 @@ describe('AddFlow (search-only)', () => {
     }) as typeof fetch
 
     const wrapper = await openWizard()
+    // searchAndSelect() taps a result — auto-advances to Folder (#121).
     await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
     await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
@@ -274,28 +285,25 @@ describe('AddFlow (search-only)', () => {
   })
 
   // ─── Navigation ────────────────────────────────────────────────
-  it('Back from Folder returns to Search and preserves the selected result', async () => {
+  it('Back from Folder returns to Search; re-tapping a result re-advances (#121)', async () => {
     const wrapper = await openWizard()
+    // searchAndSelect() taps a result — auto-advances to Folder (#121).
     await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
 
     // On Folder now — go Back.
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-back"]')!.click()
     await flushPromises()
 
-    // Back on Search; result still selected (Next enabled without re-selecting).
+    // Back on Search; search input visible; no Next button on this step.
     expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
-    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
-    expect(nextBtn.disabled).toBe(false)
+    expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
     wrapper.unmount()
   })
 
   it('reopening the wizard resets to the Search step', async () => {
     const wrapper = await openWizard()
+    // searchAndSelect() taps a result — auto-advances to Folder (#121).
     await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
     // Now on Folder — Variant D: tree shown (no history), folder-item present.
     expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
 
@@ -308,11 +316,10 @@ describe('AddFlow (search-only)', () => {
 
     // Back at Search, nothing selected.
     expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
-    // On the search step there is no pick-btn and no folder-item.
+    // On the search step there is no pick-btn, no folder-item, and no Next button.
     expect(document.querySelector('[data-testid="pick-btn"]')).toBeNull()
     expect(document.querySelector('[data-testid="folder-item"]')).toBeNull()
-    const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
-    expect(nextBtn.disabled).toBe(true)
+    expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
     wrapper.unmount()
   })
 
@@ -404,11 +411,11 @@ describe('AddFlow (search-only)', () => {
     wrapper.unmount()
   })
 
-  it('stepper marks step 1 as done and step 2 as current after advancing', async () => {
+  it('stepper marks step 1 as done and step 2 as current after tapping a result (#121)', async () => {
     const wrapper = await openWizard()
+    // searchAndSelect() taps a result — auto-advances to Folder (#121).
+    // No wizard-next click needed; the tap is the advance.
     await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
 
     const stepper = document.querySelector('[data-testid="stepper"]')!
     const circles = stepper.querySelectorAll('.stepper-circle')
@@ -418,22 +425,22 @@ describe('AddFlow (search-only)', () => {
     wrapper.unmount()
   })
 
-  it('Add button appears on step 3 (last step of search path)', async () => {
+  it('Add button appears on step 3 (last step of search path) (#121)', async () => {
     const wrapper = await openWizard()
-    // Step 1 — no Add button.
+    // Step 1 — no Add button, no Next button (search step has neither; tap advances).
+    expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
+    expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
+
+    // searchAndSelect() taps a result — auto-advances to Folder (#121).
+    await searchAndSelect()
+    // Step 2 — Next appears, no Add.
     expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
     expect(document.querySelector('[data-testid="wizard-next"]')).not.toBeNull()
-
-    await searchAndSelect()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
-    // Step 2 — still Next, no Add.
-    expect(document.querySelector('[data-testid="create-btn"]')).toBeNull()
 
     await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
-    // Step 3 — Add appears.
+    // Step 3 — Add appears, Next gone.
     expect(document.querySelector('[data-testid="create-btn"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
     wrapper.unmount()

@@ -1,5 +1,7 @@
-// Tests for the search-only AddFlow wizard (ADR 0008, #120).
-// FAB → fullscreen Sheet → 3-step wizard: Search → Folder → Confirm.
+// Tests for the search-only AddFlow wizard (ADR 0008, #120, #118).
+// Inline add-row → fullscreen Sheet → 3-step wizard: Search → Folder → Confirm.
+// The floating FAB was removed in #118; the wizard is now opened via openSheet()
+// exposed by AddFlow (called by the inline row in DownloadsTab).
 // The source-chooser step, magnet input, and .torrent upload were removed;
 // those sources now arrive via the bot handoff (see AddFlow.torrent.test.ts).
 import { describe, it, expect, afterEach, beforeEach } from 'bun:test'
@@ -54,10 +56,15 @@ afterEach(() => {
   localStorage.clear()
 })
 
-/** Open the wizard via the FAB. */
+/**
+ * Open the wizard via the exposed openSheet() method (#118).
+ * The FAB was removed; the inline add-row in DownloadsTab calls openSheet().
+ * In unit tests that mount AddFlow directly, call it on the vm.
+ */
 async function openWizard() {
   const wrapper = mount(AddFlow)
-  await wrapper.find('button.fab').trigger('click')
+  // AddFlow exposes openSheet() so DownloadsTab (and tests) can call it.
+  ;(wrapper.vm as unknown as { openSheet: () => void }).openSheet()
   await flushPromises()
   return wrapper
 }
@@ -96,13 +103,13 @@ async function pickFolderInTree() {
 
 describe('AddFlow (search-only)', () => {
   // ─── Basic rendering ────────────────────────────────────────────────
-  it('renders a FAB button', () => {
+  it('does NOT render a floating FAB button (#118: FAB removed, inline row in DownloadsTab)', () => {
     const wrapper = mount(AddFlow)
-    expect(wrapper.find('button.fab').exists()).toBe(true)
+    expect(wrapper.find('button.fab').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('FAB opens the wizard directly into Search — no source chooser', async () => {
+  it('openSheet() opens the wizard directly into Search — no source chooser (#118)', async () => {
     const wrapper = await openWizard()
     const dialog = document.querySelector('[role="dialog"]')!
     expect(dialog).not.toBeNull()
@@ -311,7 +318,8 @@ describe('AddFlow (search-only)', () => {
     closeBtn?.click()
     await flushPromises()
 
-    await wrapper.find('button.fab').trigger('click')
+    // Re-open via exposed openSheet() (inline row in DownloadsTab calls this, #118)
+    ;(wrapper.vm as unknown as { openSheet: () => void }).openSheet()
     await flushPromises()
 
     // Back at Search, nothing selected.

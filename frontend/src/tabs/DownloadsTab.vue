@@ -24,6 +24,12 @@ import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/tones'
 import type { TaskView } from '../types'
 
+// Callback to open the Add wizard — provided by App.vue via #118.
+// Optional so DownloadsTab can still be mounted in tests without wiring.
+const props = withDefaults(defineProps<{ onAddClick?: () => void }>(), {
+  onAddClick: undefined,
+})
+
 const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
 
 // ── Overflow menu state ──────────────────────────────────────────────────────
@@ -174,17 +180,40 @@ function qualityChips(task: TaskView): string[] {
       </template>
     </EmptyState>
 
-    <!-- Empty state -->
+    <!-- Empty state: expose the add action via the same inline row (#118) -->
     <EmptyState v-else-if="!loading && tasks.length === 0" title="No downloads" message="Add a torrent to get started.">
       <template #icon>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
         </svg>
       </template>
+      <template #action>
+        <button
+          type="button"
+          class="add-row nb-pressable"
+          data-testid="add-row"
+          @click="props.onAddClick?.()"
+        >
+          <span class="add-row-chip" aria-hidden="true">+</span>
+          <span class="add-row-label">Добавить загрузку</span>
+        </button>
+      </template>
     </EmptyState>
 
-    <!-- Task list -->
+    <!-- Task list: inline add row as the first item (#118) -->
     <TransitionGroup v-else tag="div" name="task-list" class="task-list">
+      <!-- Inline «Добавить загрузку» row — always the first item, scrolls with the list -->
+      <button
+        key="__add-row__"
+        type="button"
+        class="add-row nb-pressable"
+        data-testid="add-row"
+        @click="props.onAddClick?.()"
+      >
+        <span class="add-row-chip" aria-hidden="true">+</span>
+        <span class="add-row-label">Добавить загрузку</span>
+      </button>
+
       <Card
         v-for="(task, index) in tasks"
         :key="task.id"
@@ -730,5 +759,54 @@ function qualityChips(task: TaskView): string[] {
     animation: none;
     background-image: none; /* remove the gradient; flat skeleton colour only */
   }
+}
+
+/*
+ * ── Inline «Добавить загрузку» add row (#118) ────────────────────────────────
+ *
+ * Neo-Brutalism: thick dashed ink border, yellow «+» chip, mechanical press.
+ * Full-width, min-height 56px (>= 44px touch target with visual breathing room).
+ * Scrolls with the list — not fixed/floating.
+ * Appears as the first item in both the task list AND the empty state action slot.
+ */
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--paper);
+  border: 3px dashed var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--ink);
+  text-align: left;
+  /* Mechanical press (neo-brutalism): sinks into an offset shadow */
+  --press: 3px;
+}
+
+/* Yellow «+» chip — the sole accent colour per ADR 0006 addendum */
+.add-row-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--yellow);
+  border: var(--border-strong);
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.add-row-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 </style>

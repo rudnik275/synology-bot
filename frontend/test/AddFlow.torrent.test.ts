@@ -93,8 +93,10 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
   it('does NOT auto-open without a token (normal Downloads entry)', async () => {
     const wrapper = mount(AddFlow)
     await flushPromises()
+    // Sheet stays closed — the wizard is only opened by the inline add-row tap (#118).
     expect(document.querySelector('[role="dialog"]')).toBeNull()
-    expect(wrapper.find('button.fab').exists()).toBe(true)
+    // The floating FAB is removed in #118; the inline row lives in DownloadsTab.
+    expect(wrapper.find('button.fab').exists()).toBe(false)
     wrapper.unmount()
   })
 

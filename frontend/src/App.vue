@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Neo-Brutalism app shell (ADR 0006): a swappable tab body and the 3-tab
-// bottom bar. Default tab = Downloads. No tab data here — the three tab
-// bodies are stubs filled by #61/#70/#64; the Add-flow FAB+sheet overlay is
-// mounted separately by #63.
-import { ref } from 'vue'
+// bottom bar. Default tab = Downloads. The Add-flow sheet overlay is mounted
+// alongside DownloadsTab; the inline «Добавить загрузку» row (#118) in
+// DownloadsTab calls addFlow.openSheet() to open the wizard.
+import { ref, useTemplateRef } from 'vue'
 import TabBar from './components/TabBar.vue'
 import type { TabKey } from './components/tabs'
 import DownloadsTab from './tabs/DownloadsTab.vue'
@@ -20,17 +20,25 @@ const TAB_VIEWS = {
   nas: NasTab,
   shows: ShowsTab,
 } as const
+
+const addFlowRef = useTemplateRef<InstanceType<typeof AddFlow>>('addFlow')
+
+function openAddWizard(): void {
+  addFlowRef.value?.openSheet()
+}
 </script>
 
 <template>
   <div class="shell">
     <main class="content">
       <Transition name="tab" mode="out-in">
-        <component :is="TAB_VIEWS[activeTab]" :key="activeTab" />
+        <!-- Pass openAddWizard as prop only to DownloadsTab; other tabs ignore it -->
+        <DownloadsTab v-if="activeTab === 'downloads'" :key="activeTab" :on-add-click="openAddWizard" />
+        <component :is="TAB_VIEWS[activeTab]" v-else :key="activeTab" />
       </Transition>
     </main>
 
-    <AddFlow v-if="activeTab === 'downloads'" />
+    <AddFlow v-if="activeTab === 'downloads'" ref="addFlow" />
     <TabBar v-model="activeTab" />
   </div>
 </template>

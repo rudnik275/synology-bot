@@ -153,28 +153,52 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
     })
   })
 
-  // ─── Commit via Task.List.Polling download (verbatim from the DSM UI) ───────
+  // ─── Commit via Task.List.Polling download → poll download_status → stop ────
   describe('commitTaskSubset()', () => {
-    it('starts the selected files via Task.List.Polling download {list_id, destination, selected}', async () => {
-      fetchMock.mockImplementation(() =>
-        Promise.resolve(mockResponse({ success: true, data: { task_id: 'dbid_42' } })))
-      const result = await client.commitTaskSubset('L9', [0, 2], '/volume1/video/сериалы')
-      expect(result.ok).toBe(true)
+    // route a Polling call by its method (order matters: _status / _stop before plain download)
+    function routePolling(url: string): 'download' | 'download_status' | 'download_stop' | 'other' {
+      const u = decodeURIComponent(url)
+      if (u.includes('method=download_status')) return 'download_status'
+      if (u.includes('method=download_stop')) return 'download_stop'
+      if (u.includes('method=download')) return 'download'
+      return 'other'
+    }
 
-      const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
-      expect(url).toContain('api=SYNO.DownloadStation2.Task.List.Polling')
-      expect(url).toContain('method=download')
-      expect(url).toContain('list_id="L9"')
+    it('downloads the selection, polls download_status until finish, then download_stop', async () => {
+      const seq: string[] = []
+      let statusPolls = 0
+      fetchMock.mockImplementation((url: string) => {
+        const r = routePolling(url)
+        seq.push(r)
+        if (r === 'download') return Promise.resolve(mockResponse({ success: true, data: { task_id: 'op-1' } }))
+        if (r === 'download_status') { statusPolls++; return Promise.resolve(mockResponse({ success: true, data: { finish: statusPolls >= 2 } })) }
+        return Promise.resolve(mockResponse({ success: true, data: {} }))
+      })
+
+      const result = await client.commitTaskSubset('L9', [0, 2], '/volume1/video/сериалы', { pollDelayMs: 0, maxPolls: 5 })
+      expect(result.ok).toBe(true)
+      // first call is download with the selection; then status polls (until finish); then stop
+      expect(seq[0]).toBe('download')
+      expect(seq[seq.length - 1]).toBe('download_stop')
+      expect(seq.filter((s) => s === 'download_status').length).toBe(2)
+
+      const dl = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
+      expect(dl).toContain('api=SYNO.DownloadStation2.Task.List.Polling')
+      expect(dl).toContain('list_id="L9"')
       // selection is `selected` (a JSON array of wanted indices), NOT file_indexes
-      expect(url).toContain('selected=[0,2]')
-      expect(url).toContain('destination="video/сериалы"')
-      expect(url).toContain('create_subfolder=true')
+      expect(dl).toContain('selected=[0,2]')
+      expect(dl).toContain('destination="video/сериалы"')
+      expect(dl).toContain('create_subfolder=true')
+      // status + stop both target the operation task_id
+      const stop = decodeURIComponent(urlOf(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]))
+      expect(stop).toContain('method=download_stop')
+      expect(stop).toContain('task_id="op-1"')
     })
 
-    it('returns ok:false on a Synology error', async () => {
+    it('returns ok:false when the initial download fails', async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(mockResponse({ success: false, error: { code: 120 } })))
-      const result = await client.commitTaskSubset('L9', [1], '/volume1/video')
+      const result = await client.commitTaskSubset('L9', [1], '/volume1/video', { pollDelayMs: 0 })
       expect(result.ok).toBe(false)
     })
   })

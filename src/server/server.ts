@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import { serveStatic } from 'hono/bun'
 import type { SynologyClient } from '../infra/synology/client.ts'
 import type { TolokaClient } from '../infra/toloka/client.ts'
@@ -83,6 +84,43 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/**
+ * Host a .torrent's bytes at a public URL so DownloadStation can fetch it itself.
+ *
+ * This is the crux of the reliable add path (and what the original bot did): we
+ * DON'T upload the bytes to DSM — its DSM-7 multipart create makes empty
+ * `total_pieces:0` tasks. Instead we send the .torrent to Telegram via the Bot
+ * API (it accepts a normal multipart) and hand DSM the resulting public
+ * `api.telegram.org/file/bot…` URL via `createDownloadTaskFromUrl`. Telegram is
+ * reachable by DSM without a Cloudflare bot-challenge (unlike our own tunnel),
+ * which is why this is the dependable host. The document is sent silently to the
+ * owner's chat; the file URL stays valid long enough for DSM to pull it.
+ */
+async function hostTorrentOnTelegram(
+  botToken: string,
+  chatId: number,
+  bytes: Uint8Array,
+  fileName: string,
+): Promise<string> {
+  const form = new FormData()
+  form.append('chat_id', String(chatId))
+  form.append('disable_notification', 'true')
+  form.append('document', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
+  const sendRes = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, { method: 'POST', body: form })
+  const sendJson = (await sendRes.json()) as { ok: boolean; description?: string; result?: { document?: { file_id?: string } } }
+  const fileId = sendJson.result?.document?.file_id
+  if (!sendJson.ok || !fileId) {
+    throw new Error(`Telegram sendDocument failed: ${sendJson.description ?? 'no file_id in response'}`)
+  }
+  const getRes = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${encodeURIComponent(fileId)}`)
+  const getJson = (await getRes.json()) as { ok: boolean; description?: string; result?: { file_path?: string } }
+  const filePath = getJson.result?.file_path
+  if (!getJson.ok || !filePath) {
+    throw new Error(`Telegram getFile failed: ${getJson.description ?? 'no file_path in response'}`)
+  }
+  return `https://api.telegram.org/file/bot${botToken}/${filePath}`
+}
+
 /** A Toloka download URL needs an authenticated fetch — DSM can't pull it itself (it'd hit the login page). */
 function isTolokaUrl(uri: string, tolokaBaseUrl: string): boolean {
   try {
@@ -104,6 +142,24 @@ function isTolokaUrl(uri: string, tolokaBaseUrl: string): boolean {
 export function createServer(deps: ServerDeps): Hono<AppEnv> {
   const { synology, toloka, docker, store, getShowById, getTodayEpisodes, searchShows, tolokaBaseUrl } = deps
   const app = new Hono<AppEnv>()
+
+  /**
+   * Add a whole-torrent task from raw .torrent bytes the reliable way: host the
+   * file on Telegram, then have DownloadStation fetch that public URL itself
+   * (DS2 `type:"url"`). Replaces the DSM-7 multipart upload, which created empty
+   * tasks. Shared by the .torrent-file upload and the Toloka-search add.
+   */
+  async function addTorrentByBytes(c: Context<AppEnv>, bytes: Uint8Array, fileName: string, destination: string) {
+    let torrentUrl: string
+    try {
+      torrentUrl = await hostTorrentOnTelegram(deps.botToken, deps.ownerId, bytes, fileName)
+    } catch (err) {
+      return c.json({ error: `Could not stage the .torrent for DownloadStation: ${errorMessage(err)}` }, 502)
+    }
+    const result = await synology.createDownloadTaskFromUrl(torrentUrl, destination)
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    return c.json({ ok: true }, 201)
+  }
 
   app.get('/healthz', (c) => c.json({ ok: true }))
 
@@ -157,9 +213,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
         return c.json({ error: 'file and destination are required' }, 400)
       }
       const bytes = new Uint8Array(await file.arrayBuffer())
-      const result = await synology.createDownloadTaskFromFile(bytes, file.name, destination)
-      if (!result.ok) return c.json({ error: result.reason }, 502)
-      return c.json({ ok: true }, 201)
+      return addTorrentByBytes(c, bytes, file.name, destination)
     }
 
     const body = await c.req.json().catch(() => null)
@@ -177,11 +231,10 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
         return c.json({ error: errorMessage(err) }, 502)
       }
       const title = typeof body?.title === 'string' && body.title ? body.title : 'download'
-      const result = await synology.createDownloadTaskFromFile(bytes, `${title}.torrent`, destination)
-      if (!result.ok) return c.json({ error: result.reason }, 502)
-      return c.json({ ok: true }, 201)
+      return addTorrentByBytes(c, bytes, `${title}.torrent`, destination)
     }
 
+    // Magnets (and plain URLs DSM can fetch directly) need no hosting hop.
     const result = await synology.createDownloadTask(uri, destination)
     if (!result.ok) return c.json({ error: result.reason }, 502)
     return c.json({ ok: true }, 201)
@@ -203,48 +256,14 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   // .torrent upload, or a JSON {uri,title,destination} where the uri is a Toloka
   // URL we fetch with auth.
 
-  app.post('/api/tasks/inspect', async (c) => {
-    const contentType = c.req.header('content-type') ?? ''
-
-    let bytes: Uint8Array
-    let fileName: string
-    let destination: string
-
-    if (contentType.includes('multipart/form-data')) {
-      const body = await c.req.parseBody().catch(() => null)
-      const file = body?.['file']
-      const dest = body?.['destination']
-      if (!(file instanceof File) || typeof dest !== 'string' || !dest) {
-        return c.json({ error: 'file and destination are required' }, 400)
-      }
-      bytes = new Uint8Array(await file.arrayBuffer())
-      fileName = file.name
-      destination = dest
-    } else {
-      const body = await c.req.json().catch(() => null)
-      const uri = body?.uri
-      destination = body?.destination
-      if (typeof uri !== 'string' || !uri || typeof destination !== 'string' || !destination) {
-        return c.json({ error: 'uri (Toloka URL) or a .torrent file, plus destination, are required' }, 400)
-      }
-      // Only sources we can turn into .torrent bytes can be inspected. Magnets
-      // have no local bytes; the client falls back to a whole-torrent add.
-      if (uri.startsWith('magnet:') || !isTolokaUrl(uri, tolokaBaseUrl)) {
-        return c.json({ error: 'this source cannot be inspected (no .torrent bytes)' }, 400)
-      }
-      try {
-        bytes = await toloka.downloadTorrent(uri)
-      } catch (err) {
-        return c.json({ error: errorMessage(err) }, 502)
-      }
-      const title = typeof body?.title === 'string' && body.title ? body.title : 'download'
-      fileName = `${title}.torrent`
-    }
-
-    const result = await synology.inspectTaskFromFile(bytes, fileName, destination)
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    return c.json(result.data, 200)
-  })
+  // Per-file selection (#123) was RETIRED: the add always grabs the whole
+  // torrent via the reliable type:url path, and the inspect's `create_list=true`
+  // upload was itself the source of stuck `total_pieces:0` tasks (and a second
+  // Toloka fetch per add). We keep the endpoint so the client doesn't 404, but it
+  // no longer touches the NAS or Toloka — it returns an empty preview, and the
+  // confirm step shows the whole-torrent add. `/commit` + the inspect DELETE
+  // below are now unreachable from the client and kept only for compatibility.
+  app.post('/api/tasks/inspect', (c) => c.json({ listId: null, files: [] }, 200))
 
   app.post('/api/tasks/commit', async (c) => {
     const body = await c.req.json().catch(() => null)

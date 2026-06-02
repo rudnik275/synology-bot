@@ -210,6 +210,36 @@ export class SynologyClient {
     return { ok: true }
   }
 
+  /**
+   * Add a whole-torrent Download Task by handing DownloadStation a URL it fetches
+   * ITSELF — DownloadStation2 `create` with `type:"url"`, `create_list=false`.
+   *
+   * This is the reliable path and mirrors the original working bot: instead of
+   * uploading the .torrent bytes to DSM (a DSM-7 multipart that, even when built
+   * with a browser boundary, produced empty `total_pieces:0` tasks), we host the
+   * .torrent at a public URL (Telegram — see the server's `hostTorrentOnTelegram`)
+   * and let DSM download + parse it. Verified live: a `.torrent` URL added this
+   * way downloads to completion, while `SYNO.DownloadStation.Task` v1 `uri=` only
+   * grabs the .torrent file itself without parsing it.
+   *
+   * DS2 entry.cgi wants JSON-encoded values — `type` as `"url"`, `url` as a JSON
+   * array `["…"]`, `destination` as `"…"`. Plain (unquoted) values are misread as
+   * a raw HTTP file download that never becomes a torrent.
+   */
+  async createDownloadTaskFromUrl(
+    torrentUrl: string,
+    destination: string
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const result = await this.request<unknown>('SYNO.DownloadStation2.Task', 2, 'create', {
+      create_list: 'false',
+      type: '"url"',
+      url: JSON.stringify([torrentUrl]),
+      destination: `"${normalizeDownloadDestination(destination)}"`,
+    })
+    if (!result.ok) return result
+    return { ok: true }
+  }
+
   async listSharedFolders(): Promise<{ ok: true; data: SharedFolder[] } | { ok: false; reason: string }> {
     const result = await this.request<{ shares: SharedFolder[] }>('SYNO.FileStation.List', 2, 'list_share', {})
     if (!result.ok) return result

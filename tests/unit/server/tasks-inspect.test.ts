@@ -87,82 +87,37 @@ function jsonReq(body: unknown) {
   }
 }
 
-describe('POST /api/tasks/inspect — create an inspecting task, return files', () => {
+describe('POST /api/tasks/inspect — neutralized (per-file selection retired)', () => {
   it('requires auth', async () => {
     const res = await makeApp().request('/api/tasks/inspect', { method: 'POST' })
     expect(res.status).toBe(401)
   })
 
-  it('inspects a multipart .torrent upload and returns { listId, files }', async () => {
-    let args: { name: string; dest: string; len: number } | undefined
-    const app = makeApp(
-      makeSynology({
-        inspectTaskFromFile: async (bytes, name, dest) => {
-          args = { name, dest, len: bytes.length }
-          return {
-            ok: true,
-            data: {
-              listId: 'LZ',
-              files: [
-                { index: 0, path: 'Show/S01E01.mkv', size: 100 },
-                { index: 1, path: 'Show/S01E02.mkv', size: 200 },
-              ],
-            },
-          }
-        },
-      })
-    )
-    const fd = new FormData()
-    fd.append('destination', '/volume1/dl')
-    fd.append('file', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'application/x-bittorrent' }), 'movie.torrent')
-    const res = await app.request('/api/tasks/inspect', { method: 'POST', headers: ownerHeaders(), body: fd })
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.listId).toBe('LZ')
-    expect(body.files).toEqual([
-      { index: 0, path: 'Show/S01E01.mkv', size: 100 },
-      { index: 1, path: 'Show/S01E02.mkv', size: 200 },
-    ])
-    expect(args).toEqual({ name: 'movie.torrent', dest: '/volume1/dl', len: 4 })
-  })
-
-  it('inspects a Toloka URL by fetching its .torrent first', async () => {
-    let inspected: { name: string; len: number } | undefined
-    let downloadedUrl: string | undefined
-    const synology = makeSynology({
-      inspectTaskFromFile: async (bytes, name) => {
-        inspected = { name, len: bytes.length }
-        return { ok: true, data: { listId: 'LT', files: [] } }
-      },
-    })
-    const toloka = makeToloka({ downloadTorrent: async (url) => { downloadedUrl = url; return new Uint8Array([9, 9]) } })
+  // The inspect/create_list=true upload was itself the source of stuck empty
+  // tasks (and a second Toloka fetch per add). It now returns an empty preview
+  // WITHOUT touching the NAS or Toloka; the confirm step shows a whole-torrent add.
+  it('returns an empty preview for a Toloka URL without hitting the NAS or Toloka', async () => {
+    let inspectCalled = false
+    let downloaded = false
+    const synology = makeSynology({ inspectTaskFromFile: async () => { inspectCalled = true; return { ok: true, data: { listId: 'L', files: [] } } } })
+    const toloka = makeToloka({ downloadTorrent: async () => { downloaded = true; return new Uint8Array([1]) } })
     const res = await makeApp(synology, toloka).request(
       '/api/tasks/inspect',
       jsonReq({ uri: 'https://toloka.to/download.php?id=7', title: 'The Matrix', destination: '/volume1/films' })
     )
     expect(res.status).toBe(200)
-    expect(downloadedUrl).toBe('https://toloka.to/download.php?id=7')
-    expect(inspected).toEqual({ name: 'The Matrix.torrent', len: 2 })
+    expect(await res.json()).toEqual({ listId: null, files: [] })
+    expect(inspectCalled).toBe(false)
+    expect(downloaded).toBe(false)
   })
 
-  it('400 when neither a file nor a uri is provided', async () => {
-    const res = await makeApp().request('/api/tasks/inspect', jsonReq({ destination: '/v1' }))
-    expect(res.status).toBe(400)
-  })
-
-  it('400 when the source is a magnet (no local bytes to inspect)', async () => {
-    const res = await makeApp().request('/api/tasks/inspect', jsonReq({ uri: 'magnet:?xt=1', destination: '/v1' }))
-    expect(res.status).toBe(400)
-  })
-
-  it('502 when the inspect fails', async () => {
-    const app = makeApp(makeSynology({ inspectTaskFromFile: async () => ({ ok: false, reason: 'inspect boom' }) }))
-    const res = await app.request(
-      '/api/tasks/inspect',
-      jsonReq({ uri: 'https://toloka.to/download.php?id=7', destination: '/v1' })
-    )
-    expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'inspect boom' })
+  it('returns an empty preview for a multipart upload too', async () => {
+    const fd = new FormData()
+    fd.append('destination', '/volume1/dl')
+    fd.append('file', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'application/x-bittorrent' }), 'movie.torrent')
+    const res = await makeApp().request('/api/tasks/inspect', { method: 'POST', headers: ownerHeaders(), body: fd })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ listId: null, files: [] })
   })
 })
 

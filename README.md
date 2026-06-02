@@ -15,7 +15,7 @@ Architecture rationale: [ADR 0005](docs/adr/0005-mini-app-for-pull-thin-bot-for-
 - Docker Hub published image: `rudnik275/synology-bot:latest`
 - A Telegram bot token (from [@BotFather](https://t.me/BotFather))
 - Your Telegram chat ID (the owner chat that will receive notifications)
-- A **Cloudflare Tunnel** — Telegram Mini App webviews require public HTTPS; the tunnel provides it with zero open ports (infra slice #59). The `cloudflared` container is already in `deploy/docker-compose.yml` (it shares the bot's network namespace and reaches the Hono server on `localhost:MINIAPP_PORT`); you only create the tunnel in the Cloudflare dashboard, route its public hostname to `http://localhost:8080`, and put its token in `CF_TUNNEL_TOKEN` (below).
+- A **Cloudflare Tunnel** — Telegram Mini App webviews require public HTTPS; the tunnel provides it with zero open ports (infra slice #59). The `cloudflared` container is already in `deploy/docker-compose.yml` (it runs on the shared compose network and reaches the Hono server by service name at `http://bot:MINIAPP_PORT` — ADR 0010); you only create the tunnel in the Cloudflare dashboard, route its public hostname to `http://bot:8080`, and put its token in `CF_TUNNEL_TOKEN` (below).
 
 ### 1. Copy the compose file to the NAS
 
@@ -56,7 +56,7 @@ Replace:
 - `<your-numeric-chat-id>` — your numeric Telegram chat ID (get it by messaging [@userinfobot](https://t.me/userinfobot)). Used to identify the bot owner; the bot self-reports deploys to this chat after each image upgrade.
 - `<nas-host>` — same hostname/IP you use to reach DSM (port 5001 = DSM HTTPS)
 - `<dsm-user-*>` — a DSM user with permission to use DownloadStation (preferably a dedicated low-privilege user, not an admin)
-- `MINIAPP_PORT` — loopback port the Hono server listens on (default 8080); the Cloudflare Tunnel must point here
+- `MINIAPP_PORT` — port the Hono server listens on (default 8080); the Cloudflare Tunnel routes its public hostname to `http://bot:<MINIAPP_PORT>`. The compose sets `MINIAPP_HOST=0.0.0.0` on the bot so the sibling `cloudflared` container can reach it over the internal network (the port is never published to the host). Running the bot outside the compose defaults to `127.0.0.1`; override with `MINIAPP_HOST` if needed.
 - `MINIAPP_URL` — public HTTPS URL of the Cloudflare Tunnel; used as the Mini App URL in the bot's chat menu button and deep-link buttons
 - `CF_TUNNEL_TOKEN` — the token from the Cloudflare tunnel you create (Zero Trust → Networks → Tunnels); consumed by the `cloudflared` service in the compose. Keep it secret.
 - `<toloka-*>` — credentials for [toloka.to](https://toloka.to) if you want free-text torrent search
@@ -94,7 +94,7 @@ docker compose up -d
 ### 4. How it works
 
 - The `bot` container runs `rudnik275/synology-bot:latest` with `restart: unless-stopped` — it restarts automatically after a crash or NAS reboot.
-- The Hono server inside the same process serves the Mini App SPA on `MINIAPP_PORT` (loopback). The Cloudflare Tunnel makes it reachable by Telegram's webview over public HTTPS.
+- The Hono server inside the same process serves the Mini App SPA on `MINIAPP_PORT` (bound on the internal compose network, not published to the host). The Cloudflare Tunnel, running as a sibling container, routes to it at `http://bot:8080` and makes it reachable by Telegram's webview over public HTTPS — and stays connected across bot redeploys (ADR 0010).
 - The `watchtower` container polls Docker Hub every 5 minutes. When a new image is published (e.g. after a new git tag triggers the CI workflow), Watchtower pulls the new image and restarts the bot container.
 - Watchtower only acts on containers with the `com.centurylinklabs.watchtower.enable=true` label, so it won't touch other DSM-managed containers.
 - The bot self-reports successful deploys to the owner chat by comparing its image SHA across boots. No message means no new image was found — silent on no-op polls. A failed deploy where the bot fails to start cannot self-report; use `/deploy-status` to check Watchtower's health directly.

@@ -249,18 +249,19 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   app.post('/api/tasks/commit', async (c) => {
     const body = await c.req.json().catch(() => null)
     const listId = body?.listId
-    const indices = body?.indices
-    // `skip` = the file indices the owner did NOT select; the commit completes
-    // the list (downloads to its own destination) and marks these wanted:false.
-    const skip = body?.skip
+    const indices = body?.indices // the SELECTED (wanted) file indices
+    const destination = body?.destination
     if (typeof listId !== 'string' || !listId) {
       return c.json({ error: 'listId is required' }, 400)
     }
     if (!Array.isArray(indices) || indices.length === 0 || !indices.every((n) => Number.isInteger(n))) {
       return c.json({ error: 'indices must be a non-empty array of integers' }, 400)
     }
-    const skipIndices = Array.isArray(skip) ? skip.filter((n): n is number => Number.isInteger(n)) : []
-    const result = await synology.commitTaskSubset(listId, skipIndices)
+    // The Polling `download` commit takes the destination + the selected indices.
+    if (typeof destination !== 'string' || !destination) {
+      return c.json({ error: 'destination is required' }, 400)
+    }
+    const result = await synology.commitTaskSubset(listId, indices, destination)
     if (!result.ok) return c.json({ error: result.reason }, 502)
     return c.json({ ok: true }, 201)
   })

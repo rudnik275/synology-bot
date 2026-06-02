@@ -51,8 +51,8 @@ export const api = {
   },
   inspectTask: (uri: string, destination: string, title?: string) =>
     request<InspectResultView>('/tasks/inspect', jsonBody({ uri, destination, title })),
-  commitTask: (listId: string, indices: number[], skip: number[]) =>
-    request<{ ok: true }>('/tasks/commit', jsonBody({ listId, indices, skip })),
+  commitTask: (listId: string, indices: number[], destination: string) =>
+    request<{ ok: true }>('/tasks/commit', jsonBody({ listId, indices, destination })),
   cancelInspect: (listId: string) =>
     request<{ ok: true }>(`/tasks/inspect/${encodeURIComponent(listId)}`, { method: 'DELETE' }),
 

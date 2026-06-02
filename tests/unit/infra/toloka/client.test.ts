@@ -260,7 +260,7 @@ describe('TolokaClient', () => {
 
   it('downloadTorrent() GETs URL with session cookie and returns Uint8Array', async () => {
     store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'dl-sess' }))
-    const fakeBytes = new Uint8Array([100, 101, 58, 49])
+    const fakeBytes = new TextEncoder().encode('d6:pieces1:xe') // bencode dict with the pieces key
 
     fetchMock.mockImplementation(() => Promise.resolve(makeBytesResponse(fakeBytes)))
 
@@ -268,7 +268,7 @@ describe('TolokaClient', () => {
     const result = await client.downloadTorrent(`${BASE_URL}/download.php?id=1001`)
 
     expect(result).toBeInstanceOf(Uint8Array)
-    expect(Array.from(result)).toEqual([100, 101, 58, 49])
+    expect(Array.from(result)).toEqual(Array.from(fakeBytes))
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe(`${BASE_URL}/download.php?id=1001`)
@@ -278,7 +278,7 @@ describe('TolokaClient', () => {
 
   it('downloadTorrent() re-logins and retries when a stale session returns a login page', async () => {
     store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'stale' }))
-    const torrentBytes = new Uint8Array([100, 56, 58, 97]) // 'd8:a' — bencode dict
+    const torrentBytes = new TextEncoder().encode('d6:pieces1:xe') // bencode dict with the pieces key
     let dlCalls = 0
     fetchMock.mockImplementation((url: string) => {
       if (String(url).includes('/login.php')) {
@@ -292,7 +292,7 @@ describe('TolokaClient', () => {
     const client = new TolokaClient(CONFIG, store)
     const result = await client.downloadTorrent(`${BASE_URL}/download.php?id=1001`)
 
-    expect(Array.from(result)).toEqual([100, 56, 58, 97])
+    expect(Array.from(result)).toEqual(Array.from(torrentBytes))
     expect(dlCalls).toBe(2) // retried after re-login
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/login.php'))).toBe(true)
   })
@@ -327,7 +327,7 @@ describe('TolokaClient', () => {
     // passed to fetch include redirect:'follow' and the cookie header is sent,
     // then return a 200 bytes response to confirm the result is a Uint8Array.
     store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'redir-sess' }))
-    const fakeBytes = new Uint8Array([100, 58, 55])
+    const fakeBytes = new TextEncoder().encode('d6:pieces1:xe') // bencode dict with the pieces key
 
     // Simulate fetch following the redirect: fetchMock returns 200 bytes directly
     // (the redirect following is done by the browser/fetch runtime, not the mock).
@@ -338,7 +338,7 @@ describe('TolokaClient', () => {
 
     // Assert the result is the torrent bytes
     expect(result).toBeInstanceOf(Uint8Array)
-    expect(Array.from(result)).toEqual([100, 58, 55])
+    expect(Array.from(result)).toEqual(Array.from(fakeBytes))
 
     // The key regression check: fetch MUST be called with redirect:'follow'
     const [_url, init] = fetchMock.mock.calls[0] as [string, RequestInit]

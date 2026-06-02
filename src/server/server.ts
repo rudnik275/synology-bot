@@ -35,6 +35,12 @@ export interface TorrentStashReader {
   getTorrentStash(token: string): AddIntakeStash | undefined
 }
 
+/** Narrow slice of PersistentStore the Mini App UI-state endpoints use (#4). */
+export interface UiStateStore {
+  getUiList(key: string): string[]
+  setUiList(key: string, values: string[]): void
+}
+
 /** One episode airing today, as returned by the injected fetcher. */
 export interface TodayEpisode {
   season: number
@@ -62,6 +68,8 @@ export interface ServerDeps {
   initDataMaxAgeSeconds?: number
   /** Reader for .torrent files stashed by the bot (#99); absent in tests that don't exercise it. */
   torrentStash?: TorrentStashReader
+  /** Server-side store for Mini App UI lists — search history, folder recents (#4). */
+  uiState?: UiStateStore
   /**
    * Filesystem root of the built Vue SPA (Vite `dist`), resolved relative to
    * the process CWD. The API and /healthz are registered first and win; any
@@ -277,6 +285,31 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       name: stash.fileName,
       base64: Buffer.from(stash.data).toString('base64'),
     })
+  })
+
+  // --- Mini App UI state (#4) ---
+  // Owner UI lists (search history, folder recents) persisted server-side because
+  // Telegram WebView localStorage is wiped between sessions/redeploys (esp. iOS),
+  // so "recent searches" kept vanishing. Whitelisted keys only; short string arrays.
+  const UI_STATE_KEYS = new Set(['search-history', 'folder-recents'])
+  const UI_STATE_CAP = 50
+
+  app.get('/api/ui-state/:key', (c) => {
+    const key = c.req.param('key')
+    if (!UI_STATE_KEYS.has(key)) return c.json({ error: 'unknown ui-state key' }, 404)
+    return c.json({ values: deps.uiState?.getUiList(key) ?? [] })
+  })
+
+  app.put('/api/ui-state/:key', async (c) => {
+    const key = c.req.param('key')
+    if (!UI_STATE_KEYS.has(key)) return c.json({ error: 'unknown ui-state key' }, 404)
+    const body = await c.req.json().catch(() => null)
+    const values = body?.values
+    if (!Array.isArray(values) || !values.every((v) => typeof v === 'string')) {
+      return c.json({ error: 'values must be an array of strings' }, 400)
+    }
+    deps.uiState?.setUiList(key, values.slice(0, UI_STATE_CAP))
+    return c.json({ ok: true })
   })
 
   // --- Folders (destination picker) ---

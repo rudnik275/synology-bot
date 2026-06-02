@@ -161,6 +161,29 @@ export class PersistentStore {
     this.setKv(key, String(value))
   }
 
+  // --- Mini App UI state (#4): owner UI lists (search history, folder recents) ---
+  //
+  // Persisted server-side because Telegram WebView localStorage is wiped between
+  // sessions/redeploys (notably on iOS), so "recent searches" kept vanishing. The
+  // Mini App hydrates these from here and writes them back. Stored as a JSON
+  // string array under the kv table with a `ui:` namespace. Single-user (ADR
+  // 0001), so the keys are global — no per-owner scoping needed.
+
+  getUiList(key: string): string[] {
+    const raw = this.getKv(`ui:${key}`)
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []
+    } catch {
+      return []
+    }
+  }
+
+  setUiList(key: string, values: string[]): void {
+    this.setKv(`ui:${key}`, JSON.stringify(values))
+  }
+
   // --- Add-intake stash (#99, generalized #120): short-lived handoff bot → Mini App ---
   //
   // Holds either file BYTES (a .torrent forwarded as a document, #99) or a URI

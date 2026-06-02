@@ -177,6 +177,7 @@ export async function startApp(): Promise<void> {
     botToken: config.botToken,
     ownerId: config.ownerChatId,
     torrentStash: store,
+    uiState: store,
   })
   // createServer also serves the built Vue SPA from ./frontend/dist (the
   // default staticRoot) with an index.html fallback — see server.ts.

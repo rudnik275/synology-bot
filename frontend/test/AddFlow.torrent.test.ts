@@ -61,7 +61,7 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     expect(fetchCalls.some((c) => c.url.includes('/api/torrent-stash/TOK123'))).toBe(true)
     // Jumped to the folder step — Variant D: no history → tree shown directly.
     // FolderPicker renders folder-item (tree) not tiles; Search is not drawn.
-    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="search-query"]')).toBeNull()
     // No Back button — Folder is the first drawn step on the handoff path.
     expect(document.querySelector('[data-testid="wizard-back"]')).toBeNull()
@@ -73,7 +73,7 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     await flushPromises()
 
     // Variant D: drill into a folder, then pick it, then advance to confirm.
-    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
@@ -121,7 +121,7 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     expect(document.querySelector('[data-testid="wizard-next"]')).not.toBeNull()
 
     // Advance to Confirm (step 3). Variant D: drill into a folder, then pick it.
-    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
@@ -143,7 +143,7 @@ describe('AddFlow bot handoff — magnet/URL uri (#120)', () => {
     expect(fetchCalls.some((c) => c.url.includes('/api/torrent-stash/TOKURI'))).toBe(true)
     // Folder step — Variant D: no history → tree shown directly.
     // Search not drawn, no Back on the first drawn step.
-    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="search-query"]')).toBeNull()
     expect(document.querySelector('[data-testid="wizard-back"]')).toBeNull()
     wrapper.unmount()
@@ -155,7 +155,7 @@ describe('AddFlow bot handoff — magnet/URL uri (#120)', () => {
     await flushPromises()
 
     // Variant D: drill into a folder, then pick it.
-    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()

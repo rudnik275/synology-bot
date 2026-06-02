@@ -90,7 +90,7 @@ async function toConfirm() {
   document.querySelector<HTMLButtonElement>('[data-testid="result-r1"]')!.click() // → Folder
   await flushPromises()
   // Pick a folder.
-  document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+  document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
   await flushPromises()
   document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click() // → Confirm
   await flushPromises()
@@ -118,7 +118,7 @@ describe('AddFlow confirm step — redesign (#123)', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-edit-folder"]')!.click()
     await flushPromises()
     // Back on Folder (the picker is visible again).
-    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
     wrapper.unmount()
   })
 })
@@ -233,7 +233,9 @@ describe('AddFlow confirm step — whole-torrent fallback (#123)', () => {
     const wrapper = await openWizard()
     await toConfirm()
 
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-back"]')!.click()
+    // Back from Confirm is «Изменить» (returns to Folder) or the Telegram
+    // BackButton — both call goBack, which releases the inspecting list (#5).
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-edit-folder"]')!.click()
     await flushPromises()
 
     expect(fetchCalls.some((c) => c.url === '/api/tasks/inspect/LZ' && c.init?.method === 'DELETE')).toBe(true)
@@ -263,7 +265,7 @@ describe('AddFlow confirm step — bot handoff (#123)', () => {
     const w2 = mount(AddFlow, { props: { torrentToken: 'TOKURI' } })
     await flushPromises()
     // Advance: folder → confirm.
-    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()

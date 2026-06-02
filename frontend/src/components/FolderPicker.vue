@@ -1,15 +1,16 @@
 <script setup lang="ts">
-// Drill-down destination folder picker. Used by AddFlow (#63); #71 will reuse it.
-// Starts from shared-folder roots (no path), clicking drills into children.
-// Emits the chosen path via v-model.
-// #122 Variant D: primary screen = known-folder tiles (favorites+recents).
-// Tree is behind "Выбрать другую папку…". No history → tree shown directly.
-import { ref, computed, watch, onMounted } from 'vue'
+// Destination folder picker (#2). Primary view is a flat list of "quick" folders
+// — your recent destinations plus the subfolders of the default media share
+// (/video) — so it is never empty, even on a cold start. «Браузить все папки»
+// opens a drill-down tree whose breadcrumb is tappable (each crumb navigates up
+// to that level); there is no separate "Up" button. Emits the chosen path via
+// v-model. Used by AddFlow (#63).
+import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import type { FolderView } from '../types'
 
-const props = defineProps<{
+defineProps<{
   modelValue: string
 }>()
 
@@ -17,25 +18,37 @@ const emit = defineEmits<{
   'update:modelValue': [string]
 }>()
 
-const { recents, favorites, lastFolder, clearLastIfMissing } = useFolderShortcuts()
+const { recents } = useFolderShortcuts()
 
-// Tiles: favorites first (pinned), then recents (deduped), cap 6 total
-const tiles = computed<string[]>(() => {
-  const favSet = new Set(favorites.value)
-  const favs = favorites.value.slice()
-  const recentOnly = recents.value.filter((p) => !favSet.has(p))
-  return [...favs, ...recentOnly].slice(0, 6)
+// The share whose subfolders seed the quick list when there's no history yet.
+// Single-user app (ADR 0001) → a constant suffices; centralised here if it ever
+// needs to become configurable.
+const DEFAULT_SHARE = '/video'
+const QUICK_CAP = 8
+
+// View mode: 'quick' (flat known folders, primary) or 'tree' (drill-down).
+const view = ref<'quick' | 'tree'>('quick')
+
+// Subfolders of the default share, fetched once — the cold-start seed.
+const defaultChildren = ref<string[]>([])
+
+// Quick list = recents first, then default-share subfolders, deduped + capped.
+// Recents float to the top as they're used; the default-share children keep it
+// from ever being empty.
+const quickFolders = computed<string[]>(() => {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of [...recents.value, ...defaultChildren.value]) {
+    if (p && !seen.has(p)) {
+      seen.add(p)
+      out.push(p)
+    }
+  }
+  return out.slice(0, QUICK_CAP)
 })
 
-// Whether there is known-folder history to show tiles for.
-// If false → go straight to the tree; no empty tiles screen.
-const hasTiles = computed(() => tiles.value.length > 0)
-
-// View mode: 'tiles' (primary) or 'tree' (drill-down)
-const view = ref<'tiles' | 'tree'>('tiles')
-
-// Breadcrumb stack: each entry is { name, path } of the folder we entered.
-// Empty = at root.
+// ── Tree drill-down state ──
+// Breadcrumb stack: each entry is the { name, path } of a folder we entered.
 const stack = ref<FolderView[]>([])
 const folders = ref<FolderView[]>([])
 const loading = ref(false)
@@ -54,127 +67,54 @@ async function loadFolders(path?: string): Promise<void> {
   }
 }
 
-/** Reconstruct the breadcrumb stack for an absolute path by drilling level by level.
- *
- * NAS shared folder paths look like /volume1/downloads/subfolder.
- * The api.folders() root listing returns entries whose paths ARE the first-level
- * absolute paths (e.g. /volume1/downloads). So we build a sequence of path prefixes
- * to match against each level's listing.
- */
-async function restoreStack(absPath: string): Promise<boolean> {
-  // Build an ordered list of ancestor paths from root to target.
-  // e.g. '/volume1/downloads/torrents' → ['/volume1/downloads', '/volume1/downloads/torrents']
-  // We need to find which root entry is a prefix of absPath, then drill down.
-  if (!absPath || absPath === '/') return false
-
-  const newStack: FolderView[] = []
-
-  // Fetch root level
-  let levelFolders: FolderView[]
-  try {
-    levelFolders = await api.folders()
-  } catch {
-    return false
-  }
-
-  // Find the root entry that is a prefix of (or equal to) absPath
-  let resolvedPath = ''
-  while (true) {
-    // Find a folder in the current level that is either the exact target
-    // or a proper path-prefix of the target
-    const match = levelFolders.find((f) => {
-      return f.path === absPath || absPath.startsWith(f.path + '/')
-    })
-
-    if (!match) return false
-
-    newStack.push(match)
-    resolvedPath = match.path
-
-    if (resolvedPath === absPath) {
-      // We've reached the target — load its children
-      let children: FolderView[]
-      try {
-        children = await api.folders(resolvedPath)
-      } catch {
-        children = []
-      }
-      stack.value = newStack
-      folders.value = children
-      return true
-    }
-
-    // Drill deeper
-    try {
-      levelFolders = await api.folders(resolvedPath)
-    } catch {
-      return false
-    }
-  }
-}
-
 onMounted(async () => {
-  if (!hasTiles.value) {
-    // No known folders → go straight to the tree
+  // Seed the quick list from the default share's subfolders.
+  try {
+    const children = await api.folders(DEFAULT_SHARE)
+    defaultChildren.value = children.map((f) => f.path)
+  } catch {
+    defaultChildren.value = []
+  }
+  // If there is genuinely nothing to quick-pick (default share empty/unreachable
+  // and no recents), drop straight into the tree so the step is never blank.
+  if (quickFolders.value.length === 0) {
     view.value = 'tree'
-    const saved = lastFolder.value
-    if (saved) {
-      const ok = await restoreStack(saved)
-      if (!ok) {
-        clearLastIfMissing()
-        await loadFolders()
-      }
-    } else {
-      await loadFolders()
-    }
-  } else {
-    // Primary tiles view: tree not loaded yet (lazy)
-    view.value = 'tiles'
+    await loadFolders()
   }
 })
 
+function pickQuick(path: string): void {
+  emit('update:modelValue', path)
+}
+
 async function openTree(): Promise<void> {
   view.value = 'tree'
-  // Load root if tree has never been opened before
-  if (folders.value.length === 0 && !loading.value && stack.value.length === 0) {
+  if (folders.value.length === 0 && stack.value.length === 0 && !loading.value) {
     await loadFolders()
   }
 }
 
-function backToTiles(): void {
-  view.value = 'tiles'
+function backToQuick(): void {
+  view.value = 'quick'
 }
 
 async function drillInto(folder: FolderView): Promise<void> {
   stack.value = [...stack.value, folder]
-  // Entering a folder selects it as the destination, so the pinned footer
-  // "Далее" already means "save here" — no separate (scroll-away) "Сохранить
-  // сюда" button is needed.
+  // Entering a folder selects it as the destination, so the wizard's «Далее»
+  // already means "save here".
   emit('update:modelValue', folder.path)
   await loadFolders(folder.path)
 }
 
-async function goUp(): Promise<void> {
-  stack.value = stack.value.slice(0, -1)
-  // Track the destination to the new current folder (cleared back at root).
+// Tappable breadcrumb replaces the old "Up" button: jump to a crumb level.
+// index -1 → back to the share root; 0..n → that crumb.
+async function jumpTo(index: number): Promise<void> {
+  stack.value = stack.value.slice(0, index + 1)
   emit('update:modelValue', currentPath() ?? '')
   await loadFolders(currentPath())
 }
 
-function pickTile(path: string): void {
-  emit('update:modelValue', path)
-}
-
-// Expose current folder path for display purposes
-const selectedPath = ref(props.modelValue)
-watch(
-  () => props.modelValue,
-  (v) => {
-    selectedPath.value = v
-  },
-)
-
-// Helper: short display name from a path
+// Helper: short display name from a path (the leaf segment).
 function shortName(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path
 }
@@ -183,88 +123,84 @@ function shortName(path: string): string {
 <template>
   <div class="folder-picker">
 
-    <!-- ── PRIMARY: known-folder tiles ── -->
-    <div v-if="view === 'tiles'" class="tiles-view">
-      <span class="tiles-label">Куда сохранить</span>
+    <!-- ── PRIMARY: flat quick folders (never empty) ── -->
+    <div v-if="view === 'quick'" class="quick-view">
+      <span class="quick-label">Куда сохранить</span>
 
-      <ul class="tiles-list" role="list" data-testid="folder-tiles">
-        <li v-for="tilePath in tiles" :key="tilePath">
+      <ul class="quick-list" role="list" data-testid="folder-tiles">
+        <li v-for="path in quickFolders" :key="path">
           <button
             type="button"
             class="folder-tile nb-pressable"
-            :class="{ 'folder-tile--selected': modelValue === tilePath, 'folder-tile--favorite': favorites.includes(tilePath) }"
+            :class="{ 'folder-tile--selected': modelValue === path }"
             data-testid="folder-tile"
-            :title="tilePath"
-            @click="pickTile(tilePath)"
+            :title="path"
+            @click="pickQuick(path)"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" class="tile-icon">
               <path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z" />
             </svg>
-            <span class="tile-name">{{ shortName(tilePath) }}</span>
-            <span class="tile-indicator" :class="{ 'tile-indicator--selected': modelValue === tilePath }" aria-hidden="true"></span>
+            <span class="tile-name">{{ shortName(path) }}</span>
+            <span class="tile-indicator" :class="{ 'tile-indicator--selected': modelValue === path }" aria-hidden="true"></span>
           </button>
         </li>
       </ul>
 
-      <!-- Link to tree drill-down -->
+      <!-- Link to the tree drill-down -->
       <button
         type="button"
         class="more-link"
         data-testid="open-tree-btn"
         @click="openTree"
       >
-        Выбрать другую папку
+        Браузить все папки
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="more-link-arrow">
           <path d="M9 6l6 6-6 6" />
         </svg>
       </button>
     </div>
 
-    <!-- ── SECONDARY: tree drill-down ── -->
+    <!-- ── SECONDARY: tree drill-down with a tappable breadcrumb ── -->
     <div v-else class="tree-view">
-      <!-- Back to tiles — only shown if tiles are available -->
-      <div class="tree-nav">
+      <nav class="crumbs" aria-label="Путь">
+        <!-- «Папки» returns to the quick list; the home crumb + folder crumbs are
+             tappable to jump up a level (replaces the old "Up" button). -->
         <button
-          v-if="hasTiles"
           type="button"
-          class="back-to-tiles nb-pressable"
+          class="crumb crumb--quick"
           data-testid="back-to-tiles-btn"
-          @click="backToTiles"
+          @click="backToQuick"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" class="nav-arrow">
-            <path d="M15 6l-6 6 6 6" />
-          </svg>
-          Назад
+          Папки
         </button>
-        <span v-else class="tree-title">Выбрать папку</span>
-
-        <!-- Breadcrumb / up navigation -->
+        <span class="crumb-sep" aria-hidden="true">·</span>
         <button
-          v-if="stack.length > 0"
           type="button"
-          class="up-btn nb-pressable"
-          data-testid="up-btn"
-          aria-label="Go up"
-          @click="goUp"
+          class="crumb"
+          :class="{ 'crumb--current': stack.length === 0 }"
+          data-testid="crumb-root"
+          aria-label="Все папки"
+          @click="jumpTo(-1)"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
-            <path d="M19 12H5M12 5l-7 7 7 7" />
-          </svg>
-          Up
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="crumb-home"><path d="M3 11l9-8 9 8M5 9v11h14V9" /></svg>
         </button>
-      </div>
-
-      <!-- Breadcrumb path display -->
-      <div class="breadcrumb" aria-label="Current path">
-        <span v-if="stack.length === 0" class="crumb-root">/ (root)</span>
-        <span v-for="(crumb, i) in stack" :key="crumb.path" class="crumb">
-          <span v-if="i > 0" class="crumb-sep">/</span>{{ crumb.name }}
-        </span>
-      </div>
+        <template v-for="(crumb, i) in stack" :key="crumb.path">
+          <span class="crumb-sep" aria-hidden="true">/</span>
+          <button
+            type="button"
+            class="crumb"
+            :class="{ 'crumb--current': i === stack.length - 1 }"
+            data-testid="crumb"
+            @click="jumpTo(i)"
+          >
+            {{ crumb.name }}
+          </button>
+        </template>
+      </nav>
 
       <!-- Loading indicator -->
       <div v-if="loading" class="picker-loading" data-testid="loading">
-        Loading…
+        Загрузка…
       </div>
 
       <!-- Folder list -->
@@ -286,13 +222,12 @@ function shortName(path: string): string {
           </button>
         </li>
         <li v-if="folders.length === 0 && !loading" class="picker-empty">
-          No subfolders
+          Нет подпапок
         </li>
       </ul>
 
-      <!-- No "Save here" button: entering a folder selects it, and the pinned
-           wizard footer "Далее" advances with that selection (was a scroll-away
-           duplicate of Далее). -->
+      <!-- No "Save here" button: entering a folder selects it, and the wizard
+           footer «Далее» advances with that selection. -->
     </div>
 
   </div>
@@ -304,14 +239,14 @@ function shortName(path: string): string {
   flex-direction: column;
 }
 
-/* ── Tiles view ── */
-.tiles-view {
+/* ── Quick view ── */
+.quick-view {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-.tiles-label {
+.quick-label {
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   text-transform: uppercase;
@@ -319,7 +254,7 @@ function shortName(path: string): string {
   opacity: 0.45;
 }
 
-.tiles-list {
+.quick-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -358,10 +293,6 @@ function shortName(path: string): string {
   background: var(--yellow);
   /* Selected tile presses 5px to match shadow-md depth. */
   --press: 5px;
-}
-
-.folder-tile--favorite {
-  background: var(--yellow);
 }
 
 .tile-icon {
@@ -433,81 +364,48 @@ function shortName(path: string): string {
   gap: var(--space-2);
 }
 
-.tree-nav {
+/* Tappable breadcrumb (replaces the old back-to-tiles + Up buttons). */
+.crumbs {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: 2px;
   min-height: 44px;
 }
 
-.back-to-tiles {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 44px;
-  padding: var(--space-1) var(--space-2);
-  background: var(--paper);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
+.crumb {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: var(--space-1) 2px;
   font-family: var(--font);
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.crumb--quick {
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
 }
 
-.tree-title {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.6;
-}
-
-.nav-arrow {
+.crumb-home {
   width: 16px;
   height: 16px;
-  flex-shrink: 0;
+  display: block;
 }
 
-.up-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 44px;
-  min-width: 44px;
-  padding: var(--space-1) var(--space-2);
-  background: var(--cream);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  margin-left: auto;
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-.up-btn svg {
-  width: 18px;
-  height: 18px;
+.crumb--current {
+  opacity: 1;
 }
 
-.breadcrumb {
-  font-size: var(--fs-sm);
-  color: var(--ink);
-  opacity: 0.6;
-  min-height: 20px;
-}
 .crumb-sep {
-  margin: 0 var(--space-1);
+  opacity: 0.35;
+  font-size: var(--fs-sm);
 }
 
 .picker-loading {
@@ -574,11 +472,5 @@ function shortName(path: string): string {
   font-size: var(--fs-sm);
   opacity: 0.5;
   text-align: center;
-}
-
-/* Layout only — the button recipe lives in the shared <Button variant="primary">. */
-.pick-btn {
-  width: 100%;
-  margin-top: var(--space-2);
 }
 </style>

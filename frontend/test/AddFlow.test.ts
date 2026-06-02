@@ -290,17 +290,33 @@ describe('AddFlow (search-only)', () => {
 
   // ─── Navigation ────────────────────────────────────────────────
   it('Back from Folder returns to Search; re-tapping a result re-advances (#121)', async () => {
+    // #5: "Назад" is the native Telegram BackButton now, not an in-sheet button.
+    // Install a fake that captures the click handler so we can drive it.
+    let backHandler: (() => void) | null = null
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() {},
+          hide() {},
+          onClick(cb: () => void) { backHandler = cb },
+          offClick() {},
+        },
+      },
+    }
     const wrapper = await openWizard()
-    // searchAndSelect() taps a result — auto-advances to Folder (#121).
+    // searchAndSelect() taps a result — auto-advances to Folder (#121), which
+    // shows the BackButton and captures its handler.
     await searchAndSelect()
 
-    // On Folder now — go Back.
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-back"]')!.click()
+    // On Folder now — drive the Telegram BackButton.
+    expect(backHandler).not.toBeNull()
+    backHandler!()
     await flushPromises()
 
     // Back on Search; search input visible; no Next button on this step.
     expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
     wrapper.unmount()
   })
 

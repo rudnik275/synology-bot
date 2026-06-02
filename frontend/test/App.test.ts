@@ -8,14 +8,14 @@ describe('App shell', () => {
   it('renders exactly the three tabs Downloads / NAS / Shows', () => {
     const wrapper = mount(App)
     const labels = wrapper.findAll('nav button').map((b) => b.text())
-    expect(labels).toEqual(['Downloads', 'NAS', 'Shows'])
+    expect(labels).toEqual(['Загрузки', 'NAS', 'Шоу'])
   })
 
   it('defaults to the Downloads tab', () => {
     const wrapper = mount(App)
     const active = wrapper.find('nav button[aria-current="page"]')
     expect(active.exists()).toBe(true)
-    expect(active.text()).toBe('Downloads')
+    expect(active.text()).toBe('Загрузки')
     // and the Downloads tab body is the one rendered (stub replaced by #61)
     // Loading state or empty state shows — either way the NAS/Shows stubs are absent
     expect(wrapper.text()).not.toContain('Disk, memory and CPU health will appear here.')

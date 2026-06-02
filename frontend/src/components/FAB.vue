@@ -9,7 +9,7 @@ defineEmits<{ click: [] }>()
 </script>
 
 <template>
-  <button type="button" class="fab nb-pressable" :aria-label="label ?? 'Add'" @click="$emit('click')">
+  <button type="button" class="fab nb-pressable" :aria-label="label ?? 'Добавить'" @click="$emit('click')">
     <slot>
       <!-- default plus glyph -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">

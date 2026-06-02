@@ -138,7 +138,7 @@ async function handleUnsubscribe(): Promise<void> {
 
     <!-- List view (search or subscriptions) -->
     <template v-else>
-      <ScreenHeader title="Shows" />
+      <ScreenHeader title="Шоу" />
 
       <!-- Pinned search field -->
       <div class="search-wrapper">

@@ -53,7 +53,7 @@ describe('Sheet', () => {
     expect(dialog!.textContent).toContain('body')
 
     // closing via the close button emits update:open=false + close
-    const closeBtn = document.querySelector('[aria-label="Close"]') as HTMLButtonElement
+    const closeBtn = document.querySelector('[aria-label="Закрыть"]') as HTMLButtonElement
     closeBtn.click()
     expect(open.emitted('update:open')?.[0]).toEqual([false])
     expect(open.emitted('close')).toHaveLength(1)

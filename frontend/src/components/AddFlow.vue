@@ -414,17 +414,14 @@ async function create(): Promise<void> {
 
   submitting.value = true
   try {
-    if (inspectState.value === 'ready' && inspectListId.value) {
-      // Per-file path: commit the selected subset of the inspecting list.
-      if (selectedIndices.value.length === 0) {
-        errorMsg.value = 'Выберите хотя бы один файл.'
-        return
-      }
-      // Commit the inspecting list with the selected (wanted) file indices.
-      await api.commitTask(inspectListId.value, selectedIndices.value, destination.value)
-      inspectListId.value = null // committed — don't cancel it on close
-    } else if (mode.value === 'file') {
-      // Whole-torrent fallback (inspect unavailable/failed).
+    // Always add the WHOLE torrent via the direct create_list=false path — the
+    // exact request the DSM web UI makes (captured live), which actually starts
+    // downloading. The selective inspect→commit list flow never started the
+    // download, so if an inspecting list was created for the file preview we just
+    // release it here.
+    cancelInspectIfOpen()
+
+    if (mode.value === 'file') {
       if (!selectedFile.value) {
         errorMsg.value = 'No .torrent file loaded.'
         return

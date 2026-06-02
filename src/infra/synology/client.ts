@@ -277,6 +277,10 @@ export class SynologyClient {
         ['type', '"file"'],
         ['destination', `"${normalizedDestination}"`],
         ['create_list', createList ? 'true' : 'false'],
+        // mtime + size mirror the DSM web UI's create request (captured live) —
+        // without them the task is created but never starts downloading.
+        ['mtime', String(Date.now())],
+        ['size', String(bytes.length)],
         ['file', '["torrent"]'],
       ],
       { partName: 'torrent', fileName, contentType: 'application/x-bittorrent', bytes },

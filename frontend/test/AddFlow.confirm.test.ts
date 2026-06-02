@@ -138,77 +138,26 @@ describe('AddFlow confirm step — inspect → file tree (#123)', () => {
     wrapper.unmount()
   })
 
-  it('defaults to all files selected, and commits the selected subset on «Добавить»', async () => {
+  it('renders the inspected file tree as a preview', async () => {
     const wrapper = await openWizard()
     await toConfirm()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
-    await flushPromises()
-
-    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
-    expect(commit).toBeTruthy()
-    const body = JSON.parse(commit!.init?.body as string)
-    expect(body.listId).toBe('LZ')
-    expect(body.indices.sort()).toEqual([0, 1, 2])
+    // The torrent's files are shown (informational preview).
+    expect(document.querySelector('[data-testid="tree-check-0"]')).not.toBeNull()
     wrapper.unmount()
   })
 
-  it('unchecking a file excludes its index from the committed subset', async () => {
+  it('adds the WHOLE torrent on «Добавить» (the reliable create_list=false add) and releases the inspecting list', async () => {
     const wrapper = await openWizard()
     await toConfirm()
-
-    // Uncheck file index 1 (S02E02).
-    document.querySelector<HTMLButtonElement>('[data-testid="tree-check-1"]')!.click()
-    await flushPromises()
 
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
     await flushPromises()
 
-    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')!
-    const body = JSON.parse(commit.init?.body as string)
-    expect(body.indices.sort()).toEqual([0, 2])
-    expect(body.indices).not.toContain(1)
-    wrapper.unmount()
-  })
-
-  it('a folder checkbox toggles its whole subtree', async () => {
-    const wrapper = await openWizard()
-    await toConfirm()
-
-    // The "Season 2" folder holds files 0 and 1. Toggle it off.
-    const folderCheck = document.querySelector('[data-testid="tree-check-folder-Season 2"]') as HTMLButtonElement
-    expect(folderCheck).not.toBeNull()
-    folderCheck.click()
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
-    await flushPromises()
-
-    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')!
-    const body = JSON.parse(commit.init?.body as string)
-    // Only the loose root file (poster, index 2) remains selected.
-    expect(body.indices).toEqual([2])
-    wrapper.unmount()
-  })
-
-  it('blocks commit and shows an error when nothing is selected', async () => {
-    const wrapper = await openWizard()
-    await toConfirm()
-
-    // Uncheck every file (await between so each v-model update is committed).
-    document.querySelector<HTMLButtonElement>('[data-testid="tree-check-0"]')!.click()
-    await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="tree-check-1"]')!.click()
-    await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="tree-check-2"]')!.click()
-    await flushPromises()
-
-    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
-    await flushPromises()
-
+    // Whole-torrent add hits /api/tasks, NOT the selective /api/tasks/commit.
+    expect(fetchCalls.some((c) => c.url === '/api/tasks')).toBe(true)
     expect(fetchCalls.some((c) => c.url === '/api/tasks/commit')).toBe(false)
-    const dialog = document.querySelector('[role="dialog"]')!
-    expect(dialog.textContent).toContain('Выберите хотя бы один файл')
+    // The inspecting list created for the preview is released on commit.
+    expect(fetchCalls.some((c) => c.url.startsWith('/api/tasks/inspect/') && c.init?.method === 'DELETE')).toBe(true)
     wrapper.unmount()
   })
 })

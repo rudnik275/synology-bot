@@ -12,9 +12,9 @@ const props = defineProps<{ modelValue: TabKey }>()
 defineEmits<{ 'update:modelValue': [TabKey] }>()
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'downloads', label: 'Downloads' },
+  { key: 'downloads', label: 'Загрузки' },
   { key: 'nas', label: 'NAS' },
-  { key: 'shows', label: 'Shows' },
+  { key: 'shows', label: 'Шоу' },
 ]
 
 // Drives the sliding indicator: translateX = activeIndex * one-segment width.
@@ -22,7 +22,7 @@ const activeIndex = computed(() => TABS.findIndex((t) => t.key === props.modelVa
 </script>
 
 <template>
-  <nav class="pill" aria-label="Main">
+  <nav class="pill" aria-label="Навигация">
     <div class="track" :style="{ '--active': activeIndex }">
       <!-- Sliding sticker that sits behind the segments and tracks the active one. -->
       <span class="indicator" aria-hidden="true" />

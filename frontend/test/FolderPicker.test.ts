@@ -1,7 +1,7 @@
-// Tests for FolderPicker component — Variant D (#122).
-// Primary screen: known-folder tiles (favorites+recents).
-// Tree drill-down is behind "Выбрать другую папку…".
-// No history → tree shown directly.
+// Tests for the FolderPicker component (#2).
+// Primary screen: a flat quick list = recents (top) + the default share's
+// (/video) subfolders, so it's never empty. «Браузить все папки» opens a
+// drill-down tree with a tappable breadcrumb (no "Up" button).
 // Mocks globalThis.fetch to serve /api/folders responses.
 import { describe, it, expect, afterEach, beforeEach } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -20,31 +20,37 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+// Map a requested folder path → its children. `null` = the share root listing.
+function foldersFor(path: string | null): Array<{ name: string; path: string }> {
+  if (path === '/video') {
+    return [
+      { name: 'сериалы', path: '/video/сериалы' },
+      { name: 'новое', path: '/video/новое' },
+    ]
+  }
+  if (path === null) {
+    return [
+      { name: 'downloads', path: '/volume1/downloads' },
+      { name: 'media', path: '/volume1/media' },
+    ]
+  }
+  if (path === '/volume1/downloads') {
+    return [{ name: 'torrents', path: '/volume1/downloads/torrents' }]
+  }
+  return []
+}
+
+function pathFromUrl(url: string): string | null {
+  const m = url.match(/\/api\/folders(?:\?path=([^&]*))?$/)
+  return m && m[1] ? decodeURIComponent(m[1]) : null
+}
+
 beforeEach(() => {
-  // Clear localStorage shortcuts between tests
   localStorage.removeItem(LS_RECENTS)
   localStorage.removeItem(LS_FAVORITES)
   localStorage.removeItem(LS_LAST)
-
-  // default: roots → two shared folders
-  globalThis.fetch = ((url: string) => {
-    if (url === '/api/folders') {
-      return Promise.resolve(
-        jsonResponse({ folders: [
-          { name: 'downloads', path: '/volume1/downloads' },
-          { name: 'media', path: '/volume1/media' },
-        ] })
-      )
-    }
-    if (url.includes('path=')) {
-      return Promise.resolve(
-        jsonResponse({ folders: [
-          { name: 'torrents', path: '/volume1/downloads/torrents' },
-        ] })
-      )
-    }
-    return Promise.resolve(jsonResponse({ folders: [] }))
-  }) as typeof fetch
+  globalThis.fetch = ((url: string) =>
+    Promise.resolve(jsonResponse({ folders: foldersFor(pathFromUrl(url as string)) }))) as typeof fetch
 })
 
 afterEach(() => {
@@ -54,254 +60,117 @@ afterEach(() => {
   localStorage.removeItem(LS_LAST)
 })
 
-// ── Variant D: tiles-first behaviour ──────────────────────────────────────────
+describe('FolderPicker — quick list (#2)', () => {
+  it('seeds the quick list from the default share (/video) subfolders on cold start', async () => {
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
+    const tiles = wrapper.findAll('[data-testid="folder-tile"]')
+    expect(tiles.length).toBe(2)
+    expect(wrapper.text()).toContain('сериалы')
+    expect(wrapper.text()).toContain('новое')
+  })
 
-describe('FolderPicker — tiles-first (Variant D)', () => {
-  it('shows tiles when recents are present', async () => {
+  it('floats recent folders to the top of the quick list', async () => {
     localStorage.setItem(LS_RECENTS, JSON.stringify(['/volume1/downloads']))
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
     await flushPromises()
-    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
+    const tiles = wrapper.findAll('[data-testid="folder-tile"]')
+    // recent (downloads) first, then the two /video children
+    expect(tiles[0]!.text()).toContain('downloads')
+    expect(tiles.length).toBe(3)
   })
 
-  it('shows tiles when favorites are present', async () => {
-    localStorage.setItem(LS_FAVORITES, JSON.stringify(['/volume1/media']))
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
-  })
-
-  it('renders one tile per shortcut (favorites first)', async () => {
-    localStorage.setItem(LS_FAVORITES, JSON.stringify(['/volume1/media']))
-    localStorage.setItem(LS_RECENTS, JSON.stringify(['/volume1/downloads', '/volume1/media']))
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
-    const tileBtns = wrapper.findAll('[data-testid="folder-tile"]')
-    // media (fav) + downloads (recent-only) = 2 tiles
-    expect(tileBtns.length).toBe(2)
-    // first tile = favorite (media)
-    expect(tileBtns[0]!.text()).toContain('media')
-  })
-
-  it('caps tiles at 6', async () => {
-    const paths = Array.from({ length: 8 }, (_, i) => `/volume1/f${i}`)
+  it('caps the quick list at 8', async () => {
+    const paths = Array.from({ length: 12 }, (_, i) => `/volume1/f${i}`)
     localStorage.setItem(LS_RECENTS, JSON.stringify(paths))
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
     await flushPromises()
-    const tileBtns = wrapper.findAll('[data-testid="folder-tile"]')
-    expect(tileBtns.length).toBeLessThanOrEqual(6)
+    expect(wrapper.findAll('[data-testid="folder-tile"]').length).toBeLessThanOrEqual(8)
   })
 
-  it('tapping a tile emits update:modelValue and advances in one tap (no need to click Next)', async () => {
-    localStorage.setItem(LS_RECENTS, JSON.stringify(['/volume1/downloads']))
+  it('tapping a quick tile emits update:modelValue', async () => {
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
     await flushPromises()
-
-    const tile = wrapper.find('[data-testid="folder-tile"]')
-    expect(tile.exists()).toBe(true)
-    await tile.trigger('click')
-
+    await wrapper.find('[data-testid="folder-tile"]').trigger('click')
     const emitted = wrapper.emitted('update:modelValue')
     expect(emitted).toBeTruthy()
-    expect(emitted![0]![0]).toBe('/volume1/downloads')
+    expect(emitted![0]![0]).toBe('/video/сериалы')
   })
 
-  it('tree is NOT shown on the primary (tiles) screen', async () => {
-    localStorage.setItem(LS_RECENTS, JSON.stringify(['/volume1/downloads']))
+  it('does not show the tree on the quick screen', async () => {
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
     await flushPromises()
     expect(wrapper.find('[data-testid="folder-item"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="up-btn"]').exists()).toBe(false)
-  })
-
-  it('opens tree drill-down via "Выбрать другую папку" button', async () => {
-    localStorage.setItem(LS_RECENTS, JSON.stringify(['/volume1/downloads']))
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
-    const moreBtn = wrapper.find('[data-testid="open-tree-btn"]')
-    expect(moreBtn.exists()).toBe(true)
-    await moreBtn.trigger('click')
-    await flushPromises()
-
-    // Tree should now be visible with root folders
-    expect(wrapper.find('[data-testid="folder-item"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('downloads')
-  })
-
-  it('back-to-tiles button returns to tiles view after opening tree', async () => {
-    localStorage.setItem(LS_RECENTS, JSON.stringify(['/volume1/downloads']))
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
-    // Open tree
-    await wrapper.find('[data-testid="open-tree-btn"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="folder-item"]').exists()).toBe(true)
-
-    // Go back to tiles
-    const backBtn = wrapper.find('[data-testid="back-to-tiles-btn"]')
-    expect(backBtn.exists()).toBe(true)
-    await backBtn.trigger('click')
-
-    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
   })
 })
 
-// ── No history: tree shown directly ──────────────────────────────────────────
-
-describe('FolderPicker — no history: tree directly (Variant D)', () => {
-  it('shows tree immediately when no recents or favorites', async () => {
+describe('FolderPicker — browse tree (#2)', () => {
+  async function openTree() {
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
     await flushPromises()
-    // No tiles
-    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(false)
-    // Tree root folders visible
+    await wrapper.find('[data-testid="open-tree-btn"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('opens the tree via «Браузить все папки» and lists the shares', async () => {
+    const wrapper = await openTree()
+    expect(wrapper.find('[data-testid="folder-item"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('downloads')
     expect(wrapper.text()).toContain('media')
   })
 
-  it('no back-to-tiles button when no history exists', async () => {
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-    expect(wrapper.find('[data-testid="back-to-tiles-btn"]').exists()).toBe(false)
+  it('«Папки» returns to the quick list', async () => {
+    const wrapper = await openTree()
+    await wrapper.find('[data-testid="back-to-tiles-btn"]').trigger('click')
+    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
   })
 
-  it('fetches and renders root folders on mount', async () => {
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-    const text = wrapper.text()
-    expect(text).toContain('downloads')
-    expect(text).toContain('media')
-  })
-
-  it('drills into a child folder when clicked', async () => {
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
-    const folderBtns = wrapper.findAll('[data-testid="folder-item"]')
-    expect(folderBtns.length).toBeGreaterThan(0)
-    await folderBtns[0]!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('torrents')
-  })
-
-  it('selects the folder by drilling into it — the "Сохранить сюда" button is gone', async () => {
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
-    // The duplicate "Сохранить сюда" button was removed (footer "Далее" advances).
-    expect(wrapper.find('[data-testid="pick-btn"]').exists()).toBe(false)
-
-    // Drilling into a folder now emits its path as the selected destination.
+  it('drills into a folder, showing children and a breadcrumb crumb', async () => {
+    const wrapper = await openTree()
     await wrapper.findAll('[data-testid="folder-item"]')[0]!.trigger('click')
     await flushPromises()
+    expect(wrapper.text()).toContain('torrents')
+    expect(wrapper.find('[data-testid="crumb"]').exists()).toBe(true)
+  })
 
+  it('drilling into a folder emits it as the destination', async () => {
+    const wrapper = await openTree()
+    await wrapper.findAll('[data-testid="folder-item"]')[0]!.trigger('click')
+    await flushPromises()
     const emitted = wrapper.emitted('update:modelValue')
-    expect(emitted).toBeTruthy()
-    expect(emitted![emitted!.length - 1]![0]).toBeTruthy()
-    expect(wrapper.find('[data-testid="pick-btn"]').exists()).toBe(false)
+    expect(emitted![emitted!.length - 1]![0]).toBe('/volume1/downloads')
   })
 
-  it('shows up button after drilling in', async () => {
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
-    // Initially no up button (at root)
-    expect(wrapper.find('[data-testid="up-btn"]').exists()).toBe(false)
-
-    // Drill in
-    await wrapper.findAll('[data-testid="folder-item"]')[0]!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="up-btn"]').exists()).toBe(true)
-  })
-
-  it('navigates up when up button is clicked', async () => {
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    await flushPromises()
-
+  it('the home breadcrumb crumb navigates back to the share root', async () => {
+    const wrapper = await openTree()
     await wrapper.findAll('[data-testid="folder-item"]')[0]!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('torrents')
-
-    await wrapper.find('[data-testid="up-btn"]').trigger('click')
+    await wrapper.find('[data-testid="crumb-root"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('downloads')
+    expect(wrapper.text()).toContain('media')
   })
 
-  it('shows loading state while fetching', async () => {
-    let resolveFetch!: (r: Response) => void
-    globalThis.fetch = (() => new Promise<Response>((r) => { resolveFetch = r })) as typeof fetch
-
-    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
-    // Wait one microtask so onMounted fires and sets loading = true
-    await wrapper.vm.$nextTick()
-    expect(wrapper.find('[data-testid="loading"]').exists()).toBe(true)
-
-    resolveFetch(jsonResponse({ folders: [{ name: 'x', path: '/x' }] }))
-    await flushPromises()
-    expect(wrapper.find('[data-testid="loading"]').exists()).toBe(false)
+  it('has no "Up" button (replaced by the breadcrumb)', async () => {
+    const wrapper = await openTree()
+    expect(wrapper.find('[data-testid="up-btn"]').exists()).toBe(false)
   })
 })
 
-// ── lastFolder restore (stale path guard) ─────────────────────────────────────
-
-describe('FolderPicker — shortcuts / lastFolder restore', () => {
-  beforeEach(() => {
-    localStorage.removeItem(LS_RECENTS)
-    localStorage.removeItem(LS_FAVORITES)
-    localStorage.removeItem(LS_LAST)
-
+describe('FolderPicker — empty default share', () => {
+  it('falls through to the tree when /video is empty and there are no recents', async () => {
     globalThis.fetch = ((url: string) => {
-      if (url === '/api/folders') {
-        return Promise.resolve(
-          jsonResponse({ folders: [
-            { name: 'downloads', path: '/volume1/downloads' },
-            { name: 'media', path: '/volume1/media' },
-          ] })
-        )
-      }
-      return Promise.resolve(jsonResponse({ folders: [] }))
+      const path = pathFromUrl(url as string)
+      // /video (and any drill) empty; share root has one folder.
+      if (path !== null) return Promise.resolve(jsonResponse({ folders: [] }))
+      return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
     }) as typeof fetch
-  })
-
-  afterEach(() => {
-    globalThis.fetch = realFetch
-    localStorage.removeItem(LS_RECENTS)
-    localStorage.removeItem(LS_FAVORITES)
-    localStorage.removeItem(LS_LAST)
-  })
-
-  it('opens into lastFolder on mount — reconstructs breadcrumb stack (no tiles → tree directly)', async () => {
-    localStorage.setItem(LS_LAST, '/volume1/downloads')
-    // Mock: root returns downloads; downloads path returns torrents child
-    globalThis.fetch = ((url: string) => {
-      if (url === '/api/folders') {
-        return Promise.resolve(
-          jsonResponse({ folders: [
-            { name: 'downloads', path: '/volume1/downloads' },
-            { name: 'media', path: '/volume1/media' },
-          ] })
-        )
-      }
-      if (url.includes('path=') && url.includes('downloads')) {
-        return Promise.resolve(
-          jsonResponse({ folders: [{ name: 'torrents', path: '/volume1/downloads/torrents' }] })
-        )
-      }
-      return Promise.resolve(jsonResponse({ folders: [] }))
-    }) as typeof fetch
-
-    // No recents/favorites: goes to tree directly and restores lastFolder
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
     await flushPromises()
-
-    // Should have drilled into downloads - up button visible
-    expect(wrapper.find('[data-testid="up-btn"]').exists()).toBe(true)
-    // breadcrumb or folder list should contain torrents (children of downloads)
-    expect(wrapper.text()).toContain('torrents')
+    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="folder-item"]').exists()).toBe(true)
   })
 })

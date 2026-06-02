@@ -115,13 +115,13 @@ const ramDonut = computed(() => {
 <template>
   <!-- Loading state -->
   <div v-if="loading && !data" class="nas-tab nas-loading" aria-busy="true">
-    <Card><span class="section-label">Loading…</span></Card>
+    <Card><span class="section-label">Загрузка…</span></Card>
   </div>
 
   <!-- Network / auth error (no data at all) -->
   <div v-else-if="error && !data" class="nas-tab">
     <Card tone="red">
-      <p class="section-label">Error</p>
+      <p class="section-label">Ошибка</p>
       <p class="degraded-reason">{{ error }}</p>
     </Card>
   </div>
@@ -129,10 +129,10 @@ const ramDonut = computed(() => {
   <!-- Data present (possibly partial) -->
   <div v-else-if="data" class="nas-tab">
     <div class="nas-head">
-      <ScreenHeader title="NAS" subtitle="Live health" />
+      <ScreenHeader title="NAS" subtitle="Состояние" />
       <!-- key off the poll counter so the dot remounts → replays its pulse -->
       <span :key="pulse" class="live" aria-hidden="true">
-        <span class="live-dot"></span>live
+        <span class="live-dot"></span>онлайн
       </span>
     </div>
 
@@ -146,7 +146,7 @@ const ramDonut = computed(() => {
     >
       <div class="hero-top">
         <div>
-          <p class="hero-kind">Storage · busiest</p>
+          <p class="hero-kind">Хранилище · самый полный</p>
           <p class="hero-name">{{ basename(heroVolume.path) }}</p>
         </div>
         <StickerBadge :tone="TONE[volumeSeverity(heroVolume)]">
@@ -156,7 +156,7 @@ const ramDonut = computed(() => {
       <div class="hero-pct">{{ heroVolume.pct }}<span class="hero-unit">%</span></div>
       <p class="hero-bytes">
         {{ formatBytes(heroVolume.usedBytes) }} / {{ formatBytes(heroVolume.totalBytes) }}
-        · {{ formatBytes(heroVolume.totalBytes - heroVolume.usedBytes) }} free
+        · {{ formatBytes(heroVolume.totalBytes - heroVolume.usedBytes) }} свободно
       </p>
       <div class="hero-bar"><ProgressBar :value="heroVolume.pct" tone="default" hide-label /></div>
     </section>
@@ -172,12 +172,12 @@ const ramDonut = computed(() => {
 
     <!-- degraded storage -->
     <Card v-if="!sortedVolumes" tone="orange">
-      <p class="section-label">Storage</p>
-      <p class="degraded-reason">{{ sectionError('storage') ?? sectionError('volumes') ?? 'Unavailable' }}</p>
+      <p class="section-label">Хранилище</p>
+      <p class="degraded-reason">{{ sectionError('storage') ?? sectionError('volumes') ?? 'Недоступно' }}</p>
     </Card>
 
     <!-- ── Compute bento: CPU + RAM (one flat panel, hairline split) ── -->
-    <p class="section-head">Compute</p>
+    <p class="section-head">Нагрузка</p>
     <Card variant="flat" class="group">
       <div class="bento">
         <div class="metric-cell">
@@ -186,7 +186,7 @@ const ramDonut = computed(() => {
             <div class="metric">{{ cpu.userLoad }}<span class="metric-unit">%</span></div>
             <p class="metric-sub">usr {{ cpu.userLoad }} · sys {{ cpu.systemLoad }}</p>
           </template>
-          <p v-else class="degraded-reason">{{ sectionError('cpu') ?? 'Unavailable' }}</p>
+          <p v-else class="degraded-reason">{{ sectionError('cpu') ?? 'Недоступно' }}</p>
         </div>
         <div class="metric-cell">
           <p class="section-label">RAM</p>
@@ -195,13 +195,13 @@ const ramDonut = computed(() => {
             <p class="metric-sub">{{ formatBytes(memory.usedBytes) }} / {{ formatBytes(memory.totalBytes) }}</p>
             <div class="metric-bar"><ProgressBar :value="memory.pct" :tone="TONE[pctSeverity(memory.pct)]" hide-label /></div>
           </template>
-          <p v-else class="degraded-reason">{{ sectionError('memory') ?? 'Unavailable' }}</p>
+          <p v-else class="degraded-reason">{{ sectionError('memory') ?? 'Недоступно' }}</p>
         </div>
       </div>
     </Card>
 
-    <!-- ── Disks ── -->
-    <p class="section-head">Disks <span v-if="disks" class="count">· {{ disks.length }}</span></p>
+    <!-- ── Диски ── -->
+    <p class="section-head">Диски <span v-if="disks" class="count">· {{ disks.length }}</span></p>
     <template v-if="disks">
       <!-- one flat panel; rows divided by hairlines (not 3 floating boxes) -->
       <Card variant="flat" class="group">
@@ -217,13 +217,13 @@ const ramDonut = computed(() => {
       </Card>
     </template>
     <Card v-else tone="orange">
-      <p class="section-label">Disks</p>
-      <p class="degraded-reason">{{ sectionError('disks') ?? 'Unavailable' }}</p>
+      <p class="section-label">Диски</p>
+      <p class="degraded-reason">{{ sectionError('disks') ?? 'Недоступно' }}</p>
     </Card>
 
     <!-- ── Top processes ── -->
     <template v-if="processes">
-      <p class="section-head">Top CPU</p>
+      <p class="section-head">Топ CPU</p>
       <Card variant="flat" class="group">
         <div v-for="(proc, i) in processes.topCpu" :key="`cpu-${proc.name}-${i}`" class="proc">
           <span class="proc-rank">{{ i + 1 }}</span>
@@ -233,7 +233,7 @@ const ramDonut = computed(() => {
         </div>
       </Card>
 
-      <p class="section-head">Top RAM</p>
+      <p class="section-head">Топ RAM</p>
       <Card v-if="ramDonut">
         <Donut
           :segments="ramDonut.segments"
@@ -244,14 +244,14 @@ const ramDonut = computed(() => {
       </Card>
     </template>
     <Card v-else tone="orange">
-      <p class="section-label">Processes</p>
-      <p class="degraded-reason">{{ sectionError('processes') ?? 'Unavailable' }}</p>
+      <p class="section-label">Процессы</p>
+      <p class="degraded-reason">{{ sectionError('processes') ?? 'Недоступно' }}</p>
     </Card>
   </div>
 
   <!-- No data, no loading, no error — shouldn't happen in practice -->
   <div v-else class="nas-tab">
-    <Card><p class="section-label">No data</p></Card>
+    <Card><p class="section-label">Нет данных</p></Card>
   </div>
 </template>
 

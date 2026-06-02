@@ -138,7 +138,7 @@ async function handleUnsubscribe(): Promise<void> {
 
     <!-- List view (search or subscriptions) -->
     <template v-else>
-      <ScreenHeader title="Shows" />
+      <ScreenHeader title="Шоу" />
 
       <!-- Pinned search field -->
       <div class="search-wrapper">
@@ -277,9 +277,8 @@ async function handleUnsubscribe(): Promise<void> {
   border-radius: var(--radius);
   outline: none;
   box-sizing: border-box;
-}
-
-.search-input:focus {
+  /* Static neo-brutal shadow, matching the show rows/folder tiles. Previously the
+     shadow only appeared on :focus, which read as a second border popping in (#6). */
   box-shadow: var(--shadow-sm);
 }
 

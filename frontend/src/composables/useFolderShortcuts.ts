@@ -1,7 +1,12 @@
 // Composable for folder shortcuts: persists last-used folder, recents (MRU),
-// and favorites. All storage is localStorage-backed with try/catch guards for
-// environments where localStorage is unavailable or throws.
+// and favorites. localStorage is the instant-paint cache + dev/test store; the
+// recents list also syncs to the backend (#4) inside Telegram so it survives
+// the WebView wiping localStorage between sessions/redeploys.
 import { ref } from 'vue'
+import { api } from '../api'
+import { inTelegram } from '../telegram'
+
+const UI_KEY_RECENTS = 'folder-recents'
 
 const KEY_RECENTS = 'nas-bot:folder-recents'
 const KEY_FAVORITES = 'nas-bot:folder-favorites'
@@ -50,6 +55,22 @@ export function useFolderShortcuts() {
   const favorites = ref<string[]>(readStringArray(KEY_FAVORITES))
   const lastFolder = ref<string | null>(safeGetItem(KEY_LAST))
 
+  // Hydrate recents from the backend (cross-session source of truth, #4); seed
+  // the backend from the local cache when it has nothing yet.
+  if (inTelegram) {
+    api
+      .uiState(UI_KEY_RECENTS)
+      .then((values) => {
+        if (values.length > 0) {
+          recents.value = values
+          safeSetItem(KEY_RECENTS, JSON.stringify(values))
+        } else if (recents.value.length > 0) {
+          void api.setUiState(UI_KEY_RECENTS, recents.value).catch(() => {})
+        }
+      })
+      .catch(() => {})
+  }
+
   function recordRecent(path: string): void {
     // Dedupe: remove existing occurrence then unshift to front
     const deduped = recents.value.filter((p) => p !== path)
@@ -59,6 +80,7 @@ export function useFolderShortcuts() {
     lastFolder.value = path
     safeSetItem(KEY_RECENTS, JSON.stringify(recents.value))
     safeSetItem(KEY_LAST, path)
+    if (inTelegram) void api.setUiState(UI_KEY_RECENTS, recents.value).catch(() => {})
   }
 
   function toggleFavorite(path: string): void {

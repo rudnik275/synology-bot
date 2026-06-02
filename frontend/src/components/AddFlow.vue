@@ -13,7 +13,7 @@
 // out of this component — DownloadsTab renders an inline «Добавить загрузку»
 // row (#118) and calls openSheet() via the exposed method. The deep-link/handoff
 // path (torrentToken / auto-open) is unchanged.
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import Sheet from './Sheet.vue'
 import Button from './Button.vue'
 import FolderPicker from './FolderPicker.vue'
@@ -299,6 +299,33 @@ watch(step, (now, prev) => {
   if (now === 3 && prev !== 3) void runInspect()
 })
 
+// --- Telegram BackButton wiring (#5) ---
+// "Назад" between wizard steps is the native Telegram BackButton (the same
+// affordance the Show-detail page uses, ADR 0009), not an in-sheet button. It
+// shows whenever there is a previous step to return to; on the first drawn step
+// the sheet's close (X) is the way out. Driven by a watcher so we never sprinkle
+// show/hide calls across the navigation handlers.
+function onTgBack(): void {
+  goBack()
+}
+function showTgBackButton(): void {
+  const btn = window.Telegram?.WebApp?.BackButton
+  if (!btn) return
+  btn.show()
+  btn.onClick(onTgBack)
+}
+function hideTgBackButton(): void {
+  const btn = window.Telegram?.WebApp?.BackButton
+  if (!btn) return
+  btn.hide()
+  btn.offClick(onTgBack)
+}
+watch([open, step], ([isOpen, cur]) => {
+  if (isOpen && cur > firstStep.value) showTgBackButton()
+  else hideTgBackButton()
+})
+onUnmounted(hideTgBackButton)
+
 async function runSearch(): Promise<void> {
   const q = searchQuery.value.trim()
   if (!q) return
@@ -438,14 +465,14 @@ async function create(): Promise<void> {
         <!-- ── Step 1: Search (in-app primary entry; skipped on bot handoff) ── -->
         <div v-if="step === 1" class="step-input">
           <div class="field search-field">
-            <label class="field-label" for="search-query">Search</label>
+            <label class="field-label" for="search-query">Поиск</label>
             <div class="search-row" style="position: relative;">
               <input
                 id="search-query"
                 v-model="searchQuery"
                 type="text"
                 class="field-input"
-                placeholder="Enter title…"
+                placeholder="Введите название…"
                 autocomplete="off"
                 data-testid="search-query"
                 @keydown.enter="runSearch"
@@ -460,7 +487,7 @@ async function create(): Promise<void> {
                 :disabled="searchLoading"
                 @click="runSearch"
               >
-                {{ searchLoading ? '…' : 'Search' }}
+                {{ searchLoading ? '…' : 'Поиск' }}
               </Button>
               <!-- History dropdown -->
               <div
@@ -469,14 +496,14 @@ async function create(): Promise<void> {
                 data-testid="search-history"
               >
                 <div class="search-history-header">
-                  <span class="search-history-label">Recent</span>
+                  <span class="search-history-label">Недавнее</span>
                   <button
                     type="button"
                     class="search-history-clear"
                     data-testid="search-history-clear"
                     @mousedown.prevent="onClearHistory"
                   >
-                    Clear
+                    Очистить
                   </button>
                 </div>
                 <ul class="search-history-list" role="listbox">
@@ -496,7 +523,7 @@ async function create(): Promise<void> {
 
             <!-- Loading -->
             <div v-if="searchLoading" class="search-loading" data-testid="search-loading">
-              Loading…
+              Загрузка…
             </div>
 
             <!-- Error -->
@@ -542,12 +569,11 @@ async function create(): Promise<void> {
         </div>
 
         <!-- ── Step 2: Destination folder ── -->
+        <!-- One label only (#2): FolderPicker owns its own «Куда сохранить»
+             heading and shows the selected folder inline, so the step-label and
+             the "Selected: …" preview were redundant and are gone. -->
         <div v-else-if="step === 2" class="step-folder">
-          <p class="step-label">Destination folder</p>
           <FolderPicker v-model="destination" />
-          <p v-if="destination" class="destination-preview">
-            Selected: <code>{{ destination }}</code>
-          </p>
         </div>
 
         <!-- ── Step 3: Confirm — pudgy card + file tree (#123) ── -->
@@ -648,40 +674,27 @@ async function create(): Promise<void> {
         </template>
       </div>
 
-      <!-- Actions row: Back / Next / Add -->
-      <div class="footer-actions">
-        <!-- Back — not shown on the first drawn step (step 1 in-app, step 2 on handoff) -->
+      <!-- Actions row: a single primary CTA (#5). "Назад" is the native Telegram
+           BackButton, not an in-sheet button, so there is no back/next pair to
+           balance. Step 1 (Search) has no forward button — tapping a result
+           advances. Step 2 → «Далее», step 3 → «Добавить». -->
+      <div v-if="step !== 1" class="footer-actions">
         <Button
-          v-if="step > firstStep"
-          variant="neutral"
-          size="lg"
-          class="footer-btn"
-          data-testid="wizard-back"
-          @click="goBack"
-        >
-          ← Назад
-        </Button>
-        <span v-else class="footer-spacer" aria-hidden="true"></span>
-
-        <!-- Next (not last step, not search step — search advances via tap-to-select) / Добавить (last step) -->
-        <Button
-          v-if="step > 1 && step < lastStep"
+          v-if="step < lastStep"
           variant="primary"
           size="lg"
-          class="footer-btn"
+          class="footer-btn footer-btn--full"
           data-testid="wizard-next"
           :disabled="!canAdvance"
           @click="goNext"
         >
           Далее →
         </Button>
-        <!-- On the search step there is no Next button; a spacer keeps the footer balanced. -->
-        <span v-else-if="step === 1" class="footer-spacer" aria-hidden="true"></span>
         <Button
           v-else
           variant="primary"
           size="lg"
-          class="footer-btn footer-btn--coral"
+          class="footer-btn footer-btn--full footer-btn--coral"
           data-testid="create-btn"
           :disabled="submitting || inspectState === 'inspecting'"
           @click="create"
@@ -734,19 +747,11 @@ async function create(): Promise<void> {
 .footer-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
 }
 
-.footer-spacer {
-  width: 80px;
-  flex-shrink: 0;
-}
-
-/* Layout only — Back/Next/Add are the shared <Button>; this just balances the
-   footer width against the 80px spacer on the opposite side. */
-.footer-btn {
-  min-width: 80px;
+/* Single full-width primary CTA (#5) — no back/next pair to balance anymore. */
+.footer-btn--full {
+  width: 100%;
 }
 
 /* ── Numbered stepper (#119, Variant B) ── */

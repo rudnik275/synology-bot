@@ -132,10 +132,10 @@ function qualityChips(task: TaskView): string[] {
 
 <template>
   <div class="downloads-tab">
-    <ScreenHeader title="Downloads" />
+    <ScreenHeader title="Загрузки" />
 
     <!-- Loading skeleton: content-shaped cards matching the real card geometry (#115 Variant A) -->
-    <div v-if="loading && tasks.length === 0" class="loading-state" aria-label="Loading downloads" aria-busy="true">
+    <div v-if="loading && tasks.length === 0" class="loading-state" aria-label="Загрузка списка" aria-busy="true">
       <div v-for="i in 3" :key="i" class="sk-card" role="presentation">
         <!-- Left edge stripe in neutral skeleton grey (status unknown while loading) -->
         <div class="sk-edge" />
@@ -162,7 +162,7 @@ function qualityChips(task: TaskView): string[] {
     </div>
 
     <!-- Error state -->
-    <EmptyState v-else-if="error" title="Error" :message="error">
+    <EmptyState v-else-if="error" title="Ошибка" :message="error">
       <template #icon>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10" />
@@ -173,7 +173,7 @@ function qualityChips(task: TaskView): string[] {
     </EmptyState>
 
     <!-- Empty state: expose the add action via the same inline row (#118) -->
-    <EmptyState v-else-if="!loading && tasks.length === 0" title="No downloads" message="Add a torrent to get started.">
+    <EmptyState v-else-if="!loading && tasks.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать.">
       <template #icon>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />

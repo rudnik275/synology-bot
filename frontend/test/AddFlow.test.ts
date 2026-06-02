@@ -88,13 +88,13 @@ async function searchAndSelect() {
 }
 
 /**
- * Pick a folder in the Variant D FolderPicker (no localStorage history).
- * No-history path → tree is shown directly at root. Drilling into a folder now
- * selects it as the destination (the separate "Сохранить сюда" button was
- * removed as a duplicate of the footer "Далее"), so one click is enough.
+ * Pick a folder in the quick-list FolderPicker (#2). The destination step opens
+ * on the flat quick list (seeded from /video's subfolders + recents — the fetch
+ * mock returns one folder, so one tile shows). Tapping the tile selects it as
+ * the destination; the footer "Далее" then advances.
  */
 async function pickFolderInTree() {
-  document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+  document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
   await flushPromises()
 }
 
@@ -135,8 +135,8 @@ describe('AddFlow (search-only)', () => {
     expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
     // After tapping a result the wizard advances straight to the Folder step.
     await searchAndSelect()
-    // Now on step 2 (Folder): folder tree is visible, Next button appears.
-    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    // Now on step 2 (Folder): quick folder list is visible, Next button appears.
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="wizard-next"]')).not.toBeNull()
     wrapper.unmount()
   })
@@ -209,17 +209,17 @@ describe('AddFlow (search-only)', () => {
   })
 
   // ─── Step 2: Folder ────────────────────────────────────────────────
-  it('step 2 (Folder): shows FolderPicker (tree mode — no history); Next disabled until a folder is picked', async () => {
+  it('step 2 (Folder): shows the quick folder list; Next disabled until a folder is picked', async () => {
     const wrapper = await openWizard()
     // searchAndSelect() taps a result — auto-advances to Folder step (#121).
     await searchAndSelect()
 
-    // Variant D with no history: tree is shown directly (no tiles)
-    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    // #2: quick list is shown (seeded from /video subfolders); a tile is present.
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
     const nextBtn = document.querySelector('[data-testid="wizard-next"]') as HTMLButtonElement
     expect(nextBtn.disabled).toBe(true)
 
-    // Drill into a folder, then pick it
+    // Pick a quick folder
     await pickFolderInTree()
     expect(nextBtn.disabled).toBe(false)
     wrapper.unmount()
@@ -290,17 +290,33 @@ describe('AddFlow (search-only)', () => {
 
   // ─── Navigation ────────────────────────────────────────────────
   it('Back from Folder returns to Search; re-tapping a result re-advances (#121)', async () => {
+    // #5: "Назад" is the native Telegram BackButton now, not an in-sheet button.
+    // Install a fake that captures the click handler so we can drive it.
+    let backHandler: (() => void) | null = null
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() {},
+          hide() {},
+          onClick(cb: () => void) { backHandler = cb },
+          offClick() {},
+        },
+      },
+    }
     const wrapper = await openWizard()
-    // searchAndSelect() taps a result — auto-advances to Folder (#121).
+    // searchAndSelect() taps a result — auto-advances to Folder (#121), which
+    // shows the BackButton and captures its handler.
     await searchAndSelect()
 
-    // On Folder now — go Back.
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-back"]')!.click()
+    // On Folder now — drive the Telegram BackButton.
+    expect(backHandler).not.toBeNull()
+    backHandler!()
     await flushPromises()
 
     // Back on Search; search input visible; no Next button on this step.
     expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
     wrapper.unmount()
   })
 
@@ -308,8 +324,8 @@ describe('AddFlow (search-only)', () => {
     const wrapper = await openWizard()
     // searchAndSelect() taps a result — auto-advances to Folder (#121).
     await searchAndSelect()
-    // Now on Folder — Variant D: tree shown (no history), folder-item present.
-    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    // Now on Folder — quick list shown (#2), folder-tile present.
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
 
     const closeBtn = document.querySelector('.sheet-close') as HTMLButtonElement
     closeBtn?.click()

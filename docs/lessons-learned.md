@@ -44,3 +44,19 @@ When a PR rewrites a whole file (rather than editing in place), the rewrite is i
 - When rewriting a file is the right move (heavy refactor, structural change), commit a `BASELINE: copy current master` step first, then the rewrite — review then shows exactly what the rewrite changes vs intervening fixes.
 - Tests aren't enough for live-API surface (`setMyCommands`, `createForumTopic`, etc.) — a smoke deploy to a staging bot would have caught this in seconds. Until staging exists, treat any change to the startup sequence as a hot deploy and watch logs immediately after the tag pushes.
 - Reverse-canary: bumping a version + tagging is the cheap, recoverable part. The expensive part is bot downtime; a smaller fix-forward PR (v3.1.1) restored service in <2 min once the regression was identified.
+
+## DSM 7 entry.cgi silently drops multipart fields unless the boundary is browser-shaped
+
+### Lesson
+
+Synology DSM 7's `entry.cgi` multipart parser reads **zero** form fields when the `multipart/form-data` boundary doesn't look like a browser's (`----WebKitFormBoundary…` / `----geckoformboundary…`). It doesn't error on the boundary — it just sees an empty field set, so you get a misleading `error 119` (SID not found, because `_sid` "wasn't sent") and then `error 120` (`{name: type, reason: required}`). Bun's built-in `FormData`, curl `-F`, and Python `requests` all emit a generic boundary and hit this. Two more entry.cgi quirks compound it: `_sid` must travel in the **query string** (it's ignored in the body), and the non-file calls want their params in the query too.
+
+### Background
+
+2026-06-02: every DownloadStation2 `.torrent` add and the per-file inspect (#123) had **never worked** in production — the owner saw "Не удалось прочитать список файлов" then a bare `HTTP 502`. The original code built the request with Bun's `FormData` (generic boundary, every param including `_sid` in the body). A live-NAS probe walked it down: `_sid` in body → 119; `_sid` in query, params in body → `120 type required`; params in query → `101`; cookie-jar + body params → still `120`. Only when the body was rebuilt by hand with a `----WebKitFormBoundary…` boundary did the identical payload return `success: true` + a `list_id`. The fix (`buildBrowserMultipart` + `_sid` in the query + `file=["torrent"]` naming a `torrent` part) lives in `src/infra/synology/client.ts`. The `synology-api` Python library carries a `generate_gecko_boundary()` helper for exactly this reason — a strong tell once found.
+
+### How to apply
+
+- For any Synology `entry.cgi` file upload (DownloadStation2, FileStation), do NOT use a stock multipart encoder — emit a browser-shaped boundary and put `_sid` in the query.
+- A Synology `119`/`120` on a multipart POST that *looks* correct → suspect the boundary before the payload. Confirm by diffing a raw browser-shaped body against the library body.
+- When a vendor library ships a suspiciously specific helper (`generate_gecko_boundary`), treat it as documentation of an undocumented server quirk and replicate it.

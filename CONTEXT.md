@@ -55,6 +55,7 @@ State is managed through **composables** (`useApi`, `useHealth`, `useTasks`, `us
 | [0006](./docs/adr/0006-mini-app-design-system-neo-brutalism.md) | Mini App design system — Neo-Brutalism, jobs-first IA |
 | [0008](./docs/adr/0008-add-intake-search-only-app-bot-handoff.md) | Add intake — Mini App search-only; bot hands off .torrent + magnet/URL |
 | [0009](./docs/adr/0009-shows-tab-search-first-detail-page.md) | Shows tab — search-first, Show detail page, detail-only subscribe, in-app today dropped |
+| [0011](./docs/adr/0011-ui-history-server-side-not-cloudstorage.md) | Mini App UI history (recent searches/folders) stored server-side, not Telegram CloudStorage |
 
 ## Domain boundary
 

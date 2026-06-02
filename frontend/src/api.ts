@@ -64,6 +64,13 @@ export const api = {
       { kind: 'bytes'; name: string; base64: string } | { kind: 'uri'; uri: string }
     >(`/torrent-stash/${encodeURIComponent(token)}`),
 
+  // #4 — owner UI lists (search history, folder recents) persisted server-side
+  // so they survive Telegram WebView localStorage being wiped between sessions.
+  uiState: (key: string) =>
+    request<{ values: string[] }>(`/ui-state/${encodeURIComponent(key)}`).then((r) => r.values),
+  setUiState: (key: string, values: string[]) =>
+    request<{ ok: true }>(`/ui-state/${encodeURIComponent(key)}`, { ...jsonBody({ values }), method: 'PUT' }).then(() => undefined),
+
   search: (q: string) => request<{ results: SearchResultView[] }>(`/search?q=${encodeURIComponent(q)}`).then((r) => r.results),
 
   folders: (path?: string) =>

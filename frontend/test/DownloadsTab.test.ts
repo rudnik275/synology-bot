@@ -91,7 +91,7 @@ describe('DownloadsTab', () => {
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('No downloads')
+    expect(wrapper.text()).toContain('Нет загрузок')
     // Should NOT show the old stub text
     expect(wrapper.text()).not.toContain('Active downloads will appear here.')
   })
@@ -334,7 +334,7 @@ describe('DownloadsTab', () => {
     await wrapper.vm.$nextTick()
 
     // The loading-state container must be present
-    const loadingState = wrapper.find('[aria-label="Loading downloads"]')
+    const loadingState = wrapper.find('[aria-label="Загрузка списка"]')
     expect(loadingState.exists()).toBe(true)
     expect(loadingState.attributes('aria-busy')).toBe('true')
 
@@ -372,7 +372,7 @@ describe('DownloadsTab', () => {
     await flushPromises()
 
     // After load with tasks, loading state must be gone
-    expect(wrapper.find('[aria-label="Loading downloads"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Загрузка списка"]').exists()).toBe(false)
 
     // Task list is shown instead
     expect(wrapper.text()).toContain(downloadingTask.title)

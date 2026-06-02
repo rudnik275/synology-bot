@@ -314,9 +314,12 @@ export class SynologyClient {
   // The flow, copied verbatim from the DSM web UI's own code (download.js):
   // create with create_list=true (INSPECTING, not downloading) → read the file
   // list → commit with `Task.List.Polling download {list_id, destination,
-  // create_subfolder, selected:[wanted indices]}` which starts the download and
-  // returns a task_id. Backing out before commit leaves an orphaned inspecting
-  // task — cancelTaskList cleans it up.
+  // create_subfolder, selected:[wanted indices]}`. That `download` is ASYNC —
+  // it returns an operation task_id and you MUST poll `download_status` until
+  // finish (then `download_stop`) for the torrent to actually be handed to the
+  // BT engine; otherwise the task sits in DownloadStation's DB as "waiting" and
+  // never reaches transmission. Backing out before commit leaves an orphaned
+  // inspecting list — cancelTaskList cleans it up.
   //
   // Transport (#1, pinned on the live NAS): create-from-file is a browser-boundary
   // multipart with _sid in the query (see browserBoundary) — a generic-boundary
@@ -417,16 +420,36 @@ export class SynologyClient {
     listId: string,
     selected: number[],
     destination: string,
+    opts: { pollDelayMs?: number; maxPolls?: number } = {},
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const res = await this.request<unknown>(
-      'SYNO.DownloadStation2.Task.List.Polling', 2, 'download', {
-        list_id: `"${listId}"`,
-        destination: `"${normalizeDownloadDestination(destination)}"`,
-        create_subfolder: 'true',
-        selected: JSON.stringify(selected),
-      },
-    )
-    if (!res.ok) return res
+    const POLL = 'SYNO.DownloadStation2.Task.List.Polling'
+    // 1) Kick off the (asynchronous) list download → an operation task_id.
+    const dl = await this.request<{ task_id?: string }>(POLL, 2, 'download', {
+      list_id: `"${listId}"`,
+      destination: `"${normalizeDownloadDestination(destination)}"`,
+      create_subfolder: 'true',
+      selected: JSON.stringify(selected),
+    })
+    if (!dl.ok) return dl
+    const opId = dl.data?.task_id
+    if (!opId) return { ok: true }
+
+    // 2) Drive it to completion. `download` is ASYNC: until `download_status`
+    // returns finish:true the torrent is never handed to the BT engine and the
+    // task sits in "waiting" forever. The DSM UI polls every 1s — so do we.
+    const pollDelayMs = opts.pollDelayMs ?? 1000
+    const maxPolls = opts.maxPolls ?? 20
+    for (let i = 0; i < maxPolls; i++) {
+      const st = await this.request<{ finish?: boolean }>(POLL, 2, 'download_status', { task_id: `"${opId}"` })
+      if (!st.ok) {
+        await this.request<unknown>(POLL, 2, 'download_stop', { task_id: `"${opId}"` }).catch(() => {})
+        return st
+      }
+      if (st.data?.finish) break
+      if (i < maxPolls - 1 && pollDelayMs > 0) await new Promise((r) => setTimeout(r, pollDelayMs))
+    }
+    // 3) Cleanup the polling operation (UI does this in downloadPollingDone).
+    await this.request<unknown>(POLL, 2, 'download_stop', { task_id: `"${opId}"` }).catch(() => {})
     return { ok: true }
   }
 

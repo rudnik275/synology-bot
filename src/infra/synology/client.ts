@@ -24,6 +24,59 @@ export function normalizeDownloadDestination(destination: string): string {
   return normalized
 }
 
+/**
+ * A browser-style multipart boundary. DSM 7's `entry.cgi` multipart parser
+ * SILENTLY DROPS every form field unless the boundary looks like a browser's
+ * (`----WebKitFormBoundary…` / `----geckoformboundary…`). Bun's `FormData` (and
+ * other libraries) emit a generic boundary, so DSM read zero fields — including
+ * `_sid` and `type` — and every .torrent add / inspect failed with code 119
+ * then 120. Verified on the live NAS: a browser-shaped boundary makes the exact
+ * same payload succeed. (curl `-F` and `requests` hit this too; the synology-api
+ * library carries a `generate_gecko_boundary()` for precisely this reason.)
+ */
+function browserBoundary(): string {
+  const a = new Uint8Array(8)
+  crypto.getRandomValues(a)
+  const hex = Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('')
+  return `----WebKitFormBoundary${hex}`
+}
+
+/**
+ * Encode text fields + one file part into a `multipart/form-data` body using a
+ * browser-style boundary (see {@link browserBoundary}). Returns the raw bytes
+ * and the matching `Content-Type` header to send alongside them. We build the
+ * body by hand (rather than `FormData`) so we control the boundary.
+ */
+function buildBrowserMultipart(
+  fields: Array<[string, string]>,
+  file: { partName: string; fileName: string; contentType: string; bytes: Uint8Array },
+): { body: Uint8Array; contentType: string } {
+  const boundary = browserBoundary()
+  const enc = new TextEncoder()
+  const head: Uint8Array[] = []
+  for (const [k, v] of fields) {
+    head.push(enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`))
+  }
+  head.push(
+    enc.encode(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${file.partName}"; ` +
+        `filename="${file.fileName}"\r\nContent-Type: ${file.contentType}\r\n\r\n`,
+    ),
+  )
+  const tail = enc.encode(`\r\n--${boundary}--\r\n`)
+  const total = head.reduce((n, c) => n + c.length, 0) + file.bytes.length + tail.length
+  const body = new Uint8Array(total)
+  let off = 0
+  for (const c of head) {
+    body.set(c, off)
+    off += c.length
+  }
+  body.set(file.bytes, off)
+  off += file.bytes.length
+  body.set(tail, off)
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` }
+}
+
 /** Synology HDD temperature classification, synthesised from numeric `temp` (°C). */
 function classifyTemp(t: number): 'normal' | 'warning' | 'critical' {
   if (t >= 56) return 'critical'
@@ -173,60 +226,66 @@ export class SynologyClient {
   }
 
   /**
-   * Creates a Download Task from a .torrent file via multipart POST.
-   * Uses SYNO.DownloadStation2.Task API.
+   * Creates a whole-torrent Download Task from a .torrent file's bytes via the
+   * DownloadStation2 file-create (`create_list=false`). See {@link submitCreateFromFile}
+   * for the DSM-7 multipart quirks (browser boundary, `_sid` in the query).
    */
   async createDownloadTaskFromFile(
     bytes: Uint8Array,
     fileName: string,
     destination: string
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const normalizedDestination = normalizeDownloadDestination(destination)
-    const form = new FormData()
-    form.append('api', 'SYNO.DownloadStation2.Task')
-    form.append('version', '2')
-    form.append('method', 'create')
-    form.append('_sid', this.sid ?? '')
-    form.append('type', '"file"')
-    form.append('destination', `"${normalizedDestination}"`)
-    form.append('create_list', 'false')
-    form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
-
-    const sub = await this.submitDownloadCreate(form, 'create')
+    const sub = await this.submitCreateFromFile(bytes, fileName, destination, false)
     if (!sub.ok) return sub
     const json = sub.json
-
     if (!json.success) {
       const code = json.error?.code
-
-      if (code === 119) {
-        // Session expired -- re-login and retry once
-        await this.login()
-        return this.createDownloadTaskFromFileOnce(bytes, fileName, destination)
-      }
-
-      console.error('[synology] create failed', { destination: normalizedDestination, code, error: json.error })
+      console.error('[synology] create failed', { destination: normalizeDownloadDestination(destination), code, error: json.error })
       return { ok: false, reason: `Synology error code ${code ?? 'unknown'}${json.error ? ` ${JSON.stringify(json.error)}` : ''}` }
     }
-
     return { ok: true }
   }
 
   /**
-   * POST a DownloadStation2 create form to entry.cgi with a 45s timeout, so a
-   * hung Synology call returns a structured failure instead of leaving the
-   * request to time out at the Cloudflare gateway (the opaque "HTTP 502" the
-   * owner saw). Also turns a non-JSON body into a clear reason, and logs the
-   * cause so it is visible in the bot logs.
+   * Build + POST a DownloadStation2 `create` from a .torrent file and return the
+   * parsed envelope. Encodes the DSM-7 contract that took a live-NAS probe to pin
+   * down:
+   *   - the params (`api`/`version`/`method`/`type`/`destination`/`create_list`/
+   *     `file`) and the file go in a `multipart/form-data` body with a
+   *     BROWSER-STYLE boundary — DSM drops every field otherwise (see
+   *     {@link buildBrowserMultipart});
+   *   - `_sid` travels in the QUERY string (DSM ignores it in the body);
+   *   - `file` is the JSON array `["torrent"]` naming the part that holds the
+   *     bytes, which is sent as a separate part literally named `torrent`.
+   * `createList` flips whole-torrent add (`false`) vs inspect (`true`). A 45s
+   * timeout keeps a hung NAS from becoming an opaque Cloudflare 502; a code-119
+   * (session expired) result triggers one re-login + retry with a fresh sid.
    */
-  private async submitDownloadCreate(
-    form: FormData,
-    label: string
+  private async submitCreateFromFile(
+    bytes: Uint8Array,
+    fileName: string,
+    destination: string,
+    createList: boolean,
+    retry = false,
   ): Promise<{ ok: true; json: SynoEnvelope<SynoDownloadTaskCreateData> } | { ok: false; reason: string }> {
-    const url = `${this.host}/webapi/entry.cgi`
+    const normalizedDestination = normalizeDownloadDestination(destination)
+    const { body, contentType } = buildBrowserMultipart(
+      [
+        ['api', 'SYNO.DownloadStation2.Task'],
+        ['version', '2'],
+        ['method', 'create'],
+        ['type', '"file"'],
+        ['destination', `"${normalizedDestination}"`],
+        ['create_list', createList ? 'true' : 'false'],
+        ['file', '["torrent"]'],
+      ],
+      { partName: 'torrent', fileName, contentType: 'application/x-bittorrent', bytes },
+    )
+    const url = `${this.host}/webapi/entry.cgi?_sid=${encodeURIComponent(this.sid ?? '')}`
+    const label = retry ? 'create(retry)' : 'create'
     let res: Response
     try {
-      res = await fetch(url, { method: 'POST', body: form, signal: AbortSignal.timeout(45000) })
+      res = await fetch(url, { method: 'POST', body, headers: { 'Content-Type': contentType }, signal: AbortSignal.timeout(45000) })
     } catch (err) {
       const reason =
         err instanceof Error && err.name === 'TimeoutError'
@@ -235,42 +294,19 @@ export class SynologyClient {
       console.error(`[synology] ${label} request error:`, reason)
       return { ok: false, reason }
     }
+    let json: SynoEnvelope<SynoDownloadTaskCreateData>
     try {
-      const json = (await res.json()) as SynoEnvelope<SynoDownloadTaskCreateData>
-      return { ok: true, json }
+      json = (await res.json()) as SynoEnvelope<SynoDownloadTaskCreateData>
     } catch {
       console.error(`[synology] ${label} non-JSON response: HTTP ${res.status}`)
       return { ok: false, reason: `Synology returned a non-JSON response (HTTP ${res.status})` }
     }
-  }
-
-  private async createDownloadTaskFromFileOnce(
-    bytes: Uint8Array,
-    fileName: string,
-    destination: string
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const normalizedDestination = normalizeDownloadDestination(destination)
-    const form = new FormData()
-    form.append('api', 'SYNO.DownloadStation2.Task')
-    form.append('version', '2')
-    form.append('method', 'create')
-    form.append('_sid', this.sid ?? '')
-    form.append('type', '"file"')
-    form.append('destination', `"${normalizedDestination}"`)
-    form.append('create_list', 'false')
-    form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
-
-    const sub = await this.submitDownloadCreate(form, 'create(retry)')
-    if (!sub.ok) return sub
-    const json = sub.json
-
-    if (!json.success) {
-      const code = json.error?.code
-      console.error('[synology] create(retry) failed', { destination: normalizedDestination, code, error: json.error })
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}${json.error ? ` ${JSON.stringify(json.error)}` : ''}` }
+    if (!json.success && json.error?.code === 119 && !retry) {
+      // Session expired — re-login once and retry with a fresh sid in the query.
+      await this.login()
+      return this.submitCreateFromFile(bytes, fileName, destination, createList, true)
     }
-
-    return { ok: true }
+    return { ok: true, json }
   }
 
   // ─── DownloadStation2 selective-download (two-phase: inspect → select → commit) ───
@@ -280,11 +316,11 @@ export class SynologyClient {
   // via BT.File → Complete to start only the selected files. Backing out before
   // Complete leaves an orphaned inspecting task — cancelTaskList cleans it up.
   //
-  // ⚠ create_list / the API surface / versions / sequence are confirmed. The
-  // exact WRITE payloads of selectTaskFiles (BT.File) and completeTaskList
-  // (Complete) are best-faithful — they were not exercised against a real write
-  // during the read-only probe. If a live-NAS pass reveals a different shape,
-  // only these two method bodies (and their unit tests) change. See the PR.
+  // Transport (#1, pinned on the live NAS): create-from-file is a browser-boundary
+  // multipart with _sid in the query (see browserBoundary); the list/select/
+  // complete/cancel calls carry their params in the query string. Both shapes
+  // were exercised against a real write — a generic-boundary body or body-borne
+  // params silently drop every field (error 119/120) and nothing is created.
 
   /**
    * Phase 1+2: create an INSPECTING BT task (create_list=true) from a .torrent's
@@ -300,20 +336,15 @@ export class SynologyClient {
     destination: string,
     opts: { pollDelayMs?: number; maxPolls?: number } = {},
   ): Promise<{ ok: true; data: TaskInspectResult } | { ok: false; reason: string }> {
-    const normalizedDestination = normalizeDownloadDestination(destination)
-    const form = new FormData()
-    form.append('api', 'SYNO.DownloadStation2.Task')
-    form.append('version', '2')
-    form.append('method', 'create')
-    form.append('_sid', this.sid ?? '')
-    form.append('type', '"file"')
-    form.append('destination', `"${normalizedDestination}"`)
-    form.append('create_list', 'true')
-    form.append('file', new Blob([bytes], { type: 'application/x-bittorrent' }), fileName)
-
-    const created = await this.postForm<SynoDownloadTaskCreateData>(form)
-    if (!created.ok) return created
-    const listId = created.data.list_id?.[0]
+    const sub = await this.submitCreateFromFile(bytes, fileName, destination, true)
+    if (!sub.ok) return sub
+    const json = sub.json
+    if (!json.success) {
+      const code = json.error?.code
+      console.error('[synology] inspect failed', { code, error: json.error })
+      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}${json.error ? ` ${JSON.stringify(json.error)}` : ''}` }
+    }
+    const listId = json.data?.list_id?.[0]
     if (!listId) return { ok: false, reason: 'Synology returned no list_id for the inspecting task' }
 
     const files = await this.pollTaskList(listId, opts)
@@ -321,13 +352,15 @@ export class SynologyClient {
     return { ok: true, data: { listId, files: files.data } }
   }
 
-  /** Read the file list of an inspecting task (`Task.List get`), normalized. */
+  /** Read the file list of an inspecting task (`Task.List get`), normalized.
+   *  Params go in the query (entry.cgi drops multipart-body fields, see
+   *  {@link browserBoundary}); only the create-from-file calls use a body. */
   async getTaskListFiles(
     listId: string,
   ): Promise<{ ok: true; data: TaskListFile[]; inspecting: boolean } | { ok: false; reason: string }> {
-    const form = this.entryForm('SYNO.DownloadStation2.Task.List', 2, 'get')
-    form.append('list_id', `"${listId}"`)
-    const res = await this.postForm<SynoTaskListGetData>(form)
+    const res = await this.request<SynoTaskListGetData>(
+      'SYNO.DownloadStation2.Task.List', 2, 'get', { list_id: `"${listId}"` },
+    )
     if (!res.ok) return res
     const files: TaskListFile[] = (res.data.files ?? []).map((f, i) => ({
       index: f.index ?? i,
@@ -364,28 +397,27 @@ export class SynologyClient {
     listId: string,
     indices: number[],
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const form = this.entryForm('SYNO.DownloadStation2.Task.BT.File', 2, 'set')
-    form.append('list_id', `"${listId}"`)
-    form.append('index', JSON.stringify(indices))
-    const res = await this.postForm<unknown>(form)
+    const res = await this.request<unknown>(
+      'SYNO.DownloadStation2.Task.BT.File', 2, 'set', { list_id: `"${listId}"`, index: JSON.stringify(indices) },
+    )
     if (!res.ok) return res
     return { ok: true }
   }
 
   /** Phase 4: commit the list (`Complete`) — only the selected files download. */
   async completeTaskList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const form = this.entryForm('SYNO.DownloadStation2.Task.Complete', 1, 'start')
-    form.append('list_id', `"${listId}"`)
-    const res = await this.postForm<unknown>(form)
+    const res = await this.request<unknown>(
+      'SYNO.DownloadStation2.Task.Complete', 1, 'start', { list_id: `"${listId}"` },
+    )
     if (!res.ok) return res
     return { ok: true }
   }
 
   /** Phase 5: cancel an uncommitted inspecting list (`Task.List delete`). */
   async cancelTaskList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const form = this.entryForm('SYNO.DownloadStation2.Task.List', 2, 'delete')
-    form.append('list_id', `"${listId}"`)
-    const res = await this.postForm<unknown>(form)
+    const res = await this.request<unknown>(
+      'SYNO.DownloadStation2.Task.List', 2, 'delete', { list_id: `"${listId}"` },
+    )
     if (!res.ok) return res
     return { ok: true }
   }
@@ -399,42 +431,6 @@ export class SynologyClient {
     const selected = await this.selectTaskFiles(listId, indices)
     if (!selected.ok) return selected
     return this.completeTaskList(listId)
-  }
-
-  /** A multipart form pre-filled with api/version/method/_sid for entry.cgi. */
-  private entryForm(api: string, version: number, method: string): FormData {
-    const form = new FormData()
-    form.append('api', api)
-    form.append('version', String(version))
-    form.append('method', method)
-    form.append('_sid', this.sid ?? '')
-    return form
-  }
-
-  /**
-   * POST a multipart form to entry.cgi, with the same code-119 relogin-and-retry
-   * contract as `request()`. Used by the DownloadStation2 file/list endpoints,
-   * which take a form body rather than query params.
-   */
-  private async postForm<T>(form: FormData): Promise<{ ok: true; data: T } | { ok: false; reason: string }> {
-    const url = `${this.host}/${PATH_ENTRY}`
-    const res = await fetch(url, { method: 'POST', body: form })
-    const json: SynoEnvelope<T> = await res.json()
-    if (!json.success) {
-      const code = json.error?.code
-      if (code === 119) {
-        await this.login()
-        form.set('_sid', this.sid ?? '')
-        const retry = await fetch(url, { method: 'POST', body: form })
-        const retryJson: SynoEnvelope<T> = await retry.json()
-        if (!retryJson.success) {
-          return { ok: false, reason: `Synology error code ${retryJson.error?.code ?? 'unknown'}` }
-        }
-        return { ok: true, data: retryJson.data as T }
-      }
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
-    }
-    return { ok: true, data: json.data as T }
   }
 
   private async requestOnce<T>(

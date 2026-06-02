@@ -1,14 +1,15 @@
-// Two-phase selective-download flow on SynologyClient (#123).
+// Two-phase selective-download flow on SynologyClient (#123, #1).
 //
 // Verified API surface (live NAS, DSM 7): create(create_list=true) → list_id;
 // Task.List `get` → files; Task.BT.File → set subset; Task.Complete → commit;
-// Task.List `delete` → cancel an uncommitted inspect. These tests pin the
-// method/api/version + that the selected subset is forwarded, with MOCKED Fapi
-// (fetch) responses.
+// Task.List `delete` → cancel an uncommitted inspect.
 //
-// ⚠ The BT.File / Complete WRITE payload shapes are best-faithful (the probe was
-// read-only) and need a live-NAS confirmation pass post-deploy. If the live
-// shape differs, only the client method bodies + these assertions change.
+// DSM-7 transport (pinned on the live NAS, #1):
+//   - create-from-file goes to entry.cgi as multipart with a BROWSER-style
+//     boundary, _sid in the QUERY, and the bytes in a `torrent` part referenced
+//     by `file=["torrent"]`. DSM drops every field of a generic-boundary body.
+//   - the list/select/complete/cancel calls carry their params in the QUERY
+//     string (entry.cgi likewise ignores multipart-body params there).
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { SynologyClient } from '../../../../src/infra/synology/client.ts'
 
@@ -19,10 +20,16 @@ function mockResponse(body: unknown, status = 200): Response {
   })
 }
 
-/** Read multipart FormData out of a captured fetch call. */
-function formOf(call: unknown): FormData {
-  const init = (call as [string, RequestInit])[1]
-  return init.body as FormData
+const urlOf = (call: unknown): string => (call as [string, RequestInit?])[0]
+const initOf = (call: unknown): RequestInit | undefined => (call as [string, RequestInit?])[1]
+/** A create-from-file call is the only one with a request body (the multipart). */
+const isCreate = (call: unknown): boolean => Boolean(initOf(call)?.body)
+const bodyText = (call: unknown): string =>
+  new TextDecoder().decode(initOf(call)!.body as Uint8Array)
+/** Pull a multipart field value out of a decoded browser-multipart body. */
+function field(body: string, name: string): string | null {
+  const m = body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)\\r\\n`))
+  return m ? m[1]! : null
 }
 
 describe('SynologyClient — selective-download two-phase flow (#123)', () => {
@@ -51,12 +58,11 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
     it('creates with create_list=true and returns the list_id + normalized files', async () => {
       let createCount = 0
       fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
-        const form = init?.body
-        if (form instanceof FormData && form.get('method') === 'create') {
+        if (init?.body) {
           createCount++
           return Promise.resolve(mockResponse({ success: true, data: { list_id: ['L42'] } }))
         }
-        // Task.List get
+        // Task.List get (query-param call, no body)
         return Promise.resolve(
           mockResponse({
             success: true,
@@ -81,37 +87,36 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
       expect(createCount).toBe(1)
     })
 
-    it('sends create_list="true" + share-relative destination on the create call', async () => {
+    it('sends a browser-boundary multipart with _sid in the query, create_list="true" + share-relative destination', async () => {
       fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
-        const form = init?.body
-        if (form instanceof FormData && form.get('method') === 'create') {
-          return Promise.resolve(mockResponse({ success: true, data: { list_id: ['L1'] } }))
-        }
+        if (init?.body) return Promise.resolve(mockResponse({ success: true, data: { list_id: ['L1'] } }))
         return Promise.resolve(mockResponse({ success: true, data: { files: [] } }))
       })
 
       await client.inspectTaskFromFile(torrentBytes, 'X.torrent', '/volume1/video', { pollDelayMs: 0, maxPolls: 1 })
 
-      const createCall = fetchMock.mock.calls.find(
-        (c) => formOf(c) instanceof FormData && formOf(c).get('method') === 'create'
-      )!
-      const form = formOf(createCall)
-      expect(form.get('api')).toBe('SYNO.DownloadStation2.Task')
-      expect(form.get('create_list')).toBe('true')
+      const createCall = fetchMock.mock.calls.find(isCreate)!
+      // _sid travels in the query, NOT the body.
+      expect(urlOf(createCall)).toContain('/webapi/entry.cgi?_sid=test-sid')
+      const ct = (initOf(createCall)!.headers as Record<string, string>)['Content-Type']
+      expect(ct).toContain('multipart/form-data; boundary=----WebKitFormBoundary')
+      const body = bodyText(createCall)
+      expect(field(body, 'api')).toBe('SYNO.DownloadStation2.Task')
+      expect(field(body, 'create_list')).toBe('true')
       // destination normalized: /volume1/video → "video" (quoted JSON string)
-      expect(form.get('destination')).toBe('"video"')
+      expect(field(body, 'destination')).toBe('"video"')
+      // file is the JSON array naming the bytes part; the bytes live in `torrent`.
+      expect(field(body, 'file')).toBe('["torrent"]')
+      expect(body).toContain('name="torrent"; filename="X.torrent"')
+      expect(body).not.toContain('name="_sid"')
     })
 
     it('polls Task.List while the list is still inspecting, then returns the resolved files', async () => {
       let getCount = 0
-      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-        const form = init?.body
-        if (form instanceof FormData && form.get('method') === 'create') {
-          return Promise.resolve(mockResponse({ success: true, data: { list_id: ['LP'] } }))
-        }
+      fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+        if (init?.body) return Promise.resolve(mockResponse({ success: true, data: { list_id: ['LP'] } }))
         getCount++
         if (getCount < 3) {
-          // still resolving metadata: empty + inspecting
           return Promise.resolve(mockResponse({ success: true, data: { files: [], inspecting: true } }))
         }
         return Promise.resolve(
@@ -134,20 +139,18 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
     })
   })
 
-  // ─── Phase 3: BT.File set subset ───────────────────────────────────────────
+  // ─── Phase 3: BT.File set subset (query params) ────────────────────────────
   describe('selectTaskFiles()', () => {
     it('calls SYNO.DownloadStation2.Task.BT.File with the list_id and the selected index subset', async () => {
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: true, data: {} })))
       const result = await client.selectTaskFiles('L42', [0, 2, 3])
       expect(result.ok).toBe(true)
 
-      const call = fetchMock.mock.calls[0]
-      const form = formOf(call)
-      expect(form.get('api')).toBe('SYNO.DownloadStation2.Task.BT.File')
-      expect(form.get('method')).toBe('set')
-      expect(form.get('list_id')).toBe('"L42"')
-      // Selected subset forwarded as a JSON array of indices.
-      expect(form.get('index')).toBe('[0,2,3]')
+      const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
+      expect(url).toContain('api=SYNO.DownloadStation2.Task.BT.File')
+      expect(url).toContain('method=set')
+      expect(url).toContain('list_id="L42"')
+      expect(url).toContain('index=[0,2,3]')
     })
 
     it('returns ok:false on a Synology error', async () => {
@@ -157,58 +160,60 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
     })
   })
 
-  // ─── Phase 4: Complete ─────────────────────────────────────────────────────
+  // ─── Phase 4: Complete (query params) ──────────────────────────────────────
   describe('completeTaskList()', () => {
     it('calls SYNO.DownloadStation2.Task.Complete with the list_id', async () => {
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: true, data: {} })))
       const result = await client.completeTaskList('L42')
       expect(result.ok).toBe(true)
 
-      const form = formOf(fetchMock.mock.calls[0])
-      expect(form.get('api')).toBe('SYNO.DownloadStation2.Task.Complete')
-      expect(form.get('method')).toBe('start')
-      expect(form.get('list_id')).toBe('"L42"')
+      const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
+      expect(url).toContain('api=SYNO.DownloadStation2.Task.Complete')
+      expect(url).toContain('method=start')
+      expect(url).toContain('list_id="L42"')
     })
   })
 
-  // ─── Phase 5: cancel (List delete) ─────────────────────────────────────────
+  // ─── Phase 5: cancel (List delete, query params) ───────────────────────────
   describe('cancelTaskList()', () => {
     it('calls SYNO.DownloadStation2.Task.List delete with the list_id', async () => {
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: true, data: {} })))
       const result = await client.cancelTaskList('L42')
       expect(result.ok).toBe(true)
 
-      const form = formOf(fetchMock.mock.calls[0])
-      expect(form.get('api')).toBe('SYNO.DownloadStation2.Task.List')
-      expect(form.get('method')).toBe('delete')
-      expect(form.get('list_id')).toBe('"L42"')
+      const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
+      expect(url).toContain('api=SYNO.DownloadStation2.Task.List')
+      expect(url).toContain('method=delete')
+      expect(url).toContain('list_id="L42"')
     })
   })
 
   // ─── End-to-end commit subset ──────────────────────────────────────────────
   it('commitTaskSubset() sets the subset then completes, in order', async () => {
     const seq: string[] = []
-    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
-      const form = init?.body as FormData
-      seq.push(form.get('api') as string)
+    fetchMock.mockImplementation((url: string) => {
+      const u = decodeURIComponent(url)
+      if (u.includes('Task.BT.File')) seq.push('BT.File')
+      else if (u.includes('Task.Complete')) seq.push('Complete')
       return Promise.resolve(mockResponse({ success: true, data: {} }))
     })
 
     const result = await client.commitTaskSubset('L9', [1, 4])
     expect(result.ok).toBe(true)
-    expect(seq).toEqual(['SYNO.DownloadStation2.Task.BT.File', 'SYNO.DownloadStation2.Task.Complete'])
+    expect(seq).toEqual(['BT.File', 'Complete'])
   })
 
   it('commitTaskSubset() does NOT complete if the subset selection fails', async () => {
     const seq: string[] = []
-    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
-      const form = init?.body as FormData
-      seq.push(form.get('api') as string)
+    fetchMock.mockImplementation((url: string) => {
+      const u = decodeURIComponent(url)
+      if (u.includes('Task.BT.File')) seq.push('BT.File')
+      else if (u.includes('Task.Complete')) seq.push('Complete')
       return Promise.resolve(mockResponse({ success: false, error: { code: 400 } }))
     })
 
     const result = await client.commitTaskSubset('L9', [1])
     expect(result.ok).toBe(false)
-    expect(seq).toEqual(['SYNO.DownloadStation2.Task.BT.File'])
+    expect(seq).toEqual(['BT.File'])
   })
 })

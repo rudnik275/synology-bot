@@ -153,28 +153,55 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
     })
   })
 
-  // ─── Commit subset via Task.List.Polling download ──────────────────────────
+  // ─── Commit: complete the list (+ skip unwanted), mirroring the DSM UI ──────
   describe('commitTaskSubset()', () => {
-    it('starts the selected subset via Task.List.Polling download (list_id + file_indexes + destination)', async () => {
+    it('completes the list via Complete start {id} (all files → single call)', async () => {
       fetchMock.mockImplementation(() =>
-        Promise.resolve(mockResponse({ success: true, data: { task_id: 'nas-bot/SYNODLTaskListDownloadX' } })))
-      const result = await client.commitTaskSubset('L9', [1, 4], '/volume1/video/сериалы')
+        Promise.resolve(mockResponse({ success: true, data: { task_id: 'dbid_42' } })))
+      const result = await client.commitTaskSubset('L9') // no skip = all files
       expect(result.ok).toBe(true)
 
+      expect(fetchMock.mock.calls.length).toBe(1)
       const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
-      expect(url).toContain('api=SYNO.DownloadStation2.Task.List.Polling')
-      expect(url).toContain('method=download')
-      expect(url).toContain('list_id="L9"')
-      // indices forwarded as a comma-separated list, destination normalized + quoted
-      expect(url).toContain('file_indexes=1,4')
-      expect(url).toContain('destination="video/сериалы"')
+      expect(url).toContain('api=SYNO.DownloadStation2.Task.Complete')
+      expect(url).toContain('method=start')
+      expect(url).toContain('id="L9"')
     })
 
-    it('returns ok:false on a Synology error', async () => {
+    it('skips unwanted files via BT.File set {task_id, index, wanted:false} after completing', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(mockResponse({ success: true, data: { task_id: 'dbid_7' } })))
+      const result = await client.commitTaskSubset('L9', [2, 3])
+      expect(result.ok).toBe(true)
+
+      expect(fetchMock.mock.calls.length).toBe(2)
+      const complete = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
+      expect(complete).toContain('Task.Complete')
+      expect(complete).toContain('id="L9"')
+      const skip = decodeURIComponent(urlOf(fetchMock.mock.calls[1]))
+      expect(skip).toContain('api=SYNO.DownloadStation2.Task.BT.File')
+      expect(skip).toContain('method=set')
+      expect(skip).toContain('task_id="dbid_7"')
+      expect(skip).toContain('index=[2,3]')
+      expect(skip).toContain('wanted=false')
+    })
+
+    it('returns ok:false if Complete fails', async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(mockResponse({ success: false, error: { code: 120 } })))
-      const result = await client.commitTaskSubset('L9', [1], '/volume1/video')
+      const result = await client.commitTaskSubset('L9')
       expect(result.ok).toBe(false)
+    })
+
+    it('still succeeds if the best-effort skip fails (task downloads the whole torrent)', async () => {
+      let n = 0
+      fetchMock.mockImplementation(() => {
+        n++
+        if (n === 1) return Promise.resolve(mockResponse({ success: true, data: { task_id: 'dbid_9' } }))
+        return Promise.resolve(mockResponse({ success: false, error: { code: 400 } }))
+      })
+      const result = await client.commitTaskSubset('L9', [1])
+      expect(result.ok).toBe(true)
     })
   })
 })

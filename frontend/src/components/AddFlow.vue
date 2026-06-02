@@ -420,7 +420,10 @@ async function create(): Promise<void> {
         errorMsg.value = 'Выберите хотя бы один файл.'
         return
       }
-      await api.commitTask(inspectListId.value, selectedIndices.value, destination.value)
+      // Files the owner did NOT select → skipped (wanted:false) after the list
+      // completes, so only the chosen files download.
+      const skip = inspectFiles.value.map((f) => f.index).filter((i) => !selectedIndices.value.includes(i))
+      await api.commitTask(inspectListId.value, selectedIndices.value, skip)
       inspectListId.value = null // committed — don't cancel it on close
     } else if (mode.value === 'file') {
       // Whole-torrent fallback (inspect unavailable/failed).

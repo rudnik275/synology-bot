@@ -309,18 +309,19 @@ export class SynologyClient {
     return { ok: true, json }
   }
 
-  // ─── DownloadStation2 selective-download (two-phase: inspect → select → commit) ───
+  // ─── DownloadStation2 selective-download (inspect → commit) ───
   //
-  // Verified on the live NAS (DSM 7). The flow is: create with create_list=true
-  // (INSPECTING, not downloading) → read the file list → set the wanted subset
-  // via BT.File → Complete to start only the selected files. Backing out before
-  // Complete leaves an orphaned inspecting task — cancelTaskList cleans it up.
+  // The flow, read straight from the DSM web UI's own code (download.js): create
+  // with create_list=true (INSPECTING, not downloading) → read the file list →
+  // `Complete start {id: list_id}` starts the download (to the list's destination)
+  // and returns a task_id → for a subset, `BT.File set {task_id, index, wanted:false}`
+  // marks the unwanted files skipped. Backing out before commit leaves an orphaned
+  // inspecting task — cancelTaskList cleans it up.
   //
   // Transport (#1, pinned on the live NAS): create-from-file is a browser-boundary
-  // multipart with _sid in the query (see browserBoundary); the list/select/
-  // complete/cancel calls carry their params in the query string. Both shapes
-  // were exercised against a real write — a generic-boundary body or body-borne
-  // params silently drop every field (error 119/120) and nothing is created.
+  // multipart with _sid in the query (see browserBoundary) — a generic-boundary
+  // body or body-borne params silently drop every field (error 119/120). The
+  // list / complete / bt.file / cancel calls carry their params in the query string.
 
   /**
    * Phase 1+2: create an INSPECTING BT task (create_list=true) from a .torrent's
@@ -402,28 +403,34 @@ export class SynologyClient {
   }
 
   /**
-   * Commit an inspecting list: start downloading the selected file subset via
-   * `SYNO.DownloadStation2.Task.List.Polling` `download`. Verified on the live
-   * NAS — this single call IS the selective-download commit. (The earlier
-   * `BT.File set` + `Complete start` pair was a wrong guess: `BT.File` rejects a
-   * list_id with 404 and `Complete` wants a different `id`.) `download` needs
-   * `list_id` + `file_indexes` (comma-separated) + `destination` (REQUIRED — the
-   * list's own destination isn't reused here) and returns a task_id.
+   * Commit an inspecting list — start the download. This mirrors EXACTLY what the
+   * DSM web UI does (read from its `download.js`): `Complete` `start` v1 with
+   * `{id: list_id}` completes the list, starts the download to the list's own
+   * destination, and returns the new `task_id`. Param name is `id` — not
+   * `list_id`/`task_id`, and NOT `Task.List.Polling/download` (those earlier
+   * guesses created tasks that hung at the start).
+   *
+   * `skipIndices` are the file indices the owner did NOT select; for a strict
+   * subset we mark them `wanted:false` on the new task (UI: `BT.File` `set`
+   * `{task_id, index, wanted:false}`). Best-effort — if the skip fails the task
+   * still downloads (just the whole torrent), so the add never breaks over it.
    */
   async commitTaskSubset(
     listId: string,
-    indices: number[],
-    destination: string,
+    skipIndices: number[] = [],
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const res = await this.request<unknown>(
-      'SYNO.DownloadStation2.Task.List.Polling', 2, 'download', {
-        list_id: `"${listId}"`,
-        file_indexes: indices.join(','),
-        destination: `"${normalizeDownloadDestination(destination)}"`,
-        create_subfolder: 'false',
-      },
+    const completed = await this.request<{ task_id?: string }>(
+      'SYNO.DownloadStation2.Task.Complete', 1, 'start', { id: `"${listId}"` },
     )
-    if (!res.ok) return res
+    if (!completed.ok) return completed
+    const taskId = completed.data?.task_id
+    if (taskId && skipIndices.length > 0) {
+      const skipped = await this.request<unknown>(
+        'SYNO.DownloadStation2.Task.BT.File', 2, 'set',
+        { task_id: `"${taskId}"`, index: JSON.stringify(skipIndices), wanted: 'false' },
+      )
+      if (!skipped.ok) console.error('[synology] skip unwanted files failed', { taskId, reason: skipped.reason })
+    }
     return { ok: true }
   }
 

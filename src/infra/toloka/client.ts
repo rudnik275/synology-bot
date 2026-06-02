@@ -4,15 +4,29 @@ import { parseSearchPage, isLoginPage, isAuthenticated } from './parser.ts'
 
 const COOKIE_KEY = 'toloka_cookie'
 
+/** Index of an ASCII needle within a byte array, or -1. */
+function indexOfBytes(haystack: Uint8Array, needle: string): number {
+  const n = needle.length
+  outer: for (let i = 0; i + n <= haystack.length; i++) {
+    for (let j = 0; j < n; j++) if (haystack[i + j] !== needle.charCodeAt(j)) continue outer
+    return i
+  }
+  return -1
+}
+
 /**
- * A bencoded `.torrent` is a dict, so it starts with `d` (0x64). An HTML login
- * page (what download.php returns on a stale session) starts with `<` or
- * whitespace. Used to detect a non-torrent download before feeding it to DSM.
+ * A valid `.torrent` is a bencoded dict (starts with `d`) that contains the BT
+ * `pieces` key. The first-byte check alone is too weak: when Toloka rate-limits
+ * a download it can return a SHORT/TRUNCATED body that still starts with `d` —
+ * which `looksLikeTorrent` used to accept, and DSM then created a task with no
+ * metadata (size 0, no files/trackers, stuck «ОЖИДАНИЕ»). Requiring `6:pieces`
+ * rejects those so the caller re-logins/retries or surfaces a clear error.
  */
 function looksLikeTorrent(bytes: Uint8Array): boolean {
   let i = 0
   while (i < bytes.length && (bytes[i] === 0x20 || bytes[i] === 0x09 || bytes[i] === 0x0a || bytes[i] === 0x0d)) i++
-  return bytes[i] === 0x64
+  if (bytes[i] !== 0x64) return false
+  return indexOfBytes(bytes, '6:pieces') >= 0
 }
 
 /**
@@ -27,6 +41,8 @@ export class TolokaClient {
   private config: TolokaClientConfig
   private store: PersistentStore
   private cookies: Map<string, string>
+  /** Short-lived cache of fetched .torrent bytes by download URL (see downloadTorrent). */
+  private torrentCache = new Map<string, { bytes: Uint8Array; at: number }>()
 
   constructor(config: TolokaClientConfig, store: PersistentStore) {
     this.config = config
@@ -117,6 +133,17 @@ export class TolokaClient {
   }
 
   async downloadTorrent(downloadUrl: string): Promise<Uint8Array> {
+    // The add-flow downloads the SAME .torrent twice within seconds — once for
+    // the file-preview inspect (#123) and again for the actual add — and Toloka
+    // rate-limits the second hit, returning truncated junk that produced an
+    // empty DownloadStation task. Serve a recently-fetched .torrent from a
+    // short-lived cache so each add costs Toloka a single download.
+    const TTL_MS = 3 * 60 * 1000
+    const cached = this.torrentCache.get(downloadUrl)
+    if (cached && Date.now() - cached.at < TTL_MS) {
+      return cached.bytes
+    }
+
     let bytes = await this.fetchTorrentBytes(downloadUrl)
 
     // A stale session makes download.php return an HTML login page (HTTP 200),
@@ -134,6 +161,7 @@ export class TolokaClient {
       }
     }
 
+    this.torrentCache.set(downloadUrl, { bytes, at: Date.now() })
     return bytes
   }
 

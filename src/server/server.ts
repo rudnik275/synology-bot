@@ -295,7 +295,10 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     if (!q) return c.json({ error: 'q is required' }, 400)
     try {
       const results = await toloka.search(q)
-      return c.json({ results: results.map(serializeSearchResult) })
+      // Surface the healthiest releases first: sort by seeders desc so dead
+      // (0-seed) torrents sink to the bottom instead of hiding in Toloka's order.
+      const sorted = [...results].sort((a, b) => b.seeders - a.seeders)
+      return c.json({ results: sorted.map(serializeSearchResult) })
     } catch (err) {
       return c.json({ error: errorMessage(err) }, 502)
     }

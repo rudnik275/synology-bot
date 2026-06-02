@@ -19,6 +19,7 @@ function makeSynology(overrides: Partial<SynologyClient> = {}): SynologyClient {
     deleteTask: async () => ({ ok: true as const }),
     createDownloadTask: async () => ({ ok: true as const }),
     createDownloadTaskFromFile: async () => ({ ok: true as const }),
+    createDownloadTaskFromUrl: async () => ({ ok: true as const }),
     listSharedFolders: async () => ({ ok: true as const, data: [] }),
     listFolders: async () => ({ ok: true as const, data: [] }),
     getSystemUtilization: async () => ({ ok: true as const, data: { cpu: { user_load: 1, system_load: 2 }, memory: { real_usage: 30, total_real: 1000, avail_real: 700 } } }),
@@ -36,6 +37,29 @@ function makeToloka(overrides: Partial<TolokaClient> = {}): TolokaClient {
     getDownloadUrl: (id: string) => `https://toloka.to/download.php?id=${id}`,
   }
   return { ...base, ...overrides } as unknown as TolokaClient
+}
+
+/**
+ * Intercept the Telegram Bot-API calls hostTorrentOnTelegram makes (sendDocument
+ * + getFile) so the .torrent-host hop is testable without network. Returns a
+ * restore fn and captures what was sent.
+ */
+function stubTelegram(capture: { sent?: { chatId: string; fileName: string; len: number } } = {}) {
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (input: Request | string | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url.includes('/sendDocument')) {
+      const fd = init?.body as FormData
+      const doc = fd.get('document') as File
+      capture.sent = { chatId: String(fd.get('chat_id')), fileName: doc.name, len: doc.size }
+      return new Response(JSON.stringify({ ok: true, result: { document: { file_id: 'FID123' } } }), { headers: { 'content-type': 'application/json' } })
+    }
+    if (url.includes('/getFile')) {
+      return new Response(JSON.stringify({ ok: true, result: { file_path: 'documents/file_9.torrent' } }), { headers: { 'content-type': 'application/json' } })
+    }
+    return realFetch(input as Request, init)
+  }) as typeof fetch
+  return () => { globalThis.fetch = realFetch }
 }
 
 function makeStore(overrides: Partial<SubscriptionStore> = {}): SubscriptionStore {
@@ -263,20 +287,31 @@ describe('Mini App server — tasks: create (unified POST /api/tasks)', () => {
     expect(args).toEqual({ uri: 'https://example.com/x.torrent', dest: '/v1' })
   })
 
-  it('fetches a Toloka URL with auth, then creates from the .torrent', async () => {
-    let fileArgs: { name: string; dest: string; len: number } | undefined
+  it('fetches a Toloka URL with auth, hosts it on Telegram, then adds via type:url', async () => {
+    let urlArgs: { url: string; dest: string } | undefined
     let downloadedUrl: string | undefined
     const synology = makeSynology({
-      createDownloadTaskFromFile: async (bytes, name, dest) => { fileArgs = { name, dest, len: bytes.length }; return { ok: true } },
+      createDownloadTaskFromUrl: async (url, dest) => { urlArgs = { url, dest }; return { ok: true } },
     })
     const toloka = makeToloka({ downloadTorrent: async (url) => { downloadedUrl = url; return new Uint8Array([7, 7]) } })
-    const res = await makeApp(synology, toloka).request(
-      '/api/tasks',
-      jsonReq({ uri: 'https://toloka.to/download.php?id=5', title: 'The Matrix', destination: '/volume1/films' })
-    )
-    expect(res.status).toBe(201)
-    expect(downloadedUrl).toBe('https://toloka.to/download.php?id=5')
-    expect(fileArgs).toEqual({ name: 'The Matrix.torrent', dest: '/volume1/films', len: 2 })
+    const cap: { sent?: { chatId: string; fileName: string; len: number } } = {}
+    const restore = stubTelegram(cap)
+    try {
+      const res = await makeApp(synology, toloka).request(
+        '/api/tasks',
+        jsonReq({ uri: 'https://toloka.to/download.php?id=5', title: 'The Matrix', destination: '/volume1/films' })
+      )
+      expect(res.status).toBe(201)
+      expect(downloadedUrl).toBe('https://toloka.to/download.php?id=5')
+      // The .torrent is hosted on Telegram (owner's chat) and DSM is given that URL.
+      expect(cap.sent).toEqual({ chatId: String(OWNER_ID), fileName: 'The Matrix.torrent', len: 2 })
+      expect(urlArgs).toEqual({
+        url: `https://api.telegram.org/file/bot${TEST_BOT_TOKEN}/documents/file_9.torrent`,
+        dest: '/volume1/films',
+      })
+    } finally {
+      restore()
+    }
   })
 
   it('502 when the Toloka download throws', async () => {
@@ -294,17 +329,27 @@ describe('Mini App server — tasks: create (unified POST /api/tasks)', () => {
     expect(res.status).toBe(400)
   })
 
-  it('accepts a multipart .torrent upload', async () => {
-    let fileArgs: { name: string; dest: string; len: number } | undefined
+  it('accepts a multipart .torrent upload — hosts on Telegram, adds via type:url', async () => {
+    let urlArgs: { url: string; dest: string } | undefined
     const app = makeApp(makeSynology({
-      createDownloadTaskFromFile: async (bytes, name, dest) => { fileArgs = { name, dest, len: bytes.length }; return { ok: true } },
+      createDownloadTaskFromUrl: async (url, dest) => { urlArgs = { url, dest }; return { ok: true } },
     }))
-    const fd = new FormData()
-    fd.append('destination', '/volume1/dl')
-    fd.append('file', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'application/x-bittorrent' }), 'movie.torrent')
-    const res = await app.request('/api/tasks', { method: 'POST', headers: ownerHeaders(), body: fd })
-    expect(res.status).toBe(201)
-    expect(fileArgs).toEqual({ name: 'movie.torrent', dest: '/volume1/dl', len: 4 })
+    const cap: { sent?: { chatId: string; fileName: string; len: number } } = {}
+    const restore = stubTelegram(cap)
+    try {
+      const fd = new FormData()
+      fd.append('destination', '/volume1/dl')
+      fd.append('file', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'application/x-bittorrent' }), 'movie.torrent')
+      const res = await app.request('/api/tasks', { method: 'POST', headers: ownerHeaders(), body: fd })
+      expect(res.status).toBe(201)
+      expect(cap.sent).toEqual({ chatId: String(OWNER_ID), fileName: 'movie.torrent', len: 4 })
+      expect(urlArgs).toEqual({
+        url: `https://api.telegram.org/file/bot${TEST_BOT_TOKEN}/documents/file_9.torrent`,
+        dest: '/volume1/dl',
+      })
+    } finally {
+      restore()
+    }
   })
 
   it('400 on a multipart upload without a file', async () => {

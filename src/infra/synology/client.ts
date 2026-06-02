@@ -392,28 +392,7 @@ export class SynologyClient {
     return { ok: true, data: last }
   }
 
-  /** Phase 3: set the wanted file subset for an inspecting list via `BT.File`. */
-  async selectTaskFiles(
-    listId: string,
-    indices: number[],
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const res = await this.request<unknown>(
-      'SYNO.DownloadStation2.Task.BT.File', 2, 'set', { list_id: `"${listId}"`, index: JSON.stringify(indices) },
-    )
-    if (!res.ok) return res
-    return { ok: true }
-  }
-
-  /** Phase 4: commit the list (`Complete`) — only the selected files download. */
-  async completeTaskList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const res = await this.request<unknown>(
-      'SYNO.DownloadStation2.Task.Complete', 1, 'start', { list_id: `"${listId}"` },
-    )
-    if (!res.ok) return res
-    return { ok: true }
-  }
-
-  /** Phase 5: cancel an uncommitted inspecting list (`Task.List delete`). */
+  /** Cancel an uncommitted inspecting list (`Task.List delete`). */
   async cancelTaskList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const res = await this.request<unknown>(
       'SYNO.DownloadStation2.Task.List', 2, 'delete', { list_id: `"${listId}"` },
@@ -422,15 +401,30 @@ export class SynologyClient {
     return { ok: true }
   }
 
-  /** Phases 3+4 as one operation: set the subset, then complete. Aborts before
-   *  Complete if the selection fails, so a half-applied list never starts. */
+  /**
+   * Commit an inspecting list: start downloading the selected file subset via
+   * `SYNO.DownloadStation2.Task.List.Polling` `download`. Verified on the live
+   * NAS — this single call IS the selective-download commit. (The earlier
+   * `BT.File set` + `Complete start` pair was a wrong guess: `BT.File` rejects a
+   * list_id with 404 and `Complete` wants a different `id`.) `download` needs
+   * `list_id` + `file_indexes` (comma-separated) + `destination` (REQUIRED — the
+   * list's own destination isn't reused here) and returns a task_id.
+   */
   async commitTaskSubset(
     listId: string,
     indices: number[],
+    destination: string,
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const selected = await this.selectTaskFiles(listId, indices)
-    if (!selected.ok) return selected
-    return this.completeTaskList(listId)
+    const res = await this.request<unknown>(
+      'SYNO.DownloadStation2.Task.List.Polling', 2, 'download', {
+        list_id: `"${listId}"`,
+        file_indexes: indices.join(','),
+        destination: `"${normalizeDownloadDestination(destination)}"`,
+        create_subfolder: 'false',
+      },
+    )
+    if (!res.ok) return res
+    return { ok: true }
   }
 
   private async requestOnce<T>(

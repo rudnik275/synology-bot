@@ -139,42 +139,7 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
     })
   })
 
-  // ─── Phase 3: BT.File set subset (query params) ────────────────────────────
-  describe('selectTaskFiles()', () => {
-    it('calls SYNO.DownloadStation2.Task.BT.File with the list_id and the selected index subset', async () => {
-      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: true, data: {} })))
-      const result = await client.selectTaskFiles('L42', [0, 2, 3])
-      expect(result.ok).toBe(true)
-
-      const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
-      expect(url).toContain('api=SYNO.DownloadStation2.Task.BT.File')
-      expect(url).toContain('method=set')
-      expect(url).toContain('list_id="L42"')
-      expect(url).toContain('index=[0,2,3]')
-    })
-
-    it('returns ok:false on a Synology error', async () => {
-      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: false, error: { code: 400 } })))
-      const result = await client.selectTaskFiles('L42', [0])
-      expect(result.ok).toBe(false)
-    })
-  })
-
-  // ─── Phase 4: Complete (query params) ──────────────────────────────────────
-  describe('completeTaskList()', () => {
-    it('calls SYNO.DownloadStation2.Task.Complete with the list_id', async () => {
-      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: true, data: {} })))
-      const result = await client.completeTaskList('L42')
-      expect(result.ok).toBe(true)
-
-      const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
-      expect(url).toContain('api=SYNO.DownloadStation2.Task.Complete')
-      expect(url).toContain('method=start')
-      expect(url).toContain('list_id="L42"')
-    })
-  })
-
-  // ─── Phase 5: cancel (List delete, query params) ───────────────────────────
+  // ─── Cancel (List delete, query params) ────────────────────────────────────
   describe('cancelTaskList()', () => {
     it('calls SYNO.DownloadStation2.Task.List delete with the list_id', async () => {
       fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: true, data: {} })))
@@ -188,32 +153,28 @@ describe('SynologyClient — selective-download two-phase flow (#123)', () => {
     })
   })
 
-  // ─── End-to-end commit subset ──────────────────────────────────────────────
-  it('commitTaskSubset() sets the subset then completes, in order', async () => {
-    const seq: string[] = []
-    fetchMock.mockImplementation((url: string) => {
-      const u = decodeURIComponent(url)
-      if (u.includes('Task.BT.File')) seq.push('BT.File')
-      else if (u.includes('Task.Complete')) seq.push('Complete')
-      return Promise.resolve(mockResponse({ success: true, data: {} }))
+  // ─── Commit subset via Task.List.Polling download ──────────────────────────
+  describe('commitTaskSubset()', () => {
+    it('starts the selected subset via Task.List.Polling download (list_id + file_indexes + destination)', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(mockResponse({ success: true, data: { task_id: 'nas-bot/SYNODLTaskListDownloadX' } })))
+      const result = await client.commitTaskSubset('L9', [1, 4], '/volume1/video/сериалы')
+      expect(result.ok).toBe(true)
+
+      const url = decodeURIComponent(urlOf(fetchMock.mock.calls[0]))
+      expect(url).toContain('api=SYNO.DownloadStation2.Task.List.Polling')
+      expect(url).toContain('method=download')
+      expect(url).toContain('list_id="L9"')
+      // indices forwarded as a comma-separated list, destination normalized + quoted
+      expect(url).toContain('file_indexes=1,4')
+      expect(url).toContain('destination="video/сериалы"')
     })
 
-    const result = await client.commitTaskSubset('L9', [1, 4])
-    expect(result.ok).toBe(true)
-    expect(seq).toEqual(['BT.File', 'Complete'])
-  })
-
-  it('commitTaskSubset() does NOT complete if the subset selection fails', async () => {
-    const seq: string[] = []
-    fetchMock.mockImplementation((url: string) => {
-      const u = decodeURIComponent(url)
-      if (u.includes('Task.BT.File')) seq.push('BT.File')
-      else if (u.includes('Task.Complete')) seq.push('Complete')
-      return Promise.resolve(mockResponse({ success: false, error: { code: 400 } }))
+    it('returns ok:false on a Synology error', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(mockResponse({ success: false, error: { code: 120 } })))
+      const result = await client.commitTaskSubset('L9', [1], '/volume1/video')
+      expect(result.ok).toBe(false)
     })
-
-    const result = await client.commitTaskSubset('L9', [1])
-    expect(result.ok).toBe(false)
-    expect(seq).toEqual(['BT.File'])
   })
 })

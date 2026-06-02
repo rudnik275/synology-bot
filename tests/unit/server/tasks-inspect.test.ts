@@ -166,30 +166,35 @@ describe('POST /api/tasks/inspect — create an inspecting task, return files', 
   })
 })
 
-describe('POST /api/tasks/commit — set the subset, then complete', () => {
-  it('forwards listId + selected indices to commitTaskSubset', async () => {
-    let args: { listId: string; indices: number[] } | undefined
+describe('POST /api/tasks/commit — start the selected subset (List.Polling download)', () => {
+  it('forwards listId + selected indices + destination to commitTaskSubset', async () => {
+    let args: { listId: string; indices: number[]; destination: string } | undefined
     const app = makeApp(
-      makeSynology({ commitTaskSubset: async (listId, indices) => { args = { listId, indices }; return { ok: true } } })
+      makeSynology({ commitTaskSubset: async (listId, indices, destination) => { args = { listId, indices, destination }; return { ok: true } } })
     )
-    const res = await app.request('/api/tasks/commit', jsonReq({ listId: 'LZ', indices: [0, 2] }))
+    const res = await app.request('/api/tasks/commit', jsonReq({ listId: 'LZ', indices: [0, 2], destination: '/volume1/video' }))
     expect(res.status).toBe(201)
-    expect(args).toEqual({ listId: 'LZ', indices: [0, 2] })
+    expect(args).toEqual({ listId: 'LZ', indices: [0, 2], destination: '/volume1/video' })
   })
 
   it('400 when listId is missing', async () => {
-    const res = await makeApp().request('/api/tasks/commit', jsonReq({ indices: [0] }))
+    const res = await makeApp().request('/api/tasks/commit', jsonReq({ indices: [0], destination: '/v' }))
     expect(res.status).toBe(400)
   })
 
   it('400 when indices is empty (a torrent with no selected files is invalid)', async () => {
-    const res = await makeApp().request('/api/tasks/commit', jsonReq({ listId: 'L1', indices: [] }))
+    const res = await makeApp().request('/api/tasks/commit', jsonReq({ listId: 'L1', indices: [], destination: '/v' }))
+    expect(res.status).toBe(400)
+  })
+
+  it('400 when destination is missing (the Polling download requires it)', async () => {
+    const res = await makeApp().request('/api/tasks/commit', jsonReq({ listId: 'L1', indices: [0] }))
     expect(res.status).toBe(400)
   })
 
   it('502 when commit fails', async () => {
     const app = makeApp(makeSynology({ commitTaskSubset: async () => ({ ok: false, reason: 'commit boom' }) }))
-    const res = await app.request('/api/tasks/commit', jsonReq({ listId: 'L1', indices: [0] }))
+    const res = await app.request('/api/tasks/commit', jsonReq({ listId: 'L1', indices: [0], destination: '/v' }))
     expect(res.status).toBe(502)
   })
 })

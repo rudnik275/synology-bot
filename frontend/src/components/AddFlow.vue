@@ -420,7 +420,7 @@ async function create(): Promise<void> {
         errorMsg.value = 'Выберите хотя бы один файл.'
         return
       }
-      await api.commitTask(inspectListId.value, selectedIndices.value)
+      await api.commitTask(inspectListId.value, selectedIndices.value, destination.value)
       inspectListId.value = null // committed — don't cancel it on close
     } else if (mode.value === 'file') {
       // Whole-torrent fallback (inspect unavailable/failed).

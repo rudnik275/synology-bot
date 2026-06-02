@@ -250,19 +250,17 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const body = await c.req.json().catch(() => null)
     const listId = body?.listId
     const indices = body?.indices
-    const destination = body?.destination
+    // `skip` = the file indices the owner did NOT select; the commit completes
+    // the list (downloads to its own destination) and marks these wanted:false.
+    const skip = body?.skip
     if (typeof listId !== 'string' || !listId) {
       return c.json({ error: 'listId is required' }, 400)
     }
     if (!Array.isArray(indices) || indices.length === 0 || !indices.every((n) => Number.isInteger(n))) {
       return c.json({ error: 'indices must be a non-empty array of integers' }, 400)
     }
-    // The Polling `download` commit requires the destination again (#1) — it is
-    // not reused from the inspecting list.
-    if (typeof destination !== 'string' || !destination) {
-      return c.json({ error: 'destination is required' }, 400)
-    }
-    const result = await synology.commitTaskSubset(listId, indices, destination)
+    const skipIndices = Array.isArray(skip) ? skip.filter((n): n is number => Number.isInteger(n)) : []
+    const result = await synology.commitTaskSubset(listId, skipIndices)
     if (!result.ok) return c.json({ error: result.reason }, 502)
     return c.json({ ok: true }, 201)
   })

@@ -23,6 +23,7 @@ import { torrentToken as deepLinkToken } from '../telegram'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
+import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import type { SearchResultView } from '../types'
 
 // How the add source was supplied:
@@ -41,6 +42,7 @@ const props = withDefaults(defineProps<{ torrentToken?: string }>(), {
 const { prefersReducedMotion } = usePrefersReducedMotion()
 const { lastFolder, recordRecent } = useFolderShortcuts()
 const { history: searchHistory, recordQuery, clearHistory: clearSearchHistory } = useSearchHistory()
+const optimistic = useOptimisticTasks()
 
 const open = ref(false)
 // Steps are renumbered search-first:
@@ -314,35 +316,48 @@ defineExpose({ openSheet })
 async function create(): Promise<void> {
   errorMsg.value = null
 
-  submitting.value = true
-  try {
-    // The whole torrent is added via the documented DownloadStation create:
-    // a .torrent upload (file mode) or a uri (magnet / search / handoff URL).
-    if (mode.value === 'file') {
-      if (!selectedFile.value) {
-        errorMsg.value = 'No .torrent file loaded.'
-        return
-      }
-      await api.createTaskFromFile(selectedFile.value, destination.value)
-    } else if (mode.value === 'uri') {
-      if (!handoffUri.value.trim()) {
-        errorMsg.value = 'No magnet link or URL loaded.'
-        return
-      }
-      await api.createTask(handoffUri.value.trim(), destination.value)
-    } else {
-      if (!selectedResult.value) {
-        errorMsg.value = 'Please select a search result.'
-        return
-      }
-      await api.createTask(selectedResult.value.downloadUrl, destination.value)
+  // Validate the source up front and capture the add call. The whole torrent is
+  // added via the documented DownloadStation create: a .torrent upload (file
+  // mode) or a uri (magnet / search / handoff URL).
+  let doAdd: () => Promise<unknown>
+  if (mode.value === 'file') {
+    if (!selectedFile.value) {
+      errorMsg.value = 'No .torrent file loaded.'
+      return
     }
+    const file = selectedFile.value
+    doAdd = () => api.createTaskFromFile(file, destination.value)
+  } else if (mode.value === 'uri') {
+    const uri = handoffUri.value.trim()
+    if (!uri) {
+      errorMsg.value = 'No magnet link or URL loaded.'
+      return
+    }
+    doAdd = () => api.createTask(uri, destination.value)
+  } else {
+    if (!selectedResult.value) {
+      errorMsg.value = 'Please select a search result.'
+      return
+    }
+    const url = selectedResult.value.downloadUrl
+    doAdd = () => api.createTask(url, destination.value)
+  }
+
+  submitting.value = true
+  // Optimistic insert: drop a pending placeholder into the Downloads list now so
+  // the download appears the instant the sheet closes (the poll is every 3 s and
+  // DSM takes a few seconds to register). useTasks retires it when the real task
+  // arrives; rolled back below if the add fails.
+  const optimisticId = optimistic.add({ title: confirmTitle.value, destination: destination.value })
+  try {
+    await doAdd()
     // Success: record the destination as a recent BEFORE resetForm clears it.
     if (destination.value) recordRecent(destination.value)
-    // Close the sheet; the Downloads list refreshes on its own poll.
+    // Close the sheet; the placeholder is already showing in the list.
     open.value = false
     resetForm()
   } catch (e) {
+    optimistic.remove(optimisticId)
     errorMsg.value = e instanceof Error ? e.message : String(e)
   } finally {
     submitting.value = false

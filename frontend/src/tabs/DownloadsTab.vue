@@ -21,6 +21,7 @@ import ScreenHeader from '../components/ScreenHeader.vue'
 import ProgressBar from '../components/ProgressBar.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useTasks } from '../composables/useTasks'
+import { isPending } from '../composables/useOptimisticTasks'
 import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/tones'
 import type { TaskView } from '../types'
@@ -58,6 +59,7 @@ async function confirmDelete(): Promise<void> {
 /** Left-edge stripe tone — single accent for Variant B (#116). */
 function stripeToneForStatus(status: string): Tone {
   switch (status) {
+    case 'pending':
     case 'downloading':
     case 'finishing':
     case 'waiting':
@@ -76,7 +78,7 @@ function stripeToneForStatus(status: string): Tone {
 
 /** Elevation tier (#101 D): active + errors stay raised; settled tasks → flat. */
 function cardVariantForStatus(status: string): 'flat' | 'raised' {
-  return isActive(status) || status === 'error' ? 'raised' : 'flat'
+  return isActive(status) || isPending(status) || status === 'error' ? 'raised' : 'flat'
 }
 
 function isActive(status: string): boolean {
@@ -108,6 +110,7 @@ async function onPrimary(task: TaskView): Promise<void> {
 /** Human-readable status label for the overflow menu header / aria. */
 function statusLabel(status: string): string {
   switch (status) {
+    case 'pending':     return 'Добавление…'
     case 'downloading': return 'Загрузка'
     case 'finishing':   return 'Завершение'
     case 'waiting':     return 'Ожидание'
@@ -226,25 +229,40 @@ function qualityChips(task: TaskView): string[] {
           <span v-for="chip in qualityChips(task)" :key="chip" class="chip">{{ chip }}</span>
         </div>
 
-        <!-- Progress bar (ink-colored for settled tasks, status-colored for active) -->
-        <div class="task-progress">
-          <ProgressBar
-            :value="task.pct"
-            :tone="isActive(task.status) ? 'violet' : stripeToneForStatus(task.status)"
-            hide-label
-          />
-        </div>
+        <!-- Pending (optimistic) card: an indeterminate loader instead of a 0% bar
+             until the real task lands on the next poll (#instant-add). -->
+        <template v-if="isPending(task.status)">
+          <div class="task-pending" data-testid="task-pending">
+            <span class="task-spinner" aria-hidden="true"></span>
+            <span class="task-pending-text">Добавляем на NAS…</span>
+          </div>
+          <div class="task-meta">
+            <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
+          </div>
+        </template>
 
-        <!-- Meta row: bigger % + quieter speed/size -->
-        <div class="task-meta">
-          <span class="meta-pct">{{ task.pct }}%</span>
-          <span v-if="isActive(task.status)" class="meta-speed">{{ formatSpeed(task.speedBytesPerSec) }}</span>
-          <span class="meta-size">{{ formatBytes(task.downloadedBytes) }} / {{ formatBytes(task.sizeBytes) }}</span>
-          <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
-        </div>
+        <template v-else>
+          <!-- Progress bar (ink-colored for settled tasks, status-colored for active) -->
+          <div class="task-progress">
+            <ProgressBar
+              :value="task.pct"
+              :tone="isActive(task.status) ? 'violet' : stripeToneForStatus(task.status)"
+              hide-label
+            />
+          </div>
 
-        <!-- Action row: 0 or 1 primary button + direct delete (trash) button -->
-        <div class="task-actions">
+          <!-- Meta row: bigger % + quieter speed/size -->
+          <div class="task-meta">
+            <span class="meta-pct">{{ task.pct }}%</span>
+            <span v-if="isActive(task.status)" class="meta-speed">{{ formatSpeed(task.speedBytesPerSec) }}</span>
+            <span class="meta-size">{{ formatBytes(task.downloadedBytes) }} / {{ formatBytes(task.sizeBytes) }}</span>
+            <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
+          </div>
+        </template>
+
+        <!-- Action row: 0 or 1 primary button + direct delete (trash) button.
+             Hidden for pending placeholders (no real task id to act on yet). -->
+        <div v-if="!isPending(task.status)" class="task-actions">
           <!-- Primary action (Variant B: exactly one per status group, or none) -->
           <Button
             v-if="hasPrimaryAction(task.status)"
@@ -397,6 +415,33 @@ function qualityChips(task: TaskView): string[] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Pending (optimistic) loader ── */
+.task-pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.task-spinner {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 2px solid rgba(9, 9, 11, 0.2);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: dl-spin 0.7s linear infinite;
+}
+.task-pending-text {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  opacity: 0.75;
+}
+@keyframes dl-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-spinner { animation: none; }
 }
 
 /* ── Action row ── */

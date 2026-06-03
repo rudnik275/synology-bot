@@ -38,6 +38,29 @@ export const api = {
     return request<{ ok: true }>('/tasks', { method: 'POST', body: form })
   },
 
+  // --- Per-file selection (#123): inspect → poll → commit ---
+  // Inspect parses the torrent into a transient list_id WITHOUT downloading, so
+  // the user can pick files. Same two source shapes as create (uri / .torrent file).
+  inspect: (uri: string, destination: string, title?: string) =>
+    request<{ listId: string }>('/tasks/inspect', jsonBody({ uri, destination, title })),
+  inspectFile: (file: File, destination: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('destination', destination)
+    return request<{ listId: string }>('/tasks/inspect', { method: 'POST', body: form })
+  },
+  // Poll until `ready` — the file tree populates once DSM parses the metadata.
+  pollInspect: (listId: string) =>
+    request<{ ready: boolean; title: string; size: number; files: { index: number; name: string; size: number }[] }>(
+      `/tasks/inspect/${encodeURIComponent(listId)}`
+    ),
+  // Commit the chosen file indices (those to KEEP) into a real download task.
+  commitTask: (listId: string, selected: number[], destination: string) =>
+    request<{ ok: true }>('/tasks/commit', jsonBody({ listId, selected, destination })),
+  // Abandon an inspect the user cancelled (best-effort).
+  deleteInspect: (listId: string) =>
+    request<{ ok: true }>(`/tasks/inspect/${encodeURIComponent(listId)}`, { method: 'DELETE' }).catch(() => undefined),
+
   // #99/#120 — fetch what the bot stashed for the add-flow handoff. A stash holds
   // either a .torrent's bytes (kind 'bytes' → base64 + filename, rebuilt into a
   // File) or a magnet/URL string (kind 'uri'). The wizard resumes at the folder step.

@@ -18,6 +18,10 @@ function makeSynology(overrides: Partial<SynologyClient> = {}): SynologyClient {
     resumeTask: async () => ({ ok: true as const }),
     deleteTask: async () => ({ ok: true as const }),
     createDownloadTask: async () => ({ ok: true as const }),
+    createInspectList: async () => ({ ok: true as const, listId: 'btdl_test' }),
+    getInspectList: async () => ({ ok: true as const, data: { files: [{ index: 0, name: 'Movie/a.mkv', size: 100 }], title: 'Movie', size: 100, type: 'bt' } }),
+    commitInspectList: async () => ({ ok: true as const }),
+    deleteInspectList: async () => ({ ok: true as const }),
     listSharedFolders: async () => ({ ok: true as const, data: [] }),
     listFolders: async () => ({ ok: true as const, data: [] }),
     getSystemUtilization: async () => ({ ok: true as const, data: { cpu: { user_load: 1, system_load: 2 }, memory: { real_usage: 30, total_real: 1000, avail_real: 700 } } }),
@@ -325,6 +329,102 @@ describe('Mini App server — tasks: create (unified POST /api/tasks)', () => {
     fd.append('destination', '/volume1/dl')
     const res = await makeApp().request('/api/tasks', { method: 'POST', headers: ownerHeaders(), body: fd })
     expect(res.status).toBe(400)
+  })
+})
+
+describe('Mini App server — per-file selection (inspect → commit)', () => {
+  it('POST /api/tasks/inspect requires auth', async () => {
+    const res = await makeApp().request('/api/tasks/inspect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri: 'magnet:?xt=1', destination: '/v1' }),
+    })
+    expect(res.status).toBe(401)
+  })
+
+  it('POST /api/tasks/inspect (magnet) returns the list_id and forwards to createInspectList', async () => {
+    let args: { uri: string; dest: string } | undefined
+    const app = makeApp(makeSynology({
+      createInspectList: async (uri, dest) => { args = { uri, dest }; return { ok: true, listId: 'btdlABC' } },
+    }))
+    const res = await app.request('/api/tasks/inspect', jsonReq({ uri: 'magnet:?xt=urn:btih:abc', destination: '/v1' }))
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({ listId: 'btdlABC' })
+    expect(args).toEqual({ uri: 'magnet:?xt=urn:btih:abc', dest: '/v1' })
+  })
+
+  it('POST /api/tasks/inspect (Toloka) self-hosts the .torrent, then inspects that URL', async () => {
+    let inspectArgs: { uri: string; dest: string } | undefined
+    const synology = makeSynology({
+      createInspectList: async (uri, dest) => { inspectArgs = { uri, dest }; return { ok: true, listId: 'btdlT' } },
+    })
+    const toloka = makeToloka({ downloadTorrent: async () => new Uint8Array([9, 9]) })
+    const res = await makeApp(synology, toloka).request(
+      '/api/tasks/inspect',
+      jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/films' })
+    )
+    expect(res.status).toBe(201)
+    expect(inspectArgs?.dest).toBe('/films')
+    expect(inspectArgs?.uri).toMatch(/^https:\/\/nas\.test\/torrent-file\/[a-f0-9]+\.torrent$/)
+  })
+
+  it('POST /api/tasks/inspect 502 when createInspectList fails', async () => {
+    const app = makeApp(makeSynology({ createInspectList: async () => ({ ok: false, reason: 'no list_id' }) }))
+    const res = await app.request('/api/tasks/inspect', jsonReq({ uri: 'magnet:?xt=1', destination: '/v1' }))
+    expect(res.status).toBe(502)
+  })
+
+  it('GET /api/tasks/inspect/:listId returns ready + the file tree', async () => {
+    const app = makeApp(makeSynology({
+      getInspectList: async (listId) => ({
+        ok: true,
+        data: { files: [{ index: 0, name: 'S/a.mkv', size: 10 }, { index: 1, name: 'S/b.srt', size: 2 }], title: 'S', size: 12, type: 'bt' },
+      }) as any,
+    }))
+    const res = await app.request('/api/tasks/inspect/btdlABC', { headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      ready: true,
+      title: 'S',
+      size: 12,
+      files: [{ index: 0, name: 'S/a.mkv', size: 10 }, { index: 1, name: 'S/b.srt', size: 2 }],
+    })
+  })
+
+  it('GET /api/tasks/inspect/:listId reports ready:false while metadata is still fetching', async () => {
+    const app = makeApp(makeSynology({
+      getInspectList: async () => ({ ok: true, data: { files: [], title: '', size: 0, type: 'bt' } }) as any,
+    }))
+    const res = await app.request('/api/tasks/inspect/btdlABC', { headers: ownerHeaders() })
+    expect((await res.json()).ready).toBe(false)
+  })
+
+  it('POST /api/tasks/commit forwards listId, selected indices, and destination', async () => {
+    let args: { listId: string; selected: number[]; dest: string } | undefined
+    const app = makeApp(makeSynology({
+      commitInspectList: async (listId, selected, dest) => { args = { listId, selected, dest }; return { ok: true } },
+    }))
+    const res = await app.request('/api/tasks/commit', jsonReq({ listId: 'btdlABC', selected: [0, 5], destination: '/v1' }))
+    expect(res.status).toBe(201)
+    expect(args).toEqual({ listId: 'btdlABC', selected: [0, 5], dest: '/v1' })
+  })
+
+  it('POST /api/tasks/commit 400 when listId or destination missing', async () => {
+    const res = await makeApp().request('/api/tasks/commit', jsonReq({ selected: [0], destination: '/v1' }))
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/tasks/commit 400 when selected is not an integer array', async () => {
+    const res = await makeApp().request('/api/tasks/commit', jsonReq({ listId: 'x', selected: ['a'], destination: '/v1' }))
+    expect(res.status).toBe(400)
+  })
+
+  it('DELETE /api/tasks/inspect/:listId abandons the inspect', async () => {
+    let deleted: string | undefined
+    const app = makeApp(makeSynology({ deleteInspectList: async (listId) => { deleted = listId; return { ok: true } } }))
+    const res = await app.request('/api/tasks/inspect/btdlABC', { method: 'DELETE', headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    expect(deleted).toBe('btdlABC')
   })
 })
 

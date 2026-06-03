@@ -132,25 +132,62 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   }
 
   /**
-   * Add a whole-torrent task from raw .torrent bytes by stashing them and handing
-   * DownloadStation a URL it fetches ITSELF — the documented `SYNO.DownloadStation
-   * .Task` `create` `uri` (which accepts an HTTP `.torrent` link). Verified live:
-   * DSM downloads + parses a .torrent served from this host (through the Cloudflare
-   * tunnel) to completion. Used by the Mini App .torrent upload and the Toloka add
-   * (Toloka needs an authenticated fetch, so the bytes are downloaded here first).
-   * The previous DownloadStation2 file-upload / Telegram-hosted-URL paths were the
-   * source of the "task created but never starts" bug (DSM-7 rejects the multipart,
-   * and Telegram file URLs expire before DSM fetches them).
+   * Stash raw .torrent bytes and return a URL DownloadStation can fetch ITSELF
+   * (DSM can't pull an authenticated Toloka link or Mini-App upload). Verified
+   * live: DSM downloads + parses a .torrent served from this host through the
+   * Cloudflare tunnel. Returns null when MINIAPP_URL is unconfigured.
    */
-  async function addTorrentByBytes(c: Context<AppEnv>, bytes: Uint8Array, _fileName: string, destination: string) {
-    if (!miniappUrl) {
-      return c.json({ error: 'MINIAPP_URL is not configured — cannot hand DownloadStation a .torrent URL' }, 502)
-    }
+  function servedUrlForBytes(bytes: Uint8Array): string | null {
+    if (!miniappUrl) return null
     const token = stashServedTorrent(bytes)
-    const url = `${miniappUrl.replace(/\/$/, '')}/torrent-file/${token}.torrent`
-    const result = await synology.createDownloadTask(url, destination)
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    return c.json({ ok: true }, 201)
+    return `${miniappUrl.replace(/\/$/, '')}/torrent-file/${token}.torrent`
+  }
+
+  /**
+   * Resolve an add request (whole-torrent or inspect) to a single URL DSM can
+   * fetch + the destination. Handles all three sources: a multipart `.torrent`
+   * upload and an authenticated Toloka link are downloaded → self-hosted; a
+   * magnet / plain `.torrent` URL is handed through as-is. Shared by the
+   * whole-torrent add and the per-file inspect so they branch identically.
+   */
+  async function resolveSource(
+    c: Context<AppEnv>
+  ): Promise<{ ok: true; url: string; destination: string } | { ok: false; status: 400 | 502; error: string }> {
+    const contentType = c.req.header('content-type') ?? ''
+
+    if (contentType.includes('multipart/form-data')) {
+      const body = await c.req.parseBody().catch(() => null)
+      const file = body?.['file']
+      const destination = body?.['destination']
+      if (!(file instanceof File) || typeof destination !== 'string' || !destination) {
+        return { ok: false, status: 400, error: 'file and destination are required' }
+      }
+      const url = servedUrlForBytes(new Uint8Array(await file.arrayBuffer()))
+      if (!url) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
+      return { ok: true, url, destination }
+    }
+
+    const body = await c.req.json().catch(() => null)
+    const uri = body?.uri
+    const destination = body?.destination
+    if (typeof uri !== 'string' || !uri || typeof destination !== 'string' || !destination) {
+      return { ok: false, status: 400, error: 'uri and destination are required' }
+    }
+
+    if (!uri.startsWith('magnet:') && isTolokaUrl(uri, tolokaBaseUrl)) {
+      let bytes: Uint8Array
+      try {
+        bytes = await toloka.downloadTorrent(uri)
+      } catch (err) {
+        return { ok: false, status: 502, error: errorMessage(err) }
+      }
+      const url = servedUrlForBytes(bytes)
+      if (!url) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
+      return { ok: true, url, destination }
+    }
+
+    // Magnets and plain URLs DSM can fetch directly — no hosting hop.
+    return { ok: true, url: uri, destination }
   }
 
   app.get('/healthz', (c) => c.json({ ok: true }))
@@ -205,54 +242,71 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     return c.json({ ok: true })
   })
 
-  // --- Tasks: create (unified, per #58) ---
+  // --- Tasks: create whole torrent (unified, per #58) ---
   // Accepts either JSON {uri,destination} (magnet or URL) or a multipart
   // {file,destination} (.torrent upload). Toloka URLs are fetched with auth;
   // magnets and plain URLs are handed straight to DownloadStation.
 
   app.post('/api/tasks', async (c) => {
-    const contentType = c.req.header('content-type') ?? ''
-
-    if (contentType.includes('multipart/form-data')) {
-      const body = await c.req.parseBody().catch(() => null)
-      const file = body?.['file']
-      const destination = body?.['destination']
-      if (!(file instanceof File) || typeof destination !== 'string' || !destination) {
-        return c.json({ error: 'file and destination are required' }, 400)
-      }
-      const bytes = new Uint8Array(await file.arrayBuffer())
-      return addTorrentByBytes(c, bytes, file.name, destination)
-    }
-
-    const body = await c.req.json().catch(() => null)
-    const uri = body?.uri
-    const destination = body?.destination
-    if (typeof uri !== 'string' || !uri || typeof destination !== 'string' || !destination) {
-      return c.json({ error: 'uri and destination are required' }, 400)
-    }
-
-    if (!uri.startsWith('magnet:') && isTolokaUrl(uri, tolokaBaseUrl)) {
-      let bytes: Uint8Array
-      try {
-        bytes = await toloka.downloadTorrent(uri)
-      } catch (err) {
-        return c.json({ error: errorMessage(err) }, 502)
-      }
-      const title = typeof body?.title === 'string' && body.title ? body.title : 'download'
-      return addTorrentByBytes(c, bytes, `${title}.torrent`, destination)
-    }
-
-    // Magnets (and plain URLs DSM can fetch directly) need no hosting hop.
-    const result = await synology.createDownloadTask(uri, destination)
+    const src = await resolveSource(c)
+    if (!src.ok) return c.json({ error: src.error }, src.status)
+    const result = await synology.createDownloadTask(src.url, src.destination)
     if (!result.ok) return c.json({ error: result.reason }, 502)
     return c.json({ ok: true }, 201)
   })
 
-  // Per-file selection (#123) and the DownloadStation2 inspect → commit flow it
-  // depended on are GONE: the add always grabs the whole torrent through the
-  // documented `SYNO.DownloadStation.Task` create (uri or file upload), which is
-  // the only path that reliably starts downloads. There is no `/api/tasks/inspect`
-  // or `/api/tasks/commit` anymore — the client adds the whole torrent directly.
+  // --- Per-file selection (#123): inspect → (client picks files) → commit ---
+  // DS2 `create_list:true` parses the torrent into a transient `list_id` we read
+  // the file tree from, then `Task.List download` commits the chosen subset.
+  // Two-call inspect (start + poll) so the metadata-fetch wait lives client-side.
+
+  // Start an inspect: same source resolution as the whole-torrent add, but
+  // create_list. Returns the list_id immediately; the file tree populates async.
+  app.post('/api/tasks/inspect', async (c) => {
+    const src = await resolveSource(c)
+    if (!src.ok) return c.json({ error: src.error }, src.status)
+    const result = await synology.createInspectList(src.url, src.destination)
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    return c.json({ listId: result.listId }, 201)
+  })
+
+  // Poll a started inspect for its file tree. `ready` flips true once DSM has
+  // parsed the torrent's metadata (the client polls until then).
+  app.get('/api/tasks/inspect/:listId', async (c) => {
+    const result = await synology.getInspectList(c.req.param('listId'))
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    const files = result.data.files ?? []
+    return c.json({
+      ready: files.length > 0,
+      title: result.data.title ?? '',
+      size: result.data.size ?? 0,
+      files: files.map((f) => ({ index: f.index, name: f.name, size: f.size })),
+    })
+  })
+
+  // Abandon an inspect the user cancelled (best-effort).
+  app.delete('/api/tasks/inspect/:listId', async (c) => {
+    const result = await synology.deleteInspectList(c.req.param('listId'))
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    return c.json({ ok: true })
+  })
+
+  // Commit the chosen files (`selected` = indices to KEEP) into a real task.
+  app.post('/api/tasks/commit', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const listId = body?.listId
+    const destination = body?.destination
+    const selected = body?.selected
+    if (typeof listId !== 'string' || !listId || typeof destination !== 'string' || !destination) {
+      return c.json({ error: 'listId and destination are required' }, 400)
+    }
+    if (!Array.isArray(selected) || !selected.every((n) => Number.isInteger(n))) {
+      return c.json({ error: 'selected must be an array of file indices' }, 400)
+    }
+    const result = await synology.commitInspectList(listId, selected, destination)
+    if (!result.ok) return c.json({ error: result.reason }, 502)
+    return c.json({ ok: true }, 201)
+  })
 
   // --- Add-intake stash (#99, generalized #120): fetch what the bot stashed ---
   // A stash holds either a .torrent's BYTES (#99) or a magnet/URL string (#120).

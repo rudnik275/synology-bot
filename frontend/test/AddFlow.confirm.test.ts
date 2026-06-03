@@ -1,0 +1,184 @@
+// Confirm-step per-file selection (#123) — restored file TREE design on the
+// verified two-call inspect backend (POST /api/tasks/inspect → list_id; GET
+// /api/tasks/inspect/:id → {ready,files}; POST /api/tasks/commit → subset).
+//
+// Reaching Confirm AUTO-inspects (no opt-in button) and renders the tree; the
+// owner toggles per-file checkboxes; «Добавить» commits the selected subset.
+// Magnets / inspect failures fall back to a whole-torrent add.
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { mount, flushPromises } from '@vue/test-utils'
+import AddFlow from '../src/components/AddFlow.vue'
+
+const realFetch = globalThis.fetch
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+const SEARCH_RESULTS = [
+  {
+    id: 'r1',
+    title: 'Andor S02 1080p WEB-DL',
+    size: '24.3 GB',
+    seeders: 30,
+    leechers: 2,
+    downloadUrl: 'https://toloka.to/download.php?id=1',
+    category: 'tv',
+    year: 2025,
+    quality: ['1080p', 'WEB-DL'],
+    languages: ['Ukr', 'Eng'],
+  },
+]
+
+// All under one root folder → buildFileTree collapses it to a crumb, leaving a
+// flat list of file rows (every tree-check-N visible without expanding folders).
+const INSPECT_FILES = [
+  { index: 0, name: 'Andor.S02/Andor.S02E01.1080p.mkv', size: 3_100_000_000 },
+  { index: 1, name: 'Andor.S02/Andor.S02E02.1080p.mkv', size: 2_900_000_000 },
+  { index: 2, name: 'Andor.S02/poster.jpg', size: 1_200_000 },
+]
+
+let fetchCalls: Array<{ url: string; init?: RequestInit }> = []
+let inspectFiles: Array<{ index: number; name: string; size: number }> = INSPECT_FILES
+
+beforeEach(() => {
+  fetchCalls = []
+  inspectFiles = INSPECT_FILES
+  localStorage.clear()
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    fetchCalls.push({ url, init })
+    if ((url as string).includes('/api/folders')) {
+      return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+    }
+    if ((url as string).includes('/api/search')) {
+      return Promise.resolve(jsonResponse({ results: SEARCH_RESULTS }))
+    }
+    if ((url as string) === '/api/tasks/inspect') {
+      return Promise.resolve(jsonResponse({ listId: 'LZ' }, 201))
+    }
+    if ((url as string).startsWith('/api/tasks/inspect/')) {
+      if (init?.method === 'DELETE') return Promise.resolve(jsonResponse({ ok: true }))
+      return Promise.resolve(jsonResponse({ ready: true, title: 'Andor.S02', size: 6_001_200_000, files: inspectFiles }))
+    }
+    if ((url as string) === '/api/tasks/commit') {
+      return Promise.resolve(jsonResponse({ ok: true }, 201))
+    }
+    if ((url as string) === '/api/tasks') {
+      return Promise.resolve(jsonResponse({ ok: true }, 201))
+    }
+    return Promise.resolve(jsonResponse({ folders: [] }))
+  }) as typeof fetch
+})
+
+afterEach(() => {
+  globalThis.fetch = realFetch
+  document.body.innerHTML = ''
+  localStorage.clear()
+})
+
+async function openWizard() {
+  const wrapper = mount(AddFlow)
+  ;(wrapper.vm as unknown as { openSheet: () => void }).openSheet()
+  await flushPromises()
+  return wrapper
+}
+
+/** Drive the search path to the Confirm step (which auto-inspects). */
+async function toConfirm() {
+  const q = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+  q.value = 'Andor'
+  q.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
+  document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+  await flushPromises()
+  document.querySelector<HTMLButtonElement>('[data-testid="result-r1"]')!.click() // → Folder
+  await flushPromises()
+  document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
+  await flushPromises()
+  document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click() // → Confirm
+  await flushPromises()
+  await flushPromises() // let the auto-inspect (inspect POST + poll GET) settle
+}
+
+describe('AddFlow confirm — inspect → file tree (#123)', () => {
+  it('auto-inspects on entering Confirm and renders the file tree with SxxExx labels', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    // It inspected (create_list), not the whole-torrent create.
+    const inspect = fetchCalls.find((c) => c.url === '/api/tasks/inspect' && c.init?.method === 'POST')
+    expect(inspect).toBeTruthy()
+    expect(JSON.parse(inspect!.init?.body as string).uri).toBe('https://toloka.to/download.php?id=1')
+
+    expect(document.querySelector('[data-testid="file-tree"]')).not.toBeNull()
+    const labels = Array.from(document.querySelectorAll('[data-testid="tree-label"]')).map((e) => e.textContent)
+    expect(labels).toContain('S02E01')
+    expect(labels).toContain('S02E02')
+    wrapper.unmount()
+  })
+
+  it('«Добавить» commits the selected subset (all files ticked by default)', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
+    expect(commit).toBeTruthy()
+    const body = JSON.parse(commit!.init?.body as string)
+    expect(body.listId).toBe('LZ')
+    expect([...body.selected].sort((a: number, b: number) => a - b)).toEqual([0, 1, 2])
+    wrapper.unmount()
+  })
+
+  it('unticking a file commits only the kept indices', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+    // Untick the poster (index 2) via its tree checkbox.
+    document.querySelector<HTMLElement>('[data-testid="tree-check-2"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
+    expect(commit).toBeTruthy()
+    expect([...JSON.parse(commit!.init?.body as string).selected].sort((a: number, b: number) => a - b)).toEqual([0, 1])
+    wrapper.unmount()
+  })
+
+  it('Add is disabled when every file is unticked', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+    for (const i of [0, 1, 2]) {
+      document.querySelector<HTMLElement>(`[data-testid="tree-check-${i}"]`)!.click()
+      await flushPromises()
+    }
+    expect((document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement).disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('cancels the inspect on the NAS when the owner goes Back from Confirm (Изменить)', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-edit-folder"]')!.click()
+    await flushPromises()
+    expect(fetchCalls.some((c) => c.url === '/api/tasks/inspect/LZ' && c.init?.method === 'DELETE')).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('AddFlow confirm — whole-torrent fallback (#123)', () => {
+  it('falls back to a whole-torrent add when inspect resolves no files', async () => {
+    inspectFiles = []
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    expect(document.querySelector('[data-testid="inspect-whole"]')).not.toBeNull()
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    expect(fetchCalls.some((c) => c.url === '/api/tasks')).toBe(true)
+    expect(fetchCalls.some((c) => c.url === '/api/tasks/commit')).toBe(false)
+    wrapper.unmount()
+  })
+})

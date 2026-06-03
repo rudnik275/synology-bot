@@ -25,14 +25,9 @@ import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { formatBytes } from '../format'
-import type { SearchResultView } from '../types'
-
-/** One file inside the inspected torrent (#123 per-file selection). */
-interface InspectFile {
-  index: number
-  name: string
-  size: number
-}
+import FileTree from './FileTree.vue'
+import { buildFileTree, allIndices, type FileTree as FileTreeModel, type InspectFile } from './fileTree'
+import type { SearchResultView, InspectFileView } from '../types'
 
 // How the add source was supplied:
 //   'search' — in-app Toloka search (the only in-app mode)
@@ -84,47 +79,41 @@ const selectedResult = ref<SearchResultView | null>(null)
 // Search history dropdown
 const searchHistoryVisible = ref(false)
 
-// ─── Per-file selection (#123) ───────────────────────────────────────────────
-// On reaching Confirm we inspect the torrent (DS2 create_list) to list its files
-// so the owner can untick the ones to skip. If inspect fails or the metadata
-// never resolves we fall back to adding the whole torrent (inspectFailed).
-const inspecting = ref(false)
-const inspectFailed = ref(false)
+// ─── Confirm step: inspect → select → commit (#123) ──────────────────────────
+// Reaching Confirm AUTO-inspects (DS2 create_list) and shows the torrent's file
+// TREE so the owner can untick files; «Добавить» then commits only the ticked
+// subset. Magnet sources (no local bytes to self-host) and inspect failures fall
+// back to a whole-torrent add ('whole'), so the owner can always proceed.
+type InspectState = 'idle' | 'inspecting' | 'ready' | 'whole'
+const inspectState = ref<InspectState>('idle')
 const inspectListId = ref<string | null>(null)
-const inspectFiles = ref<InspectFile[]>([])
-const selectedIndices = ref<Set<number>>(new Set())
-let inspectSeq = 0 // guards against a stale poll resolving after reset/re-open
+const inspectFiles = ref<InspectFileView[]>([])
+const selectedIndices = ref<number[]>([])
+const inspectError = ref<string | null>(null)
+let inspectSeq = 0 // drop a stale poll that resolves after reset / re-open
 
-const inspectReady = computed<boolean>(() => inspectFiles.value.length > 0)
-const allSelected = computed<boolean>(
-  () => inspectReady.value && selectedIndices.value.size === inspectFiles.value.length
+/** The built folder/file tree for the current inspect (null until ready). */
+const fileTree = computed<FileTreeModel | null>(() =>
+  inspectState.value === 'ready' && inspectFiles.value.length > 0
+    ? buildFileTree(inspectFiles.value as InspectFile[])
+    : null
 )
-const selectedSize = computed<number>(() =>
-  inspectFiles.value.reduce((sum, f) => (selectedIndices.value.has(f.index) ? sum + f.size : sum), 0)
-)
 
-function isSelected(index: number): boolean {
-  return selectedIndices.value.has(index)
-}
-function toggleFile(index: number): void {
-  const next = new Set(selectedIndices.value)
-  if (next.has(index)) next.delete(index)
-  else next.add(index)
-  selectedIndices.value = next
-}
-function toggleAll(): void {
-  selectedIndices.value = allSelected.value ? new Set() : new Set(inspectFiles.value.map((f) => f.index))
-}
-/** Short file name (drop the torrent's top folder) for the row label. */
-function fileLabel(name: string): string {
-  const parts = name.split('/')
-  return parts.length > 1 ? parts.slice(1).join('/') : name
-}
+/** Total size of the ticked files — drives the card's size readout. */
+const selectedSize = computed<number>(() => {
+  const sel = new Set(selectedIndices.value)
+  return inspectFiles.value.reduce((sum, f) => (sel.has(f.index) ? sum + f.size : sum), 0)
+})
 
-// ─── Confirm step ────────────────────────────────────────────────────────────
-// The whole torrent is always added (the documented DownloadStation create —
-// uri or file upload — is the only path that reliably starts downloads). The
-// Confirm step is a plain summary: title + metadata chips + destination folder.
+/** Whether the source can be inspected for a per-file tree. Magnets (uri mode)
+ *  have no local bytes to self-host → whole-torrent only. */
+const canInspect = computed<boolean>(() => {
+  if (mode.value === 'search') return selectedResult.value !== null
+  if (mode.value === 'file') return selectedFile.value !== null
+  return false
+})
+
+// ─── Confirm step metadata ─────────────────────────────────────────────────
 
 /** Clean metadata for the confirm card header (#117 fields off the result). */
 const confirmTitle = computed<string>(() => {
@@ -229,7 +218,7 @@ function resetForm(): void {
   searchError.value = null
   searchQueried.value = false
   selectedResult.value = null
-  abandonInspect()
+  resetInspect()
 }
 
 function goNext(): void {
@@ -237,8 +226,9 @@ function goNext(): void {
   if (step.value < 3) step.value = (step.value + 1) as 1 | 2 | 3
 }
 
-/** Sheet close (X / dismiss). */
+/** Sheet close (X / dismiss): release any uncommitted inspect, then reset. */
 function onClose(): void {
+  cancelInspectIfOpen()
   resetForm()
 }
 
@@ -246,6 +236,11 @@ function goBack(): void {
   // On the handoff path the Folder step (2) is the first drawn step, so Back
   // from Confirm lands on Folder, and there is no Back on Folder itself.
   const floor = handoff.value ? 2 : 1
+  // Leaving Confirm without committing → release the inspecting list on the NAS.
+  if (step.value === 3) {
+    cancelInspectIfOpen()
+    resetInspect()
+  }
   if (step.value > floor) step.value = (step.value - 1) as 1 | 2 | 3
 }
 
@@ -277,57 +272,75 @@ watch([open, step], ([isOpen, cur]) => {
 onUnmounted(hideTgBackButton)
 
 // --- Inspect-on-Confirm (#123) ---
-// Reaching the Confirm step kicks off an inspect so the file list is ready by
-// the time the owner looks at it. A sequence guard drops any poll that resolves
-// after the wizard was reset/closed (or re-inspected).
-async function startInspect(): Promise<void> {
-  if (inspectListId.value || inspecting.value) return
+// Reaching Confirm auto-inspects so the file tree is ready by the time the owner
+// looks. A sequence guard drops any poll that resolves after reset/close/re-open.
+async function runInspect(): Promise<void> {
+  if (!canInspect.value) {
+    inspectState.value = 'whole'
+    return
+  }
   const seq = ++inspectSeq
-  inspecting.value = true
-  inspectFailed.value = false
+  inspectState.value = 'inspecting'
+  inspectError.value = null
   try {
     let started: { listId: string } | null = null
     if (mode.value === 'file' && selectedFile.value) {
       started = await api.inspectFile(selectedFile.value, destination.value)
-    } else if (mode.value === 'uri' && handoffUri.value.trim()) {
-      started = await api.inspect(handoffUri.value.trim(), destination.value)
     } else if (mode.value === 'search' && selectedResult.value) {
       started = await api.inspect(selectedResult.value.downloadUrl, destination.value, selectedResult.value.title)
     }
-    if (!started) return
+    if (!started) {
+      inspectState.value = 'whole'
+      return
+    }
     if (seq !== inspectSeq) {
       void api.deleteInspect(started.listId)
       return
     }
     inspectListId.value = started.listId
+    // Poll the inspect list until DSM has parsed the torrent's metadata.
+    let files: InspectFileView[] = []
     for (let i = 0; i < 20 && seq === inspectSeq; i++) {
       const poll = await api.pollInspect(started.listId)
       if (seq !== inspectSeq) return
       if (poll.ready) {
-        inspectFiles.value = poll.files
-        selectedIndices.value = new Set(poll.files.map((f) => f.index)) // all selected by default
-        return
+        files = poll.files.map((f) => ({ index: f.index, path: f.name, size: f.size }))
+        break
       }
-      await new Promise((r) => setTimeout(r, 1500))
+      await new Promise((r) => setTimeout(r, 1000))
     }
-    inspectFailed.value = true // timed out → whole-torrent fallback
-  } catch {
-    inspectFailed.value = true
-  } finally {
-    if (seq === inspectSeq) inspecting.value = false
+    if (seq !== inspectSeq) return
+    inspectFiles.value = files
+    selectedIndices.value = allIndices(files as InspectFile[]) // all ticked by default
+    inspectState.value = files.length > 0 ? 'ready' : 'whole'
+  } catch (e) {
+    inspectError.value = e instanceof Error ? e.message : String(e)
+    inspectState.value = 'whole'
   }
 }
 
-/** Drop an un-committed inspect (reset/close) — invalidate polls + free the list_id. */
-function abandonInspect(): void {
+/** Clear inspect/selection state (reset / leaving Confirm). */
+function resetInspect(): void {
   inspectSeq++
-  if (inspectListId.value) void api.deleteInspect(inspectListId.value)
-  inspecting.value = false
-  inspectFailed.value = false
+  inspectState.value = 'idle'
   inspectListId.value = null
   inspectFiles.value = []
-  selectedIndices.value = new Set()
+  selectedIndices.value = []
+  inspectError.value = null
 }
+
+/** Best-effort release of an uncommitted inspect so no orphan lingers on the NAS. */
+function cancelInspectIfOpen(): void {
+  inspectSeq++
+  const id = inspectListId.value
+  if (id && inspectState.value !== 'whole') void api.deleteInspect(id)
+  inspectListId.value = null
+}
+
+// Auto-inspect when the Confirm step is entered (both in-app and handoff paths).
+watch(step, (now, prev) => {
+  if (now === 3 && prev !== 3) void runInspect()
+})
 
 async function runSearch(): Promise<void> {
   const q = searchQuery.value.trim()
@@ -420,8 +433,8 @@ async function create(): Promise<void> {
   // via the documented create — a .torrent upload (file) or a uri (magnet /
   // search / handoff URL).
   let doAdd: () => Promise<unknown>
-  if (inspectReady.value && inspectListId.value && !inspectFailed.value) {
-    if (selectedIndices.value.size === 0) {
+  if (inspectState.value === 'ready' && inspectListId.value) {
+    if (selectedIndices.value.length === 0) {
       errorMsg.value = 'Выберите хотя бы один файл.'
       return
     }
@@ -611,58 +624,40 @@ async function create(): Promise<void> {
               <span v-for="chip in confirmChips" :key="chip" class="chip">{{ chip }}</span>
             </div>
 
-            <!-- File selection (#123): opt-in. Default adds the whole torrent;
-                 «Выбрать файлы» inspects (DS2 create_list) and shows a checklist
-                 so the owner can untick files; commit downloads only the ticked. -->
+            <!-- Files section (#123): auto-inspect → file TREE → commit subset.
+                 Header rule + tree, NO outer box (border diet). -->
             <div class="files">
-              <!-- Inspecting -->
-              <div v-if="inspecting" class="files-loading" data-testid="inspect-loading">
-                <span class="spinner" aria-hidden="true"></span>
-                <span>Читаем файлы торрента…</span>
+              <div class="files-hd">
+                <span class="files-t">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
+                  Файлы<template v-if="inspectState === 'ready'"> · {{ inspectFiles.length }}</template>
+                </span>
+                <span v-if="inspectState === 'ready'" class="files-sz" data-testid="confirm-size">
+                  {{ formatBytes(selectedSize) }}
+                </span>
               </div>
 
-              <!-- Ready: per-file checklist -->
-              <template v-else-if="inspectReady">
-                <div class="files-hd">
-                  <button type="button" class="files-all" data-testid="files-toggle-all" @click="toggleAll">
-                    {{ allSelected ? 'Снять все' : 'Выбрать все' }}
-                  </button>
-                  <span class="files-sz" data-testid="files-selected-size">{{ formatBytes(selectedSize) }}</span>
-                </div>
-                <ul class="files-list" data-testid="files-list">
-                  <li v-for="f in inspectFiles" :key="f.index" class="file-row">
-                    <label class="file-check">
-                      <input
-                        type="checkbox"
-                        :checked="isSelected(f.index)"
-                        :data-testid="`file-${f.index}`"
-                        @change="toggleFile(f.index)"
-                      />
-                      <span class="file-name">{{ fileLabel(f.name) }}</span>
-                      <span class="file-size">{{ formatBytes(f.size) }}</span>
-                    </label>
-                  </li>
-                </ul>
-              </template>
+              <!-- Inspecting: loading state while polling the inspect list. -->
+              <div v-if="inspectState === 'inspecting'" class="files-loading" data-testid="inspect-loading">
+                <span class="spinner" aria-hidden="true"></span>
+                Читаю содержимое торрента…
+              </div>
 
-              <!-- Default: whole torrent + opt-in to pick files -->
-              <template v-else>
-                <p class="files-whole-msg" data-testid="confirm-whole-note">
-                  Торрент будет добавлен целиком.
+              <!-- Ready: the interactive tree with functional checkboxes. -->
+              <FileTree
+                v-else-if="inspectState === 'ready' && fileTree"
+                :tree="fileTree"
+                v-model:selected="selectedIndices"
+              />
+
+              <!-- Whole-torrent fallback (magnet / inspect unavailable or failed). -->
+              <div v-else class="files-whole" data-testid="inspect-whole">
+                <p class="files-whole-msg">
+                  {{ inspectError
+                    ? 'Не удалось прочитать список файлов — будет добавлен торрент целиком.'
+                    : 'Для этого источника список файлов недоступен — торрент добавится целиком.' }}
                 </p>
-                <button
-                  v-if="!inspectFailed"
-                  type="button"
-                  class="files-pick-btn"
-                  data-testid="pick-files-btn"
-                  @click="startInspect"
-                >
-                  Выбрать файлы
-                </button>
-                <p v-else class="files-fallback-note" data-testid="inspect-failed">
-                  Не удалось прочитать файлы — торрент добавится целиком.
-                </p>
-              </template>
+              </div>
             </div>
 
             <!-- Folder block (variant A): label + path + «Изменить» (no pin). -->
@@ -736,7 +731,7 @@ async function create(): Promise<void> {
           size="lg"
           class="footer-btn footer-btn--full footer-btn--coral"
           data-testid="create-btn"
-          :disabled="submitting || (inspectReady && selectedIndices.size === 0)"
+          :disabled="submitting || inspectState === 'inspecting' || (inspectState === 'ready' && selectedIndices.length === 0)"
           @click="create"
         >
           {{ submitting ? 'Добавление…' : 'Добавить' }}
@@ -1242,93 +1237,6 @@ async function create(): Promise<void> {
   font-family: var(--mono, monospace);
   font-size: 12px;
   font-weight: var(--fw-bold);
-  opacity: 0.6;
-}
-
-/* «Выбрать все / Снять все» toggle in the files header (#123). */
-.files-all {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: 11px;
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  opacity: 0.7;
-}
-.files-all:hover {
-  opacity: 1;
-}
-
-/* Per-file checklist (#123). Scrolls within the card if the torrent is large. */
-.files-list {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-1) 0 0;
-  overflow-y: auto;
-  min-height: 0;
-  flex: 1;
-}
-.file-row {
-  border-bottom: 1px solid rgba(9, 9, 11, 0.08);
-}
-.file-row:last-child {
-  border-bottom: none;
-}
-.file-check {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  cursor: pointer;
-  min-height: 40px;
-}
-.file-check input {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  accent-color: var(--ink);
-}
-.file-name {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.file-size {
-  flex-shrink: 0;
-  font-family: var(--mono, monospace);
-  font-size: 11px;
-  font-weight: var(--fw-bold);
-  opacity: 0.55;
-}
-
-/* Opt-in «Выбрать файлы» pill on the Confirm step (#123). */
-.files-pick-btn {
-  align-self: flex-start;
-  margin-top: var(--space-2);
-  min-height: 36px;
-  padding: 6px 14px;
-  font-family: var(--font);
-  font-size: 12px;
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  background: var(--paper);
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-}
-.files-fallback-note {
-  margin: var(--space-2) 0 0;
-  font-size: var(--fs-xs);
   opacity: 0.6;
 }
 

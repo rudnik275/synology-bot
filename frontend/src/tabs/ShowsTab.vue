@@ -149,6 +149,7 @@ async function handleUnsubscribe(): Promise<void> {
           placeholder="Поиск шоу…"
           class="search-input"
           autocomplete="off"
+          @keydown.enter="(e) => (e.target as HTMLElement).blur()"
         />
       </div>
 

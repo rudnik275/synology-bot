@@ -343,6 +343,10 @@ watch(step, (now, prev) => {
 })
 
 async function runSearch(): Promise<void> {
+  // Dismiss the on-screen keyboard on the explicit search commit (Enter, the
+  // «Поиск» button, or a recent-search chip — all funnel through here). iOS
+  // otherwise keeps the keyboard up over the results. (#159)
+  ;(document.activeElement as HTMLElement | null)?.blur()
   const q = searchQuery.value.trim()
   if (!q) return
   searchLoading.value = true

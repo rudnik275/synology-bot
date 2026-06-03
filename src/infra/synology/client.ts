@@ -1,4 +1,4 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoDownloadTaskCreateData, SynoStorageLoadInfo, ProcessGroupList, ProcessGroupSlice, SynoTaskListGetData, TaskListFile, TaskInspectResult } from './types.ts'
+import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoStorageLoadInfo, ProcessGroupList, ProcessGroupSlice } from './types.ts'
 
 const PATH_ENTRY = 'webapi/entry.cgi'
 const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
@@ -22,59 +22,6 @@ export function normalizeDownloadDestination(destination: string): string {
   // Strip leading slash
   normalized = normalized.replace(/^\//, '')
   return normalized
-}
-
-/**
- * A browser-style multipart boundary. DSM 7's `entry.cgi` multipart parser
- * SILENTLY DROPS every form field unless the boundary looks like a browser's
- * (`----WebKitFormBoundary…` / `----geckoformboundary…`). Bun's `FormData` (and
- * other libraries) emit a generic boundary, so DSM read zero fields — including
- * `_sid` and `type` — and every .torrent add / inspect failed with code 119
- * then 120. Verified on the live NAS: a browser-shaped boundary makes the exact
- * same payload succeed. (curl `-F` and `requests` hit this too; the synology-api
- * library carries a `generate_gecko_boundary()` for precisely this reason.)
- */
-function browserBoundary(): string {
-  const a = new Uint8Array(8)
-  crypto.getRandomValues(a)
-  const hex = Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('')
-  return `----WebKitFormBoundary${hex}`
-}
-
-/**
- * Encode text fields + one file part into a `multipart/form-data` body using a
- * browser-style boundary (see {@link browserBoundary}). Returns the raw bytes
- * and the matching `Content-Type` header to send alongside them. We build the
- * body by hand (rather than `FormData`) so we control the boundary.
- */
-function buildBrowserMultipart(
-  fields: Array<[string, string]>,
-  file: { partName: string; fileName: string; contentType: string; bytes: Uint8Array },
-): { body: Uint8Array; contentType: string } {
-  const boundary = browserBoundary()
-  const enc = new TextEncoder()
-  const head: Uint8Array[] = []
-  for (const [k, v] of fields) {
-    head.push(enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`))
-  }
-  head.push(
-    enc.encode(
-      `--${boundary}\r\nContent-Disposition: form-data; name="${file.partName}"; ` +
-        `filename="${file.fileName}"\r\nContent-Type: ${file.contentType}\r\n\r\n`,
-    ),
-  )
-  const tail = enc.encode(`\r\n--${boundary}--\r\n`)
-  const total = head.reduce((n, c) => n + c.length, 0) + file.bytes.length + tail.length
-  const body = new Uint8Array(total)
-  let off = 0
-  for (const c of head) {
-    body.set(c, off)
-    off += c.length
-  }
-  body.set(file.bytes, off)
-  off += file.bytes.length
-  body.set(tail, off)
-  return { body, contentType: `multipart/form-data; boundary=${boundary}` }
 }
 
 /** Synology HDD temperature classification, synthesised from numeric `temp` (°C). */
@@ -198,44 +145,23 @@ export class SynologyClient {
     return { ok: true, data: json.data as T }
   }
 
+  /**
+   * Add a Download Task from a `uri` — a magnet, or an HTTP/FTP/ED2K link
+   * (including a directly-fetchable `.torrent` URL). This is the documented
+   * `SYNO.DownloadStation.Task` `create` at version 3, where `uri` (v3+) and
+   * `destination` (v2+) are both available. DownloadStation fetches and parses
+   * the link itself; for sources DSM cannot fetch (e.g. an authenticated Toloka
+   * download) the caller downloads the bytes first and uses
+   * {@link createDownloadTaskFromFile}.
+   */
   async createDownloadTask(
-    magnet: string,
+    uri: string,
     destination: string
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'create', {
-      uri: magnet,
+    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 3, 'create', {
+      uri,
       destination: normalizeDownloadDestination(destination),
     }, PATH_DOWNLOAD_TASK)
-    if (!result.ok) return result
-    return { ok: true }
-  }
-
-  /**
-   * Add a whole-torrent Download Task by handing DownloadStation a URL it fetches
-   * ITSELF — DownloadStation2 `create` with `type:"url"`, `create_list=false`.
-   *
-   * This is the reliable path and mirrors the original working bot: instead of
-   * uploading the .torrent bytes to DSM (a DSM-7 multipart that, even when built
-   * with a browser boundary, produced empty `total_pieces:0` tasks), we host the
-   * .torrent at a public URL (Telegram — see the server's `hostTorrentOnTelegram`)
-   * and let DSM download + parse it. Verified live: a `.torrent` URL added this
-   * way downloads to completion, while `SYNO.DownloadStation.Task` v1 `uri=` only
-   * grabs the .torrent file itself without parsing it.
-   *
-   * DS2 entry.cgi wants JSON-encoded values — `type` as `"url"`, `url` as a JSON
-   * array `["…"]`, `destination` as `"…"`. Plain (unquoted) values are misread as
-   * a raw HTTP file download that never becomes a torrent.
-   */
-  async createDownloadTaskFromUrl(
-    torrentUrl: string,
-    destination: string
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const result = await this.request<unknown>('SYNO.DownloadStation2.Task', 2, 'create', {
-      create_list: 'false',
-      type: '"url"',
-      url: JSON.stringify([torrentUrl]),
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-    })
     if (!result.ok) return result
     return { ok: true }
   }
@@ -253,238 +179,6 @@ export class SynologyClient {
     })
     if (!result.ok) return result
     return { ok: true, data: result.data.files ?? [] }
-  }
-
-  /**
-   * Creates a whole-torrent Download Task from a .torrent file's bytes via the
-   * DownloadStation2 file-create (`create_list=false`). See {@link submitCreateFromFile}
-   * for the DSM-7 multipart quirks (browser boundary, `_sid` in the query).
-   */
-  async createDownloadTaskFromFile(
-    bytes: Uint8Array,
-    fileName: string,
-    destination: string
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const sub = await this.submitCreateFromFile(bytes, fileName, destination, false)
-    if (!sub.ok) return sub
-    const json = sub.json
-    if (!json.success) {
-      const code = json.error?.code
-      console.error('[synology] create failed', { destination: normalizeDownloadDestination(destination), code, error: json.error })
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}${json.error ? ` ${JSON.stringify(json.error)}` : ''}` }
-    }
-    return { ok: true }
-  }
-
-  /**
-   * Build + POST a DownloadStation2 `create` from a .torrent file and return the
-   * parsed envelope. Encodes the DSM-7 contract that took a live-NAS probe to pin
-   * down:
-   *   - the params (`api`/`version`/`method`/`type`/`destination`/`create_list`/
-   *     `file`) and the file go in a `multipart/form-data` body with a
-   *     BROWSER-STYLE boundary — DSM drops every field otherwise (see
-   *     {@link buildBrowserMultipart});
-   *   - `_sid` travels in the QUERY string (DSM ignores it in the body);
-   *   - `file` is the JSON array `["torrent"]` naming the part that holds the
-   *     bytes, which is sent as a separate part literally named `torrent`.
-   * `createList` flips whole-torrent add (`false`) vs inspect (`true`). A 45s
-   * timeout keeps a hung NAS from becoming an opaque Cloudflare 502; a code-119
-   * (session expired) result triggers one re-login + retry with a fresh sid.
-   */
-  private async submitCreateFromFile(
-    bytes: Uint8Array,
-    fileName: string,
-    destination: string,
-    createList: boolean,
-    retry = false,
-  ): Promise<{ ok: true; json: SynoEnvelope<SynoDownloadTaskCreateData> } | { ok: false; reason: string }> {
-    const normalizedDestination = normalizeDownloadDestination(destination)
-    const { body, contentType } = buildBrowserMultipart(
-      [
-        ['api', 'SYNO.DownloadStation2.Task'],
-        ['version', '2'],
-        ['method', 'create'],
-        ['type', '"file"'],
-        ['destination', `"${normalizedDestination}"`],
-        ['create_list', createList ? 'true' : 'false'],
-        // mtime + size mirror the DSM web UI's create request (captured live) —
-        // without them the task is created but never starts downloading.
-        ['mtime', String(Date.now())],
-        ['size', String(bytes.length)],
-        ['file', '["torrent"]'],
-      ],
-      { partName: 'torrent', fileName, contentType: 'application/x-bittorrent', bytes },
-    )
-    const url = `${this.host}/webapi/entry.cgi?_sid=${encodeURIComponent(this.sid ?? '')}`
-    const label = retry ? 'create(retry)' : 'create'
-    let res: Response
-    try {
-      res = await fetch(url, { method: 'POST', body, headers: { 'Content-Type': contentType }, signal: AbortSignal.timeout(45000) })
-    } catch (err) {
-      const reason =
-        err instanceof Error && err.name === 'TimeoutError'
-          ? 'Synology did not respond within 45s (DownloadStation busy or unreachable)'
-          : `Synology request failed: ${err instanceof Error ? err.message : String(err)}`
-      console.error(`[synology] ${label} request error:`, reason)
-      return { ok: false, reason }
-    }
-    let json: SynoEnvelope<SynoDownloadTaskCreateData>
-    try {
-      json = (await res.json()) as SynoEnvelope<SynoDownloadTaskCreateData>
-    } catch {
-      console.error(`[synology] ${label} non-JSON response: HTTP ${res.status}`)
-      return { ok: false, reason: `Synology returned a non-JSON response (HTTP ${res.status})` }
-    }
-    if (!json.success && json.error?.code === 119 && !retry) {
-      // Session expired — re-login once and retry with a fresh sid in the query.
-      await this.login()
-      return this.submitCreateFromFile(bytes, fileName, destination, createList, true)
-    }
-    return { ok: true, json }
-  }
-
-  // ─── DownloadStation2 selective-download (inspect → commit) ───
-  //
-  // The flow, copied verbatim from the DSM web UI's own code (download.js):
-  // create with create_list=true (INSPECTING, not downloading) → read the file
-  // list → commit with `Task.List.Polling download {list_id, destination,
-  // create_subfolder, selected:[wanted indices]}`. That `download` is ASYNC —
-  // it returns an operation task_id and you MUST poll `download_status` until
-  // finish (then `download_stop`) for the torrent to actually be handed to the
-  // BT engine; otherwise the task sits in DownloadStation's DB as "waiting" and
-  // never reaches transmission. Backing out before commit leaves an orphaned
-  // inspecting list — cancelTaskList cleans it up.
-  //
-  // Transport (#1, pinned on the live NAS): create-from-file is a browser-boundary
-  // multipart with _sid in the query (see browserBoundary) — a generic-boundary
-  // body or body-borne params silently drop every field (error 119/120). The
-  // list / complete / bt.file / cancel calls carry their params in the query string.
-
-  /**
-   * Phase 1+2: create an INSPECTING BT task (create_list=true) from a .torrent's
-   * bytes, then read its file list. Returns the `list_id` (needed to commit or
-   * cancel) plus the normalized file list. For magnets/torrents whose metadata
-   * is still resolving server-side, the list comes back empty + `inspecting`;
-   * we poll `Task.List get` up to `maxPolls` times. An empty list after polling
-   * is returned as-is (the caller decides whether to fall back to a whole add).
-   */
-  async inspectTaskFromFile(
-    bytes: Uint8Array,
-    fileName: string,
-    destination: string,
-    opts: { pollDelayMs?: number; maxPolls?: number } = {},
-  ): Promise<{ ok: true; data: TaskInspectResult } | { ok: false; reason: string }> {
-    const sub = await this.submitCreateFromFile(bytes, fileName, destination, true)
-    if (!sub.ok) return sub
-    const json = sub.json
-    if (!json.success) {
-      const code = json.error?.code
-      console.error('[synology] inspect failed', { code, error: json.error })
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}${json.error ? ` ${JSON.stringify(json.error)}` : ''}` }
-    }
-    const listId = json.data?.list_id?.[0]
-    if (!listId) return { ok: false, reason: 'Synology returned no list_id for the inspecting task' }
-
-    const files = await this.pollTaskList(listId, opts)
-    if (!files.ok) return files
-    return { ok: true, data: { listId, files: files.data } }
-  }
-
-  /** Read the file list of an inspecting task (`Task.List get`), normalized.
-   *  Params go in the query (entry.cgi drops multipart-body fields, see
-   *  {@link browserBoundary}); only the create-from-file calls use a body. */
-  async getTaskListFiles(
-    listId: string,
-  ): Promise<{ ok: true; data: TaskListFile[]; inspecting: boolean } | { ok: false; reason: string }> {
-    const res = await this.request<SynoTaskListGetData>(
-      'SYNO.DownloadStation2.Task.List', 2, 'get', { list_id: `"${listId}"` },
-    )
-    if (!res.ok) return res
-    const files: TaskListFile[] = (res.data.files ?? []).map((f, i) => ({
-      index: f.index ?? i,
-      path: f.path ?? f.name ?? '',
-      size: typeof f.size === 'string' ? Number(f.size) || 0 : f.size ?? 0,
-    }))
-    return { ok: true, data: files, inspecting: res.data.inspecting === true }
-  }
-
-  /** Poll `Task.List get` until files appear (or `inspecting` clears), up to maxPolls. */
-  private async pollTaskList(
-    listId: string,
-    opts: { pollDelayMs?: number; maxPolls?: number },
-  ): Promise<{ ok: true; data: TaskListFile[] } | { ok: false; reason: string }> {
-    const maxPolls = opts.maxPolls ?? 20
-    const pollDelayMs = opts.pollDelayMs ?? 500
-    let last: TaskListFile[] = []
-    for (let i = 0; i < maxPolls; i++) {
-      const res = await this.getTaskListFiles(listId)
-      if (!res.ok) return res
-      last = res.data
-      if (res.data.length > 0 && !res.inspecting) return { ok: true, data: res.data }
-      if (res.data.length > 0 && res.inspecting === false) return { ok: true, data: res.data }
-      // Still resolving metadata — wait and retry.
-      if (i < maxPolls - 1 && pollDelayMs > 0) {
-        await new Promise((r) => setTimeout(r, pollDelayMs))
-      }
-    }
-    return { ok: true, data: last }
-  }
-
-  /** Cancel an uncommitted inspecting list (`Task.List delete`). */
-  async cancelTaskList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const res = await this.request<unknown>(
-      'SYNO.DownloadStation2.Task.List', 2, 'delete', { list_id: `"${listId}"` },
-    )
-    if (!res.ok) return res
-    return { ok: true }
-  }
-
-  /**
-   * Commit an inspecting list — start downloading the SELECTED files. Copied
-   * verbatim from the DSM web UI's create-dialog submit (download.js
-   * `sendWebAPIForSpecificList` → `downloadPollingStart`):
-   *   SYNO.DownloadStation2.Task.List.Polling `download` v2 with
-   *     { list_id, destination, create_subfolder, selected: [<wanted indices>] }
-   * returns a `task_id`. The file-selection param is **`selected`** (an array of
-   * the file indices to download where `enable===true`) — NOT `file_indexes`.
-   * That wrong param name is why the earlier Polling attempt created tasks that
-   * hung; `Complete start` was a different code path entirely (and created none).
-   */
-  async commitTaskSubset(
-    listId: string,
-    selected: number[],
-    destination: string,
-    opts: { pollDelayMs?: number; maxPolls?: number } = {},
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const POLL = 'SYNO.DownloadStation2.Task.List.Polling'
-    // 1) Kick off the (asynchronous) list download → an operation task_id.
-    const dl = await this.request<{ task_id?: string }>(POLL, 2, 'download', {
-      list_id: `"${listId}"`,
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-      create_subfolder: 'true',
-      selected: JSON.stringify(selected),
-    })
-    if (!dl.ok) return dl
-    const opId = dl.data?.task_id
-    if (!opId) return { ok: true }
-
-    // 2) Drive it to completion. `download` is ASYNC: until `download_status`
-    // returns finish:true the torrent is never handed to the BT engine and the
-    // task sits in "waiting" forever. The DSM UI polls every 1s — so do we.
-    const pollDelayMs = opts.pollDelayMs ?? 1000
-    const maxPolls = opts.maxPolls ?? 20
-    for (let i = 0; i < maxPolls; i++) {
-      const st = await this.request<{ finish?: boolean }>(POLL, 2, 'download_status', { task_id: `"${opId}"` })
-      if (!st.ok) {
-        await this.request<unknown>(POLL, 2, 'download_stop', { task_id: `"${opId}"` }).catch(() => {})
-        return st
-      }
-      if (st.data?.finish) break
-      if (i < maxPolls - 1 && pollDelayMs > 0) await new Promise((r) => setTimeout(r, pollDelayMs))
-    }
-    // 3) Cleanup the polling operation (UI does this in downloadPollingDone).
-    await this.request<unknown>(POLL, 2, 'download_stop', { task_id: `"${opId}"` }).catch(() => {})
-    return { ok: true }
   }
 
   private async requestOnce<T>(

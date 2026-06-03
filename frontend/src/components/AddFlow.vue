@@ -18,15 +18,12 @@ import Sheet from './Sheet.vue'
 import Button from './Button.vue'
 import FolderPicker from './FolderPicker.vue'
 import StickerBadge from './StickerBadge.vue'
-import FileTree from './FileTree.vue'
 import { api } from '../api'
-import { buildFileTree, allIndices, type FileTree as FileTreeModel, type InspectFile } from './fileTree'
-import { formatBytes } from '../format'
 import { torrentToken as deepLinkToken } from '../telegram'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
-import type { SearchResultView, InspectFileView } from '../types'
+import type { SearchResultView } from '../types'
 
 // How the add source was supplied:
 //   'search' — in-app Toloka search (the only in-app mode)
@@ -77,40 +74,10 @@ const selectedResult = ref<SearchResultView | null>(null)
 // Search history dropdown
 const searchHistoryVisible = ref(false)
 
-// ─── Confirm step: inspect → select → commit (#123) ──────────────────────────
-// Reaching Confirm kicks off an inspect (create_list=true) that returns the
-// torrent's file list + a list_id. The owner picks a subset via the tree, then
-// «Добавить» commits that subset. Magnet handoff has no local bytes to inspect
-// (and inspect failures) fall back to a whole-torrent add.
-type InspectState = 'idle' | 'inspecting' | 'ready' | 'whole'
-const inspectState = ref<InspectState>('idle')
-const inspectListId = ref<string | null>(null)
-const inspectFiles = ref<InspectFileView[]>([])
-const selectedIndices = ref<number[]>([])
-const inspectError = ref<string | null>(null)
-
-/** The built file tree for the current inspect (null until ready). */
-const fileTree = computed<FileTreeModel | null>(() =>
-  inspectState.value === 'ready' && inspectFiles.value.length > 0
-    ? buildFileTree(inspectFiles.value as InspectFile[])
-    : null
-)
-
-/** Total size of the selected files (drives the card's size readout). */
-const selectedSize = computed<number>(() => {
-  const sel = new Set(selectedIndices.value)
-  return inspectFiles.value.reduce((sum, f) => (sel.has(f.index) ? sum + f.size : sum), 0)
-})
-
-/** Whether the current source can be inspected for a per-file tree. Magnets
- *  (mode 'uri' starting magnet:) have no local bytes → whole-torrent only. */
-const canInspect = computed<boolean>(() => {
-  if (mode.value === 'search') return selectedResult.value !== null
-  if (mode.value === 'file') return selectedFile.value !== null
-  // 'uri': only a non-magnet URL could be fetched, but the bot only stashes
-  // magnets/URLs that DSM resolves itself — treat all uri-mode as whole-torrent.
-  return false
-})
+// ─── Confirm step ────────────────────────────────────────────────────────────
+// The whole torrent is always added (the documented DownloadStation create —
+// uri or file upload — is the only path that reliably starts downloads). The
+// Confirm step is a plain summary: title + metadata chips + destination folder.
 
 /** Clean metadata for the confirm card header (#117 fields off the result). */
 const confirmTitle = computed<string>(() => {
@@ -215,59 +182,6 @@ function resetForm(): void {
   searchError.value = null
   searchQueried.value = false
   selectedResult.value = null
-  resetInspect()
-}
-
-/** Clear inspect/selection state (called on reset and on leaving Confirm). */
-function resetInspect(): void {
-  inspectState.value = 'idle'
-  inspectListId.value = null
-  inspectFiles.value = []
-  selectedIndices.value = []
-  inspectError.value = null
-}
-
-/**
- * Inspect the current source: create an INSPECTING task (create_list=true) and
- * load its file tree. Magnet/uri sources and inspect failures fall back to a
- * plain whole-torrent add ('whole' state), so the owner can always proceed.
- */
-async function runInspect(): Promise<void> {
-  if (!canInspect.value) {
-    inspectState.value = 'whole'
-    return
-  }
-  inspectState.value = 'inspecting'
-  inspectError.value = null
-  try {
-    let res
-    if (mode.value === 'file' && selectedFile.value) {
-      res = await api.inspectTaskFromFile(selectedFile.value, destination.value)
-    } else if (mode.value === 'search' && selectedResult.value) {
-      res = await api.inspectTask(selectedResult.value.downloadUrl, destination.value, selectedResult.value.title)
-    } else {
-      inspectState.value = 'whole'
-      return
-    }
-    const files = Array.isArray(res?.files) ? res.files : []
-    inspectListId.value = res?.listId ?? null
-    inspectFiles.value = files
-    selectedIndices.value = allIndices(files as InspectFile[])
-    // No files resolved (e.g. metadata still pending) → offer a whole add.
-    inspectState.value = files.length > 0 ? 'ready' : 'whole'
-  } catch (e) {
-    inspectError.value = e instanceof Error ? e.message : String(e)
-    inspectState.value = 'whole'
-  }
-}
-
-/** Best-effort cancel of an uncommitted inspect so no orphan lingers on the NAS. */
-function cancelInspectIfOpen(): void {
-  const id = inspectListId.value
-  if (id && inspectState.value !== 'whole') {
-    void api.cancelInspect(id).catch(() => {})
-  }
-  inspectListId.value = null
 }
 
 function goNext(): void {
@@ -275,9 +189,8 @@ function goNext(): void {
   if (step.value < 3) step.value = (step.value + 1) as 1 | 2 | 3
 }
 
-/** Sheet close (X / dismiss): release any uncommitted inspect, then reset. */
+/** Sheet close (X / dismiss). */
 function onClose(): void {
-  cancelInspectIfOpen()
   resetForm()
 }
 
@@ -285,19 +198,8 @@ function goBack(): void {
   // On the handoff path the Folder step (2) is the first drawn step, so Back
   // from Confirm lands on Folder, and there is no Back on Folder itself.
   const floor = handoff.value ? 2 : 1
-  // Leaving Confirm without committing → release the inspecting list on the NAS.
-  if (step.value === 3) {
-    cancelInspectIfOpen()
-    resetInspect()
-  }
   if (step.value > floor) step.value = (step.value - 1) as 1 | 2 | 3
 }
-
-// Entering the Confirm step kicks off the inspect (the file tree is loaded
-// lazily, only once the destination + source are settled).
-watch(step, (now, prev) => {
-  if (now === 3 && prev !== 3) void runInspect()
-})
 
 // --- Telegram BackButton wiring (#5) ---
 // "Назад" between wizard steps is the native Telegram BackButton (the same
@@ -414,13 +316,8 @@ async function create(): Promise<void> {
 
   submitting.value = true
   try {
-    // Always add the WHOLE torrent via the direct create_list=false path — the
-    // exact request the DSM web UI makes (captured live), which actually starts
-    // downloading. The selective inspect→commit list flow never started the
-    // download, so if an inspecting list was created for the file preview we just
-    // release it here.
-    cancelInspectIfOpen()
-
+    // The whole torrent is added via the documented DownloadStation create:
+    // a .torrent upload (file mode) or a uri (magnet / search / handoff URL).
     if (mode.value === 'file') {
       if (!selectedFile.value) {
         errorMsg.value = 'No .torrent file loaded.'
@@ -574,9 +471,9 @@ async function create(): Promise<void> {
           <FolderPicker v-model="destination" />
         </div>
 
-        <!-- ── Step 3: Confirm — pudgy card + file tree (#123) ── -->
+        <!-- ── Step 3: Confirm — pudgy card (title + chips + folder) ── -->
         <div v-else-if="step === 3" class="step-confirm">
-          <!-- THE one heavy container: title + chips + files + folder. -->
+          <!-- THE one heavy container: title + chips + folder. -->
           <div class="bigcard" data-testid="confirm-card">
             <div class="bc-head">
               <h3 class="bc-title" data-testid="confirm-title">{{ confirmTitle }}</h3>
@@ -588,39 +485,11 @@ async function create(): Promise<void> {
               <span v-for="chip in confirmChips" :key="chip" class="chip">{{ chip }}</span>
             </div>
 
-            <!-- Files section — header rule + tree, NO outer box (border diet). -->
+            <!-- The whole torrent is added; no per-file selection. -->
             <div class="files">
-              <div class="files-hd">
-                <span class="files-t">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
-                  Файлы<template v-if="inspectState === 'ready'"> · {{ inspectFiles.length }}</template>
-                </span>
-                <span v-if="inspectState === 'ready'" class="files-sz" data-testid="confirm-size">
-                  {{ formatBytes(selectedSize) }}
-                </span>
-              </div>
-
-              <!-- Inspecting: loading state while polling Task.List. -->
-              <div v-if="inspectState === 'inspecting'" class="files-loading" data-testid="inspect-loading">
-                <span class="spinner" aria-hidden="true"></span>
-                Читаю содержимое торрента…
-              </div>
-
-              <!-- Ready: the interactive tree with functional checkboxes. -->
-              <FileTree
-                v-else-if="inspectState === 'ready' && fileTree"
-                :tree="fileTree"
-                v-model:selected="selectedIndices"
-              />
-
-              <!-- Whole-torrent fallback (magnet / inspect unavailable or failed). -->
-              <div v-else class="files-whole" data-testid="inspect-whole">
-                <p class="files-whole-msg">
-                  {{ inspectError
-                    ? 'Не удалось прочитать список файлов — будет добавлен торрент целиком.'
-                    : 'Для этого источника список файлов недоступен — торрент добавится целиком.' }}
-                </p>
-              </div>
+              <p class="files-whole-msg" data-testid="confirm-whole-note">
+                Торрент будет добавлен целиком.
+              </p>
             </div>
 
             <!-- Folder block (variant A): label + path + «Изменить» (no pin). -->
@@ -694,7 +563,7 @@ async function create(): Promise<void> {
           size="lg"
           class="footer-btn footer-btn--full footer-btn--coral"
           data-testid="create-btn"
-          :disabled="submitting || inspectState === 'inspecting'"
+          :disabled="submitting"
           @click="create"
         >
           {{ submitting ? 'Добавление…' : 'Добавить' }}

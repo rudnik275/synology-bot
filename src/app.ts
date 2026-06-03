@@ -174,6 +174,7 @@ export async function startApp(): Promise<void> {
     getTodayEpisodes,
     searchShows,
     tolokaBaseUrl: config.toloka.baseUrl,
+    miniappUrl: config.miniappUrl,
     botToken: config.botToken,
     ownerId: config.ownerChatId,
     torrentStash: store,

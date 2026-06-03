@@ -31,6 +31,7 @@ function makeApp(uiState: UiStateStore = makeUiState()) {
     getTodayEpisodes: async () => [],
     searchShows: async () => [],
     tolokaBaseUrl: 'https://toloka.to',
+    miniappUrl: 'https://nas.test',
     botToken: TEST_BOT_TOKEN,
     ownerId: OWNER_ID,
     initDataMaxAgeSeconds: 0,

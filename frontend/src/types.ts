@@ -100,18 +100,3 @@ export interface FolderView {
   name: string
   path: string
 }
-
-// --- Add-flow: per-file selection (#123) ---
-
-/** One file in an inspecting torrent task (`/api/tasks/inspect`). */
-export interface InspectFileView {
-  index: number
-  path: string
-  size: number
-}
-
-/** Result of `/api/tasks/inspect` — the inspecting list id + its file list. */
-export interface InspectResultView {
-  listId: string
-  files: InspectFileView[]
-}

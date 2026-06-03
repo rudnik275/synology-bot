@@ -24,6 +24,7 @@ function makeApp(stash?: AddIntakeStash) {
     getTodayEpisodes: async () => [],
     searchShows: async () => [],
     tolokaBaseUrl: 'https://toloka.to',
+    miniappUrl: 'https://nas.test',
     botToken: TEST_BOT_TOKEN,
     ownerId: OWNER_ID,
     initDataMaxAgeSeconds: 0,

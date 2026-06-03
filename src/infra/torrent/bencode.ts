@@ -32,10 +32,16 @@ const CHAR = {
  * Decode a single bencode value from `bytes`. Throws on malformed input so the
  * caller (inspect) can catch and fall back to the DSM poll — a parse error must
  * NEVER surface a corrupt tree.
+ *
+ * `allowTrailing` tolerates bytes after the top-level value. Real-world .torrents
+ * (Toloka's among them) carry trailing bytes (a newline / padding) after the root
+ * dict; DSM and every standard parser ignore them. A strict parse throws on that,
+ * which for a .torrent is a false negative — the torrent IS valid, we just don't
+ * care what follows the root dict. `parseTorrentFiles` passes true.
  */
-export function decodeBencode(bytes: Uint8Array): BValue {
+export function decodeBencode(bytes: Uint8Array, opts: { allowTrailing?: boolean } = {}): BValue {
   const [value, next] = decodeAt(bytes, 0)
-  if (next !== bytes.length) {
+  if (!opts.allowTrailing && next !== bytes.length) {
     throw new Error(`bencode: ${bytes.length - next} trailing byte(s) after top-level value`)
   }
   return value
@@ -146,7 +152,10 @@ function utf8(v: BValue | undefined): string {
  * relies on to commit the user's selection by index after a local parse.
  */
 export function parseTorrentFiles(bytes: Uint8Array): TorrentFile[] {
-  const root = asMap(decodeBencode(bytes))
+  // allowTrailing: real .torrents (Toloka's) append bytes after the root dict;
+  // a strict parse would throw, get swallowed by inspect's catch, and silently
+  // fall back to the slow DSM poll — i.e. the #161 instant tree never appears.
+  const root = asMap(decodeBencode(bytes, { allowTrailing: true }))
   const info = asMap(root?.get('info'))
   if (!info) throw new Error('bencode: .torrent has no info dict')
 

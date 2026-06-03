@@ -286,8 +286,11 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       try {
         const files = parseTorrentFiles(src.bytes).map((f, index) => ({ index, name: f.path, size: f.length }))
         if (files.length > 0) return c.json({ listId: result.listId, files }, 201)
-      } catch {
+        console.warn(`[inspect] local parse yielded 0 files (${src.bytes.length}B) — falling back to DSM poll`)
+      } catch (err) {
         // A parse error must NEVER break inspect — fall through to the poll path.
+        // Log it: a silent fall-through hides the instant tree never appearing.
+        console.warn(`[inspect] local bencode parse failed (${src.bytes.length}B), falling back to DSM poll: ${errorMessage(err)}`)
       }
     }
     return c.json({ listId: result.listId }, 201)

@@ -102,4 +102,26 @@ describe('parseTorrentFiles', () => {
     full.set(enc('ee'), bytes.length + nameBytes.length)
     expect(parseTorrentFiles(full)).toEqual([{ path: name, length: 5 }])
   })
+
+  // Real-world regression (#161 follow-up): Toloka's .torrents carry trailing
+  // bytes after the root dict. DSM ignores them; a strict parse threw, the
+  // inspect catch swallowed it, and the instant tree silently fell back to the
+  // ~10s DSM poll. parseTorrentFiles must tolerate any trailing bytes.
+  const concatBytes = (a: Uint8Array, b: Uint8Array) => {
+    const out = new Uint8Array(a.length + b.length)
+    out.set(a)
+    out.set(b, a.length)
+    return out
+  }
+  for (const [label, trailer] of [
+    ['newline', enc('\n')],
+    ['CRLF', enc('\r\n')],
+    ['NUL', new Uint8Array([0x00])],
+    ['spaces', enc('   ')],
+  ] as const) {
+    it(`tolerates trailing bytes (${label}) after the root dict`, () => {
+      const torrent = enc('d4:infod6:lengthi500e4:name9:movie.mkvee')
+      expect(parseTorrentFiles(concatBytes(torrent, trailer))).toEqual([{ path: 'movie.mkv', length: 500 }])
+    })
+  }
 })

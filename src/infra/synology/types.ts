@@ -153,3 +153,18 @@ export interface SynoTaskListData {
   total: number
   offset: number
 }
+
+/** One file inside a torrent being inspected (DS2 create_list → Task.List get). */
+export interface InspectFile {
+  index: number
+  name: string
+  size: number
+}
+
+/** The parsed file tree of an inspected torrent (per-file selection, step 2). */
+export interface InspectListData {
+  files: InspectFile[]
+  title: string
+  size: number
+  type: string
+}

@@ -43,6 +43,23 @@ beforeEach(() => {
     if ((url as string).includes('/api/search')) {
       return Promise.resolve(jsonResponse({ results: SEARCH_RESULTS }))
     }
+    if ((url as string).includes('/api/tasks/inspect')) {
+      if (init?.method === 'DELETE') return Promise.resolve(jsonResponse({ ok: true }))
+      if (init?.method === 'POST') return Promise.resolve(jsonResponse({ listId: 'btdlTEST' }, 201))
+      // GET poll — file tree ready immediately.
+      return Promise.resolve(jsonResponse({
+        ready: true,
+        title: 'Movie One',
+        size: 2_050_000_000,
+        files: [
+          { index: 0, name: 'Movie One/movie.mkv', size: 2_000_000_000 },
+          { index: 1, name: 'Movie One/sample.mkv', size: 50_000_000 },
+        ],
+      }))
+    }
+    if ((url as string).includes('/api/tasks/commit')) {
+      return Promise.resolve(jsonResponse({ ok: true }, 201))
+    }
     if ((url as string) === '/api/tasks') {
       return Promise.resolve(jsonResponse({ ok: true }, 201))
     }
@@ -285,6 +302,75 @@ describe('AddFlow (search-only)', () => {
 
     const dialog = document.querySelector('[role="dialog"]')!
     expect(dialog.textContent).toContain('destination is required')
+    wrapper.unmount()
+  })
+
+  // ─── Per-file selection (#123, opt-in) ────────────────────────────────────
+  async function reachConfirm() {
+    await searchAndSelect()
+    await pickFolderInTree()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+  }
+
+  it('Confirm defaults to whole-torrent with a «Выбрать файлы» opt-in', async () => {
+    const wrapper = await openWizard()
+    await reachConfirm()
+    expect(document.querySelector('[data-testid="confirm-whole-note"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="pick-files-btn"]')).not.toBeNull()
+    // No file checklist until the owner opts in.
+    expect(document.querySelector('[data-testid="files-list"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('«Выбрать файлы» inspects and renders the file checklist', async () => {
+    const wrapper = await openWizard()
+    await reachConfirm()
+    document.querySelector<HTMLButtonElement>('[data-testid="pick-files-btn"]')!.click()
+    await flushPromises()
+    // Inspect was started with the result's downloadUrl.
+    const inspectCall = fetchCalls.find((c) => (c.url as string).includes('/api/tasks/inspect') && c.init?.method === 'POST')
+    expect(inspectCall).toBeTruthy()
+    expect(JSON.parse(inspectCall!.init?.body as string).uri).toBe('https://example.com/movie1.torrent')
+    // The checklist renders both files, both ticked by default.
+    const list = document.querySelector('[data-testid="files-list"]')!
+    expect(list).not.toBeNull()
+    expect((document.querySelector('[data-testid="file-0"]') as HTMLInputElement).checked).toBe(true)
+    expect((document.querySelector('[data-testid="file-1"]') as HTMLInputElement).checked).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('deselecting a file commits only the kept indices', async () => {
+    const wrapper = await openWizard()
+    await reachConfirm()
+    document.querySelector<HTMLButtonElement>('[data-testid="pick-files-btn"]')!.click()
+    await flushPromises()
+    // Untick the sample (index 1) → keep only the movie (index 0).
+    const sample = document.querySelector('[data-testid="file-1"]') as HTMLInputElement
+    sample.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    const commit = fetchCalls.find((c) => (c.url as string).includes('/api/tasks/commit'))
+    expect(commit).toBeTruthy()
+    const body = JSON.parse(commit!.init?.body as string)
+    expect(body.listId).toBe('btdlTEST')
+    expect(body.selected).toEqual([0])
+    // The sheet closes on success.
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('Add is disabled when every file is unticked', async () => {
+    const wrapper = await openWizard()
+    await reachConfirm()
+    document.querySelector<HTMLButtonElement>('[data-testid="pick-files-btn"]')!.click()
+    await flushPromises()
+    // «Снять все» clears the selection.
+    document.querySelector<HTMLButtonElement>('[data-testid="files-toggle-all"]')!.click()
+    await flushPromises()
+    expect((document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement).disabled).toBe(true)
     wrapper.unmount()
   })
 

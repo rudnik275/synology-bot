@@ -61,3 +61,22 @@ Synology DSM 7's `entry.cgi` multipart parser reads **zero** form fields when th
 - A Synology `119`/`120` on a multipart POST that *looks* correct → suspect the boundary before the payload. Confirm by diffing a raw browser-shaped body against the library body.
 - When a vendor library ships a suspiciously specific helper (`generate_gecko_boundary`), treat it as documentation of an undocumented server quirk and replicate it.
 - Don't reverse-engineer an undocumented API by trial-and-error — read the vendor's own client. The DS2 selective-download commit was guessed FOUR times against the live NAS (`BT.File`+`Complete` with `list_id`; `Task.List.Polling/download` with `file_indexes`; `Complete start {id}`) — each created tasks that 404'd, hung at the start, or never appeared. The authoritative spec is the **DSM web UI's own JavaScript on the NAS** — `/var/packages/DownloadStation/target/ui/download.js`, readable over SSH as `nas-bot` with no auth. Copy it verbatim: the create dialog's `sendWebAPIForSpecificList` calls `SYNO.DownloadStation2.Task.List.Polling` `download` v2 with `{list_id, destination, create_subfolder, selected:[…]}`, where `selected` (param NAME) is the array of file indices to download (those with `enable===true`). Not `file_indexes`. `Task.Complete start {id}` is a DIFFERENT path (finishing already-queued tasks), which is why it created nothing. The server `.lib` files (`/var/packages/DownloadStation/target/webapi/SYNO.DownloadStation2.Task.lib`) list the methods+versions but NOT the params (those are in the `.so`); the params only live in the UI JS. For any undocumented Synology API: read `download.js` first, don't probe.
+
+## A null DownloadStation default_destination accepts API task creation but never starts it
+
+### Lesson
+
+When DownloadStation's global `default_destination` is `null` (unset), DSM **accepts every API `create` call** — it returns `task_id`, `success: true` — but the task never leaves `waiting` and its size stays `0`. No error is surfaced to the caller. The correct first step when API task creation succeeds yet tasks never start is to check engine/server config (destination, task limits, free space) before changing the request method.
+
+### Background
+
+2026-06-03: A ~2-day "downloads never start" hunt (#154) churned through six different add methods — DS1 `uri`, DS2 `type:url`, self-hosted `.torrent` URL, Telegram-hosted URL, `create_list=false`, `create_list=true` — each with its own workaround PR. All returned `success: true`. None started a task. After bisecting the call stack down to a bare `curl` that replicated DSM's own web-UI request, still no download appeared. Inspecting `getserverconfig` revealed `default_destination: null`. Setting it once via `setserverconfig` to `video` unblocked all pending tasks immediately, including ones submitted by earlier broken code. The bot's pre-existing, never-changed `createDownloadTask` then worked on the first try with no other modifications.
+
+Fix: `SynologyClient.ensureDefaultDestination()` — called once at startup, reads `getserverconfig`, and if the field is empty calls `setserverconfig` with the first available share. This self-heals the condition so it can never silently stall future deploys.
+
+### How to apply
+
+- When API task creation returns success but tasks never appear or always stay `waiting` with `size=0` — run `getserverconfig` against the DownloadStation API and check `default_destination`. If empty, set it with `setserverconfig` before any other debugging.
+- Treat engine-level config the application depends on as a startup precondition. For any config your app writes or relies on: read it at boot, validate it, and self-heal if missing. Don't assume it was set by a human at deploy time.
+- Rotating through request methods (DS1 vs DS2, URL vs file upload, different endpoints) when the symptom is tasks-not-starting is a red herring. The add method is not in the call stack for "task never leaves waiting". Check the receiving end's config first.
+- Prefer a startup self-heal over documentation-only: config drift is invisible and the DSM web UI may reset fields on package reinstall or version upgrade.

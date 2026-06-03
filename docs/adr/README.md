@@ -25,3 +25,6 @@
 | [0007](./0007-cloudflared-runtime-topology-and-deploy-resilience.md) | cloudflared in the bot's netns + Watchtower depends-on (tunnel survives deploys) |
 | [0008](./0008-add-intake-search-only-app-bot-handoff.md) | Add intake — Mini App search-only; bot chat hands off .torrent + magnet/URL |
 | [0009](./0009-shows-tab-search-first-detail-page.md) | Shows tab — search-first, Show detail page, detail-only subscribe, in-app today dropped |
+| [0010](./0010-cloudflared-shared-network-tunnel-survives-deploys.md) | cloudflared on a shared Docker network (tunnel survives bot redeploys; supersedes 0007) |
+| [0011](./0011-ui-history-server-side-not-cloudstorage.md) | Mini App UI history server-side (SQLite kv), not Telegram CloudStorage |
+| [0012](./0012-per-file-selective-download-optimistic-insert.md) | Per-file selective download + optimistic insert |

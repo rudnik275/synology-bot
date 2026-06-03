@@ -38,7 +38,9 @@ beforeEach(() => {
       return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
     }
     if ((url as string) === '/api/tasks/inspect') {
-      return Promise.resolve(jsonResponse({ listId: 'LH' }, 201))
+      // Instant-tree contract (#161): the server parsed the uploaded .torrent
+      // bytes locally and returns the tree alongside the listId (no poll).
+      return Promise.resolve(jsonResponse({ listId: 'LH', files: [{ index: 0, name: 'Forwarded/movie.mkv', size: 100 }] }, 201))
     }
     if ((url as string).startsWith('/api/tasks/inspect/')) {
       if (init?.method === 'DELETE') return Promise.resolve(jsonResponse({ ok: true }))

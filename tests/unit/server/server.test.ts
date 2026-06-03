@@ -353,6 +353,73 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
     expect(args).toEqual({ uri: 'magnet:?xt=urn:btih:abc', dest: '/v1' })
   })
 
+  it('POST /api/tasks/inspect (magnet) returns NO files key — the client must poll DSM (#161)', async () => {
+    const app = makeApp(makeSynology({
+      createInspectList: async () => ({ ok: true, listId: 'btdlMAG' }),
+    }))
+    const res = await app.request('/api/tasks/inspect', jsonReq({ uri: 'magnet:?xt=urn:btih:abc', destination: '/v1' }))
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body).toEqual({ listId: 'btdlMAG' })
+    expect('files' in body).toBe(false)
+  })
+
+  it('POST /api/tasks/inspect (multipart .torrent) returns the file tree INSTANTLY via local bencode parse (#161)', async () => {
+    // d4:infod5:filesld6:lengthi100e4:pathl3:dir5:a.mp4eed6:lengthi200e4:pathl5:b.mp4eee4:name3:topee
+    const torrentBytes = new TextEncoder().encode(
+      'd4:infod5:filesld6:lengthi100e4:pathl3:dir5:a.mp4eed6:lengthi200e4:pathl5:b.mp4eee4:name3:topee'
+    )
+    const app = makeApp(makeSynology({
+      createInspectList: async () => ({ ok: true, listId: 'btdlLOCAL' }),
+    }))
+    const fd = new FormData()
+    fd.append('destination', '/volume1/films')
+    fd.append('file', new Blob([torrentBytes], { type: 'application/x-bittorrent' }), 'movie.torrent')
+    const res = await app.request('/api/tasks/inspect', { method: 'POST', headers: ownerHeaders(), body: fd })
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({
+      listId: 'btdlLOCAL',
+      // Order follows info.files; index is the array position (parity with DSM).
+      files: [
+        { index: 0, name: 'dir/a.mp4', size: 100 },
+        { index: 1, name: 'b.mp4', size: 200 },
+      ],
+    })
+  })
+
+  it('POST /api/tasks/inspect (Toloka) returns the local file tree from the fetched bytes (#161)', async () => {
+    const torrentBytes = new TextEncoder().encode('d4:infod6:lengthi500e4:name9:movie.mkvee')
+    const synology = makeSynology({
+      createInspectList: async () => ({ ok: true, listId: 'btdlTOL' }),
+    })
+    const toloka = makeToloka({ downloadTorrent: async () => torrentBytes })
+    const res = await makeApp(synology, toloka).request(
+      '/api/tasks/inspect',
+      jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/films' })
+    )
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({
+      listId: 'btdlTOL',
+      files: [{ index: 0, name: 'movie.mkv', size: 500 }],
+    })
+  })
+
+  it('POST /api/tasks/inspect falls back to {listId} only when local bytes do not parse (#161)', async () => {
+    // Garbage bytes — parseTorrentFiles throws; inspect must NOT break, just drop `files`.
+    const synology = makeSynology({
+      createInspectList: async () => ({ ok: true, listId: 'btdlBAD' }),
+    })
+    const toloka = makeToloka({ downloadTorrent: async () => new Uint8Array([1, 2, 3, 4]) })
+    const res = await makeApp(synology, toloka).request(
+      '/api/tasks/inspect',
+      jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/films' })
+    )
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body).toEqual({ listId: 'btdlBAD' })
+    expect('files' in body).toBe(false)
+  })
+
   it('POST /api/tasks/inspect (Toloka) self-hosts the .torrent, then inspects that URL', async () => {
     let inspectArgs: { uri: string; dest: string } | undefined
     const synology = makeSynology({

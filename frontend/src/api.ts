@@ -38,16 +38,25 @@ export const api = {
     return request<{ ok: true }>('/tasks', { method: 'POST', body: form })
   },
 
-  // --- Per-file selection (#123): inspect → poll → commit ---
+  // --- Per-file selection (#123, instant tree #161): inspect → (poll?) → commit ---
   // Inspect parses the torrent into a transient list_id WITHOUT downloading, so
   // the user can pick files. Same two source shapes as create (uri / .torrent file).
+  // When the bot held the .torrent bytes (upload / Toloka), the server parses the
+  // file tree locally and returns `files` immediately — the client then SKIPS the
+  // poll. Magnets have no local bytes → no `files`, client polls pollInspect (#161).
   inspect: (uri: string, destination: string, title?: string) =>
-    request<{ listId: string }>('/tasks/inspect', jsonBody({ uri, destination, title })),
+    request<{ listId: string; files?: { index: number; name: string; size: number }[] }>(
+      '/tasks/inspect',
+      jsonBody({ uri, destination, title })
+    ),
   inspectFile: (file: File, destination: string) => {
     const form = new FormData()
     form.append('file', file)
     form.append('destination', destination)
-    return request<{ listId: string }>('/tasks/inspect', { method: 'POST', body: form })
+    return request<{ listId: string; files?: { index: number; name: string; size: number }[] }>(
+      '/tasks/inspect',
+      { method: 'POST', body: form }
+    )
   },
   // Poll until `ready` — the file tree populates once DSM parses the metadata.
   pollInspect: (listId: string) =>

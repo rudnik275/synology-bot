@@ -2,6 +2,7 @@ import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Ta
 
 const PATH_ENTRY = 'webapi/entry.cgi'
 const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
+const PATH_DOWNLOAD_INFO = 'webapi/DownloadStation/info.cgi'
 
 /**
  * Converts a FileStation absolute path to a DownloadStation share-relative path.
@@ -174,6 +175,57 @@ export class SynologyClient {
     })
     if (!result.ok) return result
     return { ok: true }
+  }
+
+  /**
+   * Ensure DownloadStation has a non-empty `default_destination`.
+   *
+   * ⚠️ ROOT CAUSE of the long "task created but never starts / waiting / size=0"
+   * bug (verified live 2026-06-03): when `default_destination` is null/empty the
+   * DSM engine *accepts* an API `create` (returns a task_id) but **never starts
+   * ANY task** — torrent or plain HTTP, any add method. The DSM web UI's add
+   * dialog sets the default as a side effect of picking a folder, which is why
+   * manual adds "worked" while every API add stalled. We never set it, so a NAS
+   * whose default was never configured (or got reset by a DSM update) silently
+   * stalls every download.
+   *
+   * Called once at startup (after login). If the default is missing we set it to
+   * a real share (prefers `video`, else the first share). Per-task `destination`
+   * still overrides it — the global default just has to be non-empty for the
+   * scheduler to run anything. Idempotent and best-effort: a failure here is
+   * logged by the caller, not fatal.
+   */
+  async ensureDefaultDestination(): Promise<
+    { ok: true; destination: string; changed: boolean } | { ok: false; reason: string }
+  > {
+    const cfg = await this.request<{ default_destination: string | null }>(
+      'SYNO.DownloadStation.Info',
+      1,
+      'getconfig',
+      {},
+      PATH_DOWNLOAD_INFO,
+    )
+    if (!cfg.ok) return cfg
+
+    const current = cfg.data.default_destination
+    if (current && current.trim() !== '') {
+      return { ok: true, destination: current, changed: false }
+    }
+
+    const shares = await this.listSharedFolders()
+    if (!shares.ok) return shares
+    const preferred = shares.data.find((s) => s.name === 'video') ?? shares.data[0]
+    if (!preferred) return { ok: false, reason: 'no shared folders available to use as default destination' }
+
+    const set = await this.request<unknown>(
+      'SYNO.DownloadStation.Info',
+      1,
+      'setserverconfig',
+      { default_destination: preferred.name },
+      PATH_DOWNLOAD_INFO,
+    )
+    if (!set.ok) return set
+    return { ok: true, destination: preferred.name, changed: true }
   }
 
   async listSharedFolders(): Promise<{ ok: true; data: SharedFolder[] } | { ok: false; reason: string }> {

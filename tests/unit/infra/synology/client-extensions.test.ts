@@ -128,6 +128,85 @@ describe('SynologyClient extensions', () => {
     })
   })
 
+  describe('ensureDefaultDestination()', () => {
+    // Dispatch the mock by which API/method the URL targets.
+    function dispatch(handlers: {
+      getconfig: unknown
+      shares?: unknown
+      setserverconfig?: unknown
+    }) {
+      return (input: unknown) => {
+        const url = String(input)
+        if (url.includes('method=getconfig')) return Promise.resolve(mockResponse(handlers.getconfig))
+        if (url.includes('method=list_share')) return Promise.resolve(mockResponse(handlers.shares))
+        if (url.includes('method=setserverconfig')) return Promise.resolve(mockResponse(handlers.setserverconfig))
+        return Promise.resolve(mockResponse({ success: true, data: {} }))
+      }
+    }
+
+    it('leaves config alone when default_destination is already set', async () => {
+      fetchMock.mockImplementation(
+        dispatch({ getconfig: { success: true, data: { default_destination: 'video' } } }) as never
+      )
+
+      const result = await client.ensureDefaultDestination()
+      expect(result).toEqual({ ok: true, destination: 'video', changed: false })
+      // Only getconfig — no setserverconfig when already configured.
+      const urls = fetchMock.mock.calls.map((c) => String((c as [unknown])[0]))
+      expect(urls.some((u) => u.includes('method=setserverconfig'))).toBe(false)
+    })
+
+    it('sets default_destination to a share (prefers "video") when it is null', async () => {
+      fetchMock.mockImplementation(
+        dispatch({
+          getconfig: { success: true, data: { default_destination: null } },
+          shares: { success: true, data: { shares: [{ name: 'music', path: '/volume1/music' }, { name: 'video', path: '/volume1/video' }] } },
+          setserverconfig: { success: true, data: {} },
+        }) as never
+      )
+
+      const result = await client.ensureDefaultDestination()
+      expect(result).toEqual({ ok: true, destination: 'video', changed: true })
+      const setCall = fetchMock.mock.calls
+        .map((c) => String((c as [unknown])[0]))
+        .find((u) => u.includes('method=setserverconfig'))
+      expect(setCall).toBeDefined()
+      expect(setCall).toContain('default_destination=video')
+    })
+
+    it('falls back to the first share when there is no "video" share', async () => {
+      fetchMock.mockImplementation(
+        dispatch({
+          getconfig: { success: true, data: { default_destination: '' } },
+          shares: { success: true, data: { shares: [{ name: 'data', path: '/volume1/data' }] } },
+          setserverconfig: { success: true, data: {} },
+        }) as never
+      )
+
+      const result = await client.ensureDefaultDestination()
+      expect(result).toEqual({ ok: true, destination: 'data', changed: true })
+    })
+
+    it('returns ok:false when getconfig fails', async () => {
+      fetchMock.mockImplementation(
+        dispatch({ getconfig: { success: false, error: { code: 105 } } }) as never
+      )
+      const result = await client.ensureDefaultDestination()
+      expect(result.ok).toBe(false)
+    })
+
+    it('returns ok:false when there are no shares to pick', async () => {
+      fetchMock.mockImplementation(
+        dispatch({
+          getconfig: { success: true, data: { default_destination: null } },
+          shares: { success: true, data: { shares: [] } },
+        }) as never
+      )
+      const result = await client.ensureDefaultDestination()
+      expect(result.ok).toBe(false)
+    })
+  })
+
   describe('listFolders()', () => {
     it('returns subfolders for a given path', async () => {
       fetchMock.mockImplementation(() =>

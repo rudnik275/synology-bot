@@ -170,12 +170,13 @@ async function handleUnsubscribe(): Promise<void> {
             </svg>
           </template>
         </EmptyState>
-        <ul v-else class="show-list">
+        <TransitionGroup v-else tag="ul" name="show-list" class="show-list" appear>
           <li
-            v-for="result in searchResults"
+            v-for="(result, index) in searchResults"
             :key="result.id"
             :data-testid="`search-result-${result.id}`"
             class="show-item"
+            :style="{ '--stagger-index': index }"
             role="button"
             tabindex="0"
             @click="openShow(result.id)"
@@ -195,7 +196,7 @@ async function handleUnsubscribe(): Promise<void> {
               </div>
             </Card>
           </li>
-        </ul>
+        </TransitionGroup>
       </template>
 
       <!-- Subscriptions mode (default: empty query) -->
@@ -215,7 +216,7 @@ async function handleUnsubscribe(): Promise<void> {
           </template>
         </EmptyState>
 
-        <ul v-else class="show-list">
+        <TransitionGroup v-else tag="ul" name="show-list" class="show-list" appear>
           <li
             v-for="(sub, index) in subscriptions"
             :key="sub.id"
@@ -243,7 +244,7 @@ async function handleUnsubscribe(): Promise<void> {
               </div>
             </Card>
           </li>
-        </ul>
+        </TransitionGroup>
       </template>
     </template>
   </div>
@@ -370,5 +371,34 @@ async function handleUnsubscribe(): Promise<void> {
 .subscribed-badge,
 .episode-badge {
   flex-shrink: 0;
+}
+
+/*
+ * Show list TransitionGroup (FLIP-capable).
+ * Matches DownloadsTab .task-list-* pattern per ADR-0006.
+ */
+.show-list-enter-active {
+  transition:
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
+  transition-delay: calc(var(--stagger-index, 0) * var(--stagger-step));
+}
+.show-list-leave-active {
+  transition:
+    opacity var(--dur-list-leave) var(--ease-in),
+    transform var(--dur-list-leave) var(--ease-in);
+  position: absolute;
+  width: 100%;
+}
+.show-list-move {
+  transition: transform var(--dur-enter) var(--ease-out);
+}
+.show-list-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.show-list-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 </style>

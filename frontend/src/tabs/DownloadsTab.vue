@@ -204,7 +204,7 @@ function qualityChips(task: TaskView): string[] {
     </EmptyState>
 
     <!-- Task list: inline add row as the first item (#118) -->
-    <TransitionGroup v-else tag="div" name="task-list" class="task-list">
+    <TransitionGroup v-else tag="div" name="task-list" class="task-list" appear>
       <!-- Inline «Добавить загрузку» row — always the first item, scrolls with the list -->
       <button
         key="__add-row__"

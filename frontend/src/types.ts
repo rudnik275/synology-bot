@@ -100,3 +100,10 @@ export interface FolderView {
   name: string
   path: string
 }
+
+/** One file in an inspected torrent (#123 per-file selection). */
+export interface InspectFileView {
+  index: number
+  path: string
+  size: number
+}

@@ -37,6 +37,16 @@ beforeEach(() => {
     if ((url as string).includes('/api/folders')) {
       return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
     }
+    if ((url as string) === '/api/tasks/inspect') {
+      return Promise.resolve(jsonResponse({ listId: 'LH' }, 201))
+    }
+    if ((url as string).startsWith('/api/tasks/inspect/')) {
+      if (init?.method === 'DELETE') return Promise.resolve(jsonResponse({ ok: true }))
+      return Promise.resolve(jsonResponse({ ready: true, title: 'Forwarded', size: 100, files: [{ index: 0, name: 'Forwarded/movie.mkv', size: 100 }] }))
+    }
+    if ((url as string) === '/api/tasks/commit') {
+      return Promise.resolve(jsonResponse({ ok: true }, 201))
+    }
     if ((url as string) === '/api/tasks') {
       return Promise.resolve(jsonResponse({ ok: true }, 201))
     }
@@ -68,7 +78,7 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     wrapper.unmount()
   })
 
-  it('submits the stashed file as multipart to /api/tasks', async () => {
+  it('inspects the stashed file as multipart, then commits the subset', async () => {
     const wrapper = mount(AddFlow, { props: { torrentToken: 'TOK123' } })
     await flushPromises()
 
@@ -77,14 +87,20 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
+    await flushPromises() // let the auto-inspect settle to 'ready'
+
+    // The .torrent bytes are uploaded as multipart to the INSPECT endpoint.
+    const inspect = fetchCalls.find((c) => c.url === '/api/tasks/inspect' && c.init?.body instanceof FormData)
+    expect(inspect).toBeTruthy()
+    const file = (inspect!.init?.body as FormData).get('file') as File
+    expect(file.name).toBe('Forwarded.torrent')
+
+    // «Добавить» commits the (all-ticked) subset.
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
     await flushPromises()
-
-    const taskCall = fetchCalls.find((c) => c.url === '/api/tasks')
-    expect(taskCall).toBeTruthy()
-    expect(taskCall!.init?.body).toBeInstanceOf(FormData)
-    const file = (taskCall!.init?.body as FormData).get('file') as File
-    expect(file.name).toBe('Forwarded.torrent')
+    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
+    expect(commit).toBeTruthy()
+    expect(JSON.parse(commit!.init?.body as string).listId).toBe('LH')
     wrapper.unmount()
   })
 

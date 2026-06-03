@@ -242,39 +242,43 @@ describe('AddFlow (search-only)', () => {
     wrapper.unmount()
   })
 
-  // ─── Step 3: Confirm + create ────────────────────────────────────────────────
-  it('search happy path: Search → Folder → Confirm posts the result downloadUrl', async () => {
-    const wrapper = await openWizard()
-    // searchAndSelect() taps a result — auto-advances to Folder (#121).
+  // ─── Step 3: Confirm + create (auto-inspect → commit subset, #123) ──────────
+  // Reaching Confirm auto-inspects (the mock returns a 2-file tree, all ticked),
+  // so «Добавить» commits the selected subset. Detailed tree behaviour lives in
+  // AddFlow.confirm.test.ts.
+  async function reachConfirm() {
     await searchAndSelect()
-
-    // Variant D: drill in, then pick
     await pickFolderInTree()
     document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
     await flushPromises()
+    await flushPromises() // let the auto-inspect poll resolve to 'ready'
+  }
+
+  it('search happy path: inspects with the downloadUrl, then commits the subset', async () => {
+    const wrapper = await openWizard()
+    await reachConfirm()
+
+    const inspectCall = fetchCalls.find((c) => c.url === '/api/tasks/inspect' && c.init?.method === 'POST')
+    expect(inspectCall).toBeTruthy()
+    expect(JSON.parse(inspectCall!.init?.body as string).uri).toBe('https://example.com/movie1.torrent')
 
     const createBtn = document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement
-    expect(createBtn).not.toBeNull()
     expect(createBtn.textContent).toMatch(/добавить/i)
     createBtn.click()
     await flushPromises()
 
-    const taskCall = fetchCalls.find((c) => c.url === '/api/tasks')
-    expect(taskCall).toBeTruthy()
-    expect(taskCall!.init?.method).toBe('POST')
-    const body = JSON.parse(taskCall!.init?.body as string)
-    expect(body.uri).toBe('https://example.com/movie1.torrent')
+    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
+    expect(commit).toBeTruthy()
+    const body = JSON.parse(commit!.init?.body as string)
+    expect(body.listId).toBe('btdlTEST')
+    expect(body.selected).toEqual([0, 1]) // all files ticked by default
     expect(body.destination).toBeTruthy()
     wrapper.unmount()
   })
 
   it('successful create closes the sheet', async () => {
     const wrapper = await openWizard()
-    // searchAndSelect() taps a result — auto-advances to Folder (#121).
-    await searchAndSelect()
-    await pickFolderInTree()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
+    await reachConfirm()
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
     await flushPromises()
 
@@ -282,95 +286,21 @@ describe('AddFlow (search-only)', () => {
     wrapper.unmount()
   })
 
-  it('shows an error message on a 400 create response', async () => {
+  it('shows an error message on a 400 commit response', async () => {
+    const wrapper = await openWizard()
+    await reachConfirm()
+    // Make the commit fail.
+    const prev = globalThis.fetch
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       fetchCalls.push({ url, init })
-      if ((url as string).includes('/api/folders')) return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
-      if ((url as string).includes('/api/search')) return Promise.resolve(jsonResponse({ results: SEARCH_RESULTS }))
-      if ((url as string) === '/api/tasks') return Promise.resolve(jsonResponse({ error: 'destination is required' }, 400))
-      return Promise.resolve(jsonResponse({ folders: [] }))
+      if ((url as string) === '/api/tasks/commit') return Promise.resolve(jsonResponse({ error: 'destination is required' }, 400))
+      return (prev as typeof fetch)(url as string, init)
     }) as typeof fetch
-
-    const wrapper = await openWizard()
-    // searchAndSelect() taps a result — auto-advances to Folder (#121).
-    await searchAndSelect()
-    await pickFolderInTree()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
     await flushPromises()
 
     const dialog = document.querySelector('[role="dialog"]')!
     expect(dialog.textContent).toContain('destination is required')
-    wrapper.unmount()
-  })
-
-  // ─── Per-file selection (#123, opt-in) ────────────────────────────────────
-  async function reachConfirm() {
-    await searchAndSelect()
-    await pickFolderInTree()
-    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
-    await flushPromises()
-  }
-
-  it('Confirm defaults to whole-torrent with a «Выбрать файлы» opt-in', async () => {
-    const wrapper = await openWizard()
-    await reachConfirm()
-    expect(document.querySelector('[data-testid="confirm-whole-note"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="pick-files-btn"]')).not.toBeNull()
-    // No file checklist until the owner opts in.
-    expect(document.querySelector('[data-testid="files-list"]')).toBeNull()
-    wrapper.unmount()
-  })
-
-  it('«Выбрать файлы» inspects and renders the file checklist', async () => {
-    const wrapper = await openWizard()
-    await reachConfirm()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-files-btn"]')!.click()
-    await flushPromises()
-    // Inspect was started with the result's downloadUrl.
-    const inspectCall = fetchCalls.find((c) => (c.url as string).includes('/api/tasks/inspect') && c.init?.method === 'POST')
-    expect(inspectCall).toBeTruthy()
-    expect(JSON.parse(inspectCall!.init?.body as string).uri).toBe('https://example.com/movie1.torrent')
-    // The checklist renders both files, both ticked by default.
-    const list = document.querySelector('[data-testid="files-list"]')!
-    expect(list).not.toBeNull()
-    expect((document.querySelector('[data-testid="file-0"]') as HTMLInputElement).checked).toBe(true)
-    expect((document.querySelector('[data-testid="file-1"]') as HTMLInputElement).checked).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('deselecting a file commits only the kept indices', async () => {
-    const wrapper = await openWizard()
-    await reachConfirm()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-files-btn"]')!.click()
-    await flushPromises()
-    // Untick the sample (index 1) → keep only the movie (index 0).
-    const sample = document.querySelector('[data-testid="file-1"]') as HTMLInputElement
-    sample.click()
-    await flushPromises()
-    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
-    await flushPromises()
-
-    const commit = fetchCalls.find((c) => (c.url as string).includes('/api/tasks/commit'))
-    expect(commit).toBeTruthy()
-    const body = JSON.parse(commit!.init?.body as string)
-    expect(body.listId).toBe('btdlTEST')
-    expect(body.selected).toEqual([0])
-    // The sheet closes on success.
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
-    wrapper.unmount()
-  })
-
-  it('Add is disabled when every file is unticked', async () => {
-    const wrapper = await openWizard()
-    await reachConfirm()
-    document.querySelector<HTMLButtonElement>('[data-testid="pick-files-btn"]')!.click()
-    await flushPromises()
-    // «Снять все» clears the selection.
-    document.querySelector<HTMLButtonElement>('[data-testid="files-toggle-all"]')!.click()
-    await flushPromises()
-    expect((document.querySelector('[data-testid="create-btn"]') as HTMLButtonElement).disabled).toBe(true)
     wrapper.unmount()
   })
 

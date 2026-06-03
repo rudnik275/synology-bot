@@ -14,13 +14,14 @@
 //   • Quality chips (year / resolution / codec / languages) from #117 under title.
 //   • Bigger % readout, quieter meta.
 //   • Elevation tiers (#101 D) preserved: active+error → raised, settled → flat.
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import Card from '../components/Card.vue'
 import Button from '../components/Button.vue'
 import ScreenHeader from '../components/ScreenHeader.vue'
 import ProgressBar from '../components/ProgressBar.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { useTasks } from '../composables/useTasks'
+import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/tones'
 import type { TaskView } from '../types'
@@ -32,6 +33,16 @@ const props = withDefaults(defineProps<{ onAddClick?: () => void }>(), {
 })
 
 const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
+
+// Optimistic placeholders (added by AddFlow on «Добавить») render as their own
+// loader cards ABOVE the real list so a download appears the instant the sheet
+// closes. They live in a SEPARATE list from the real-task cards on purpose: the
+// real-task TransitionGroup stays byte-identical to before, and `pending` is
+// empty in steady state. We retire them as the polled list updates (reconcile is
+// a no-op while there are none, so it adds zero churn).
+const { pendingTasks, reconcile } = useOptimisticTasks()
+const pending = computed(() => pendingTasks())
+watch(tasks, (real) => reconcile(real))
 
 // ── Delete confirmation state ────────────────────────────────────────────────
 // Task pending delete confirmation (set by the trash-icon button, cleared on
@@ -205,6 +216,31 @@ function qualityChips(task: TaskView): string[] {
         <span class="add-row-chip" aria-hidden="true">+</span>
         <span class="add-row-label">Добавить загрузку</span>
       </button>
+
+      <!-- Optimistic placeholders (#instant-add): a loader card per just-added
+           download, shown the moment the Add sheet closes and retired when the
+           real task lands on a poll. Empty in steady state — leaves the real-task
+           list below untouched. -->
+      <Card
+        v-for="p in pending"
+        :key="p.id"
+        edge-stripe="violet"
+        variant="raised"
+        class="task-card"
+        :data-testid="`pending-${p.id}`"
+      >
+        <div class="task-header">
+          <h3 class="task-title">{{ p.title }}</h3>
+          <span class="task-status-label">Добавление…</span>
+        </div>
+        <div class="task-pending">
+          <span class="task-spinner" aria-hidden="true"></span>
+          <span class="task-pending-text">Добавляем на NAS…</span>
+        </div>
+        <div v-if="p.destination" class="task-meta">
+          <span class="meta-dest">{{ p.destination }}</span>
+        </div>
+      </Card>
 
       <Card
         v-for="(task, index) in tasks"
@@ -397,6 +433,33 @@ function qualityChips(task: TaskView): string[] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Optimistic (pending) placeholder loader (#instant-add) ── */
+.task-pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.task-spinner {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 2px solid rgba(9, 9, 11, 0.2);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: dl-spin 0.7s linear infinite;
+}
+.task-pending-text {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  opacity: 0.75;
+}
+@keyframes dl-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-spinner { animation: none; }
 }
 
 /* ── Action row ── */

@@ -1,6 +1,6 @@
 {
   "name": "synology-bot",
-  "version": "3.8.10",
+  "version": "3.8.11",
   "type": "module",
   "scripts": {
     "dev": "bun run --watch src/index.ts",

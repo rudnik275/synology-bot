@@ -75,7 +75,15 @@ plugin({
 // (Linux order) went red while local (macOS order) stayed green. A global
 // afterEach makes the suite order-independent. Inert for the backend suite
 // (it neither touches document.body nor localStorage).
-afterEach(() => {
+afterEach(async () => {
   document.body.innerHTML = ''
   localStorage.clear()
+  // The optimistic-task store is a module singleton shared across the whole test
+  // process — clear it so placeholders / the seen-id baseline don't leak forward.
+  // Imported lazily (not at preload top): a static import would pull vue's
+  // runtime-dom in BEFORE GlobalRegistrator.register() sets up `document`, so
+  // vue would capture a null document and every component mount would fail with
+  // `doc.createTextNode`. By afterEach time the DOM is registered.
+  const { resetOptimisticTasks } = await import('./src/composables/useOptimisticTasks')
+  resetOptimisticTasks()
 })

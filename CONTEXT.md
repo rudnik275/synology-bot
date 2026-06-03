@@ -33,7 +33,7 @@ _Avoid:_ User, admin, allowed user
 
 Three bottom tabs — **Downloads / NAS / Shows** (default: Downloads). Every screen shows an ambient **health-chip** in the header (green/amber/red dot + one metric) that taps through to the NAS tab.
 
-**Add flow** — adding a download (ADR 0008). In the Mini App it is **search-only**: FAB → wizard → Toloka search → folder-picker → confirm. `.torrent` files, magnet links, and direct URLs are not pasted in-app; they are sent to the **bot chat**, which stashes them and deep-links the Mini App into the wizard at the folder step (Folder → Confirm). The bot is otherwise push-only; this stash-and-handoff is its sole intake role and it never creates tasks itself.
+**Add flow** — adding a download (ADR 0008). In the Mini App it is **search-only**: FAB → wizard → Toloka search → folder-picker → confirm. `.torrent` files, magnet links, and direct URLs are not pasted in-app; they are sent to the **bot chat**, which stashes them and deep-links the Mini App into the wizard at the folder step (Folder → Confirm). The bot is otherwise push-only; this stash-and-handoff is its sole intake role and it never creates tasks itself. The confirm step **auto-inspects** the torrent and renders a **file tree for per-file selection** (#123, ADR 0012): the owner ticks individual files before adding; the whole-torrent path remains the default for magnets (which cannot be inspected before download). Tapping «Добавить» is **optimistic** — a placeholder card appears immediately in the Downloads list, and the real task id is reconciled in the background on the next poll (#155, ADR 0012).
 
 **Shows tab** — search-first. One query-driven list: an empty query shows the owner's **Subscriptions**; typing searches the myshows **Show** catalog. Lists carry status only — subscription rows show a latest-aired-episode badge, search rows a *Subscribed* marker — and tapping any row opens the **Show detail** page (poster, Russian title + original, description, a season accordion of aired/upcoming episodes with air dates). **Subscribe/unsubscribe happens only on the detail page**, never inline in a list. There is no in-app "aired today" block; same-day airings are delivered solely by the daily push.
 
@@ -56,6 +56,7 @@ State is managed through **composables** (`useApi`, `useHealth`, `useTasks`, `us
 | [0008](./docs/adr/0008-add-intake-search-only-app-bot-handoff.md) | Add intake — Mini App search-only; bot hands off .torrent + magnet/URL |
 | [0009](./docs/adr/0009-shows-tab-search-first-detail-page.md) | Shows tab — search-first, Show detail page, detail-only subscribe, in-app today dropped |
 | [0011](./docs/adr/0011-ui-history-server-side-not-cloudstorage.md) | Mini App UI history (recent searches/folders) stored server-side, not Telegram CloudStorage |
+| [0012](./docs/adr/0012-per-file-selective-download-optimistic-insert.md) | Per-file selective download (DS2 create_list→list→download) + optimistic insert |
 
 ## Domain boundary
 

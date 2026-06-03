@@ -43,6 +43,18 @@ export async function startApp(): Promise<void> {
   // Pre-login so the first /ping_nas is fast
   try {
     await synology.login()
+    // Self-heal the DownloadStation engine config: if default_destination is
+    // null/empty the engine accepts task creation but never STARTS any task
+    // (root cause of the long "created but stuck at waiting/size=0" bug). Best-
+    // effort; per-task destination still overrides this global default.
+    const dest = await synology.ensureDefaultDestination()
+    if (dest.ok) {
+      console.log(
+        `[startup] DownloadStation default_destination = ${dest.destination}${dest.changed ? ' (was empty — set it)' : ''}`
+      )
+    } else {
+      console.warn('[startup] could not ensure DownloadStation default_destination:', dest.reason)
+    }
   } catch (err) {
     console.warn('Initial Synology login failed — will retry on demand:', err)
   }

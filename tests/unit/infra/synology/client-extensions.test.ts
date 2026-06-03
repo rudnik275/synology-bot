@@ -42,7 +42,7 @@ describe('SynologyClient extensions', () => {
       expect(result.ok).toBe(true)
     })
 
-    it('calls SYNO.DownloadStation.Task create with correct params', async () => {
+    it('calls SYNO.DownloadStation2.Task create type:"url" with correct params', async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(mockResponse({ success: true, data: {} }))
       )
@@ -51,11 +51,15 @@ describe('SynologyClient extensions', () => {
       await client.createDownloadTask(magnet, '/volume1/video')
 
       const calledUrl: string = (fetchMock.mock.calls[0] as [string])[0]
-      expect(calledUrl).toContain('SYNO.DownloadStation.Task')
+      // DS2 type:"url" is the only create that actually parses a .torrent URL (verified live).
+      expect(calledUrl).toContain('SYNO.DownloadStation2.Task')
       expect(calledUrl).toContain('method=create')
-      // destination is normalized: /volume1/video → video (leading slash + volumeN prefix stripped)
-      expect(calledUrl).toContain('destination=video')
-      expect(calledUrl).not.toContain(encodeURIComponent('/volume1/video'))
+      expect(calledUrl).toContain('create_list=false')
+      // DS2 entry.cgi wants JSON-encoded values: type "url", url ["…"], destination "…".
+      expect(calledUrl).toContain(`type=${encodeURIComponent('"url"')}`)
+      expect(calledUrl).toContain(encodeURIComponent(JSON.stringify([magnet])))
+      // destination is normalized (/volume1/ + leading slash stripped) and JSON-quoted.
+      expect(calledUrl).toContain(`destination=${encodeURIComponent('"video"')}`)
     })
 
     it('returns ok:false with reason on Synology error', async () => {

@@ -146,22 +146,32 @@ export class SynologyClient {
   }
 
   /**
-   * Add a Download Task from a `uri` — a magnet, or an HTTP/FTP/ED2K link
-   * (including a directly-fetchable `.torrent` URL). This is the documented
-   * `SYNO.DownloadStation.Task` `create` at version 3, where `uri` (v3+) and
-   * `destination` (v2+) are both available. DownloadStation fetches and parses
-   * the link itself; for sources DSM cannot fetch (e.g. an authenticated Toloka
-   * download) the caller downloads the bytes first and uses
-   * {@link createDownloadTaskFromFile}.
+   * Add a Download Task from a `uri` — a magnet, or an HTTP(S) `.torrent` link
+   * (including one served by our own Mini App server for held bytes). Uses
+   * `SYNO.DownloadStation2.Task` `create` with `type:"url"` — the SAME call the
+   * DSM web UI's "Create via URL" makes, and the ONLY one that actually parses a
+   * `.torrent` URL and starts the download.
+   *
+   * ⚠️ Verified live on the NAS (2026-06-03): the documented
+   * `SYNO.DownloadStation.Task` v3 `create` `uri` creates a task that sits at
+   * "waiting" / size Unknown forever — DSM never parses the linked `.torrent`.
+   * The SAME url added via DownloadStation2 `type:"url"` parses immediately
+   * (e.g. a 27.5 GB torrent) and downloads. So we use DS2 here.
+   *
+   * DS2 `entry.cgi` wants JSON-encoded values: `type` as `"url"`, `url` as a
+   * JSON array `["…"]`, `destination` as `"…"` (plain values are misread).
+   * `create_list:false` adds the whole torrent (no per-file inspect list).
    */
   async createDownloadTask(
     uri: string,
     destination: string
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 3, 'create', {
-      uri,
-      destination: normalizeDownloadDestination(destination),
-    }, PATH_DOWNLOAD_TASK)
+    const result = await this.request<unknown>('SYNO.DownloadStation2.Task', 2, 'create', {
+      create_list: 'false',
+      type: '"url"',
+      url: JSON.stringify([uri]),
+      destination: `"${normalizeDownloadDestination(destination)}"`,
+    })
     if (!result.ok) return result
     return { ok: true }
   }

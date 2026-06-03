@@ -7,6 +7,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import AddFlow from '../src/components/AddFlow.vue'
+import { useOptimisticTasks } from '../src/composables/useOptimisticTasks'
 
 const realFetch = globalThis.fetch
 
@@ -286,7 +287,12 @@ describe('AddFlow (search-only)', () => {
     wrapper.unmount()
   })
 
-  it('shows an error message on a 400 commit response', async () => {
+  it('rolls back the optimistic placeholder when the commit fails (#161 fully-optimistic)', async () => {
+    // Fully-optimistic commit (#161): «Добавить» closes the sheet INSTANTLY and the
+    // commit runs in the background, so a failure can't be shown in the (now closed)
+    // sheet — instead it rolls back the optimistic placeholder. The commit itself is
+    // still attempted with the correct listId (commit-correctness preserved).
+    const optimistic = useOptimisticTasks()
     const wrapper = await openWizard()
     await reachConfirm()
     // Make the commit fail.
@@ -299,8 +305,14 @@ describe('AddFlow (search-only)', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
     await flushPromises()
 
-    const dialog = document.querySelector('[role="dialog"]')!
-    expect(dialog.textContent).toContain('destination is required')
+    // Sheet closed immediately (optimistic) …
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    // … the commit was still attempted with the inspected listId …
+    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
+    expect(commit).toBeTruthy()
+    expect(JSON.parse(commit!.init?.body as string).listId).toBe('btdlTEST')
+    // … and the failed add rolled the placeholder back out of the Downloads list.
+    expect(optimistic.pendingTasks()).toHaveLength(0)
     wrapper.unmount()
   })
 

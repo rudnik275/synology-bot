@@ -64,8 +64,9 @@ const handoffUri = ref('')
 // Destination path from FolderPicker
 const destination = ref('')
 
-// Submission state
-const submitting = ref(false)
+// Submission state. The commit is fully optimistic (#161): «Добавить» closes the
+// sheet instantly and the add runs in the background, so there is no in-sheet
+// "submitting…" spinner — failures surface via errorMsg on the next open.
 const errorMsg = ref<string | null>(null)
 
 // Search mode state
@@ -91,6 +92,21 @@ const inspectFiles = ref<InspectFileView[]>([])
 const selectedIndices = ref<number[]>([])
 const inspectError = ref<string | null>(null)
 let inspectSeq = 0 // drop a stale poll that resolves after reset / re-open
+// The result an inspect run settled to. A fast «Добавить» tap chains its commit
+// on this (rather than reading the component refs, which resetForm() clears the
+// instant the sheet closes) so the owner never waits for inspect to finish — #161.
+//   'ready' → commit listId + indices; 'whole' → whole-torrent fallback.
+type InspectOutcome =
+  | { kind: 'ready'; listId: string; indices: number[] }
+  | { kind: 'whole' }
+// The in-flight runInspect() promise, captured at fast-tap time so its commit
+// fires the moment inspect resolves.
+let inspectInFlight: Promise<InspectOutcome> | null = null
+// Set true when a fast-tap commit has been chained on the in-flight inspect: the
+// immediate resetForm() must then NOT invalidate that run (its seq guard would
+// otherwise bail and delete the very list we're committing). Cleared once the run
+// settles. The next inspect (re-open) starts fresh, so this never leaks across.
+let protectInflightInspect = false
 
 /** The built folder/file tree for the current inspect (null until ready). */
 const fileTree = computed<FileTreeModel | null>(() =>
@@ -274,16 +290,16 @@ onUnmounted(hideTgBackButton)
 // --- Inspect-on-Confirm (#123) ---
 // Reaching Confirm auto-inspects so the file tree is ready by the time the owner
 // looks. A sequence guard drops any poll that resolves after reset/close/re-open.
-async function runInspect(): Promise<void> {
+async function runInspect(): Promise<InspectOutcome> {
   if (!canInspect.value) {
     inspectState.value = 'whole'
-    return
+    return { kind: 'whole' }
   }
   const seq = ++inspectSeq
   inspectState.value = 'inspecting'
   inspectError.value = null
   try {
-    let started: { listId: string } | null = null
+    let started: { listId: string; files?: { index: number; name: string; size: number }[] } | null = null
     if (mode.value === 'file' && selectedFile.value) {
       started = await api.inspectFile(selectedFile.value, destination.value)
     } else if (mode.value === 'search' && selectedResult.value) {
@@ -291,42 +307,59 @@ async function runInspect(): Promise<void> {
     }
     if (!started) {
       inspectState.value = 'whole'
-      return
+      return { kind: 'whole' }
     }
     if (seq !== inspectSeq) {
       void api.deleteInspect(started.listId)
-      return
+      return { kind: 'whole' }
     }
     inspectListId.value = started.listId
-    // Poll the inspect list until DSM has parsed the torrent's metadata.
+    // Instant tree (#161): for sources we held the .torrent bytes for, the server
+    // already parsed the file tree (local bencode) and returned it with listId, so
+    // we render it NOW and skip the poll. Magnets return no `files` → poll below.
+    if (started.files && started.files.length > 0) {
+      const files = started.files.map((f) => ({ index: f.index, path: f.name, size: f.size }))
+      inspectFiles.value = files
+      const indices = allIndices(files as InspectFile[])
+      selectedIndices.value = indices // all ticked by default
+      inspectState.value = 'ready'
+      return { kind: 'ready', listId: started.listId, indices }
+    }
+    // No instant tree (magnet): poll the inspect list until DSM parses the metadata.
     let files: InspectFileView[] = []
     for (let i = 0; i < 20 && seq === inspectSeq; i++) {
       const poll = await api.pollInspect(started.listId)
-      if (seq !== inspectSeq) return
+      if (seq !== inspectSeq) return { kind: 'whole' }
       if (poll.ready) {
         files = poll.files.map((f) => ({ index: f.index, path: f.name, size: f.size }))
         break
       }
       await new Promise((r) => setTimeout(r, 1000))
     }
-    if (seq !== inspectSeq) return
+    if (seq !== inspectSeq) return { kind: 'whole' }
     inspectFiles.value = files
-    selectedIndices.value = allIndices(files as InspectFile[]) // all ticked by default
+    const indices = allIndices(files as InspectFile[])
+    selectedIndices.value = indices // all ticked by default
     inspectState.value = files.length > 0 ? 'ready' : 'whole'
+    return files.length > 0 ? { kind: 'ready', listId: started.listId, indices } : { kind: 'whole' }
   } catch (e) {
     inspectError.value = e instanceof Error ? e.message : String(e)
     inspectState.value = 'whole'
+    return { kind: 'whole' }
   }
 }
 
 /** Clear inspect/selection state (reset / leaving Confirm). */
 function resetInspect(): void {
-  inspectSeq++
+  // When a fast-tap commit is chained on the in-flight inspect, DON'T bump the seq
+  // — that run must finish and hand its listId to the pending commit. We only clear
+  // the visible refs (the sheet is closing anyway); the run owns its own lifecycle.
+  if (!protectInflightInspect) inspectSeq++
   inspectState.value = 'idle'
-  inspectListId.value = null
   inspectFiles.value = []
   selectedIndices.value = []
   inspectError.value = null
+  if (!protectInflightInspect) inspectListId.value = null
 }
 
 /** Best-effort release of an uncommitted inspect so no orphan lingers on the NAS. */
@@ -338,8 +371,11 @@ function cancelInspectIfOpen(): void {
 }
 
 // Auto-inspect when the Confirm step is entered (both in-app and handoff paths).
+// Track the promise so a fast-tap «Добавить» can chain its commit after it (#161).
 watch(step, (now, prev) => {
-  if (now === 3 && prev !== 3) void runInspect()
+  if (now === 3 && prev !== 3) {
+    inspectInFlight = runInspect().finally(() => { inspectInFlight = null })
+  }
 })
 
 async function runSearch(): Promise<void> {
@@ -429,14 +465,22 @@ onMounted(() => {
 // from the inline «Добавить загрузку» row (#118).
 defineExpose({ openSheet })
 
-async function create(): Promise<void> {
+function create(): void {
   errorMsg.value = null
 
-  // Capture the add call. If the torrent was inspected, COMMIT the chosen files;
-  // otherwise (inspect failed/timed out, or no file tree) add the whole torrent
+  // Capture EVERYTHING the add needs into locals NOW, before resetForm() (below)
+  // clears the refs — `doAdd` must be fully self-contained so it can run AFTER we
+  // close the sheet (fully-optimistic commit, #161). `dest` is captured here too
+  // because resetForm() nulls destination.
+  const dest = destination.value
+  const title = confirmTitle.value
+
+  // Build the add call. If the torrent was inspected, COMMIT the chosen files;
+  // otherwise (inspect failed/timed out, magnet, or no tree) add the whole torrent
   // via the documented create — a .torrent upload (file) or a uri (magnet /
   // search / handoff URL).
   let doAdd: () => Promise<unknown>
+  let committedListId: string | null = null
   if (inspectState.value === 'ready' && inspectListId.value) {
     if (selectedIndices.value.length === 0) {
       errorMsg.value = 'Выберите хотя бы один файл.'
@@ -444,52 +488,98 @@ async function create(): Promise<void> {
     }
     const listId = inspectListId.value
     const indices = [...selectedIndices.value]
-    doAdd = () => api.commitTask(listId, indices, destination.value)
+    committedListId = listId
+    doAdd = () => api.commitTask(listId, indices, dest)
+  } else if (inspectState.value === 'inspecting' && canInspect.value && inspectInFlight) {
+    // Fast-tap: the owner hit «Добавить» before inspect resolved. Don't make them
+    // wait — CHAIN the commit on the in-flight inspect promise in the background.
+    // The placeholder shows immediately; the commit fires the moment inspect
+    // settles. The outcome (listId + indices, or whole-torrent fallback) comes from
+    // the promise's RESOLVED VALUE, not the component refs — resetForm() clears
+    // those the instant the sheet closes below. `protectInflightInspect` stops the
+    // imminent resetForm() from invalidating (and deleting) the run we're awaiting.
+    const pending = inspectInFlight
+    protectInflightInspect = true
+    // Capture the whole-torrent fallback source NOW (refs are about to be cleared).
+    const fallback = captureWholeTorrentAdd(dest)
+    doAdd = async () => {
+      try {
+        const outcome = await pending
+        if (outcome.kind === 'ready' && outcome.indices.length > 0) {
+          return await api.commitTask(outcome.listId, outcome.indices, dest)
+        }
+        return await fallback()
+      } finally {
+        protectInflightInspect = false
+        inspectListId.value = null // the run's list is now consumed (or never existed)
+      }
+    }
   } else if (mode.value === 'file') {
     if (!selectedFile.value) {
       errorMsg.value = 'No .torrent file loaded.'
       return
     }
     const file = selectedFile.value
-    doAdd = () => api.createTaskFromFile(file, destination.value)
+    doAdd = () => api.createTaskFromFile(file, dest)
   } else if (mode.value === 'uri') {
     const uri = handoffUri.value.trim()
     if (!uri) {
       errorMsg.value = 'No magnet link or URL loaded.'
       return
     }
-    doAdd = () => api.createTask(uri, destination.value)
+    doAdd = () => api.createTask(uri, dest)
   } else {
     if (!selectedResult.value) {
       errorMsg.value = 'Please select a search result.'
       return
     }
     const url = selectedResult.value.downloadUrl
-    doAdd = () => api.createTask(url, destination.value)
+    doAdd = () => api.createTask(url, dest)
   }
 
-  submitting.value = true
   // Optimistic insert: drop a pending placeholder into the Downloads list now so
   // the download appears the instant the sheet closes (the poll is every 3 s and
   // DSM takes a few seconds to register). useTasks retires it when the real task
-  // arrives; rolled back below if the add fails.
-  const optimisticId = optimistic.add({ title: confirmTitle.value, destination: destination.value })
-  try {
-    await doAdd()
-    // The inspect list_id (if any) is now consumed by the commit — clear it so
-    // resetForm's abandon doesn't fire a redundant delete.
-    inspectListId.value = null
-    // Success: record the destination as a recent BEFORE resetForm clears it.
-    if (destination.value) recordRecent(destination.value)
-    // Close the sheet; the placeholder is already showing in the list.
-    open.value = false
-    resetForm()
-  } catch (e) {
+  // arrives; rolled back in doAdd's .catch if the add fails.
+  const optimisticId = optimistic.add({ title, destination: dest })
+  if (dest) recordRecent(dest)
+
+  // The committed inspect list_id is consumed by doAdd — null it BEFORE resetForm
+  // so resetForm's abandon path doesn't fire a redundant delete for the list we're
+  // committing. (The fast-tap branch nulls it inside doAdd, once it has the id.)
+  if (committedListId) inspectListId.value = null
+
+  // Close the sheet + reset INSTANTLY (synchronously) — the placeholder is already
+  // showing in the list — then fire the add in the BACKGROUND without awaiting, so
+  // the sheet never blocks on DSM (#161). A failed add rolls back the placeholder.
+  open.value = false
+  resetForm()
+  void doAdd().catch((e) => {
     optimistic.remove(optimisticId)
+    // The sheet is gone, so surface failures on the next open via errorMsg.
     errorMsg.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    submitting.value = false
+  })
+}
+
+/**
+ * Capture a whole-torrent fallback add as a self-contained closure, snapshotting
+ * the source from the CURRENT refs (file / uri / search URL) + the given `dest`.
+ * Used by the fast-tap chain so the fallback survives resetForm() clearing refs.
+ */
+function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
+  if (mode.value === 'file' && selectedFile.value) {
+    const file = selectedFile.value
+    return () => api.createTaskFromFile(file, dest)
   }
+  if (mode.value === 'uri' && handoffUri.value.trim()) {
+    const uri = handoffUri.value.trim()
+    return () => api.createTask(uri, dest)
+  }
+  if (mode.value === 'search' && selectedResult.value) {
+    const url = selectedResult.value.downloadUrl
+    return () => api.createTask(url, dest)
+  }
+  return () => Promise.reject(new Error('No add source available.'))
 }
 </script>
 
@@ -735,10 +825,10 @@ async function create(): Promise<void> {
           size="lg"
           class="footer-btn footer-btn--full footer-btn--coral"
           data-testid="create-btn"
-          :disabled="submitting || inspectState === 'inspecting' || (inspectState === 'ready' && selectedIndices.length === 0)"
+          :disabled="inspectState === 'ready' && selectedIndices.length === 0"
           @click="create"
         >
-          {{ submitting ? 'Добавление…' : 'Добавить' }}
+          Добавить
         </Button>
       </div>
     </div>

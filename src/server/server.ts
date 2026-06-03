@@ -22,6 +22,7 @@ import {
 } from './serializers.ts'
 import type { MyShowsShowDetailed, MyShowsSearchResult } from '../infra/myshows/client.ts'
 import { refreshSubscriptionMetadata } from '../domain/subscription-metadata-refresh.ts'
+import { parseTorrentFiles } from '../infra/torrent/bencode.ts'
 
 /** Narrow slice of PersistentStore the subscriptions endpoints need. */
 export interface SubscriptionStore {
@@ -149,10 +150,17 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
    * upload and an authenticated Toloka link are downloaded → self-hosted; a
    * magnet / plain `.torrent` URL is handed through as-is. Shared by the
    * whole-torrent add and the per-file inspect so they branch identically.
+   *
+   * `bytes` carries the raw .torrent when we HAVE it locally (multipart upload or
+   * a Toloka download) so inspect can parse the file tree itself and skip the
+   * DSM metadata poll (#161). A magnet / plain URL has no local bytes → undefined.
    */
   async function resolveSource(
     c: Context<AppEnv>
-  ): Promise<{ ok: true; url: string; destination: string } | { ok: false; status: 400 | 502; error: string }> {
+  ): Promise<
+    | { ok: true; url: string; destination: string; bytes?: Uint8Array }
+    | { ok: false; status: 400 | 502; error: string }
+  > {
     const contentType = c.req.header('content-type') ?? ''
 
     if (contentType.includes('multipart/form-data')) {
@@ -162,9 +170,10 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       if (!(file instanceof File) || typeof destination !== 'string' || !destination) {
         return { ok: false, status: 400, error: 'file and destination are required' }
       }
-      const url = servedUrlForBytes(new Uint8Array(await file.arrayBuffer()))
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const url = servedUrlForBytes(bytes)
       if (!url) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
-      return { ok: true, url, destination }
+      return { ok: true, url, destination, bytes }
     }
 
     const body = await c.req.json().catch(() => null)
@@ -183,10 +192,10 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       }
       const url = servedUrlForBytes(bytes)
       if (!url) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
-      return { ok: true, url, destination }
+      return { ok: true, url, destination, bytes }
     }
 
-    // Magnets and plain URLs DSM can fetch directly — no hosting hop.
+    // Magnets and plain URLs DSM can fetch directly — no hosting hop, no bytes.
     return { ok: true, url: uri, destination }
   }
 
@@ -261,12 +270,26 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   // Two-call inspect (start + poll) so the metadata-fetch wait lives client-side.
 
   // Start an inspect: same source resolution as the whole-torrent add, but
-  // create_list. Returns the list_id immediately; the file tree populates async.
+  // create_list. Returns the list_id; for sources we hold the .torrent BYTES for
+  // (multipart upload / Toloka download), we ALSO parse the file tree locally
+  // (bencode, ~1ms) and return it INSTANTLY so the client skips DSM's ~5–10s
+  // metadata poll (#161). Magnets have no local bytes → just `{listId}`, client
+  // polls as before. The local index == DSM's index because both enumerate the
+  // .torrent's fixed `info.files` order (parity covered by bencode.test.ts), so
+  // the client's `selected` indices remain correct at commit time.
   app.post('/api/tasks/inspect', async (c) => {
     const src = await resolveSource(c)
     if (!src.ok) return c.json({ error: src.error }, src.status)
     const result = await synology.createInspectList(src.url, src.destination)
     if (!result.ok) return c.json({ error: result.reason }, 502)
+    if (src.bytes) {
+      try {
+        const files = parseTorrentFiles(src.bytes).map((f, index) => ({ index, name: f.path, size: f.length }))
+        if (files.length > 0) return c.json({ listId: result.listId, files }, 201)
+      } catch {
+        // A parse error must NEVER break inspect — fall through to the poll path.
+      }
+    }
     return c.json({ listId: result.listId }, 201)
   })
 

@@ -54,6 +54,10 @@ beforeEach(() => {
       return Promise.resolve(jsonResponse({ results: SEARCH_RESULTS }))
     }
     if ((url as string) === '/api/tasks/inspect') {
+      // Instant-tree contract (#161): the server parsed the .torrent bytes
+      // locally and returns the file tree with the listId — no poll needed.
+      // An empty list omits `files` so the client falls back to the poll/whole.
+      if (inspectFiles.length > 0) return Promise.resolve(jsonResponse({ listId: 'LZ', files: inspectFiles }, 201))
       return Promise.resolve(jsonResponse({ listId: 'LZ' }, 201))
     }
     if ((url as string).startsWith('/api/tasks/inspect/')) {
@@ -117,6 +121,20 @@ describe('AddFlow confirm — inspect → file tree (#123)', () => {
     wrapper.unmount()
   })
 
+  it('uses the instant tree from the inspect POST and does NOT poll GET /api/tasks/inspect/:id (#161)', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    // Tree is shown…
+    expect(document.querySelector('[data-testid="file-tree"]')).not.toBeNull()
+    // …and we never polled the per-list endpoint (the POST already carried files).
+    const polled = fetchCalls.some(
+      (c) => c.url.startsWith('/api/tasks/inspect/') && c.init?.method !== 'DELETE'
+    )
+    expect(polled).toBe(false)
+    wrapper.unmount()
+  })
+
   it('«Добавить» commits the selected subset (all files ticked by default)', async () => {
     const wrapper = await openWizard()
     await toConfirm()
@@ -163,6 +181,70 @@ describe('AddFlow confirm — inspect → file tree (#123)', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-edit-folder"]')!.click()
     await flushPromises()
     expect(fetchCalls.some((c) => c.url === '/api/tasks/inspect/LZ' && c.init?.method === 'DELETE')).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('AddFlow confirm — fast-tap while still inspecting (#161)', () => {
+  it('chains the commit on the in-flight inspect when «Добавить» is tapped before it resolves', async () => {
+    // Gate the inspect POST so the tap lands while inspectState === 'inspecting'.
+    let releaseInspect: (() => void) | null = null
+    const gate = new Promise<void>((r) => { releaseInspect = r })
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string).includes('/api/folders')) {
+        return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
+      }
+      if ((url as string).includes('/api/search')) {
+        return Promise.resolve(jsonResponse({ results: SEARCH_RESULTS }))
+      }
+      if ((url as string) === '/api/tasks/inspect') {
+        // Resolve only after the gate opens — the tap happens before this.
+        return gate.then(() => jsonResponse({ listId: 'LZ', files: INSPECT_FILES }, 201))
+      }
+      if ((url as string) === '/api/tasks/commit') {
+        return Promise.resolve(jsonResponse({ ok: true }, 201))
+      }
+      if ((url as string).startsWith('/api/tasks/inspect/')) {
+        if (init?.method === 'DELETE') return Promise.resolve(jsonResponse({ ok: true }))
+      }
+      return Promise.resolve(jsonResponse({ folders: [] }))
+    }) as typeof fetch
+
+    const wrapper = await openWizard()
+    // Drive to Confirm WITHOUT settling the inspect (its POST is gated).
+    const q = document.querySelector('[data-testid="search-query"]') as HTMLInputElement
+    q.value = 'Andor'
+    q.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="search-btn"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="result-r1"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-tile"]')!.click()
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click() // → Confirm, inspect starts (gated)
+    await flushPromises()
+
+    // Inspect is still in flight — the loading state is shown, no tree yet.
+    expect(document.querySelector('[data-testid="inspect-loading"]')).not.toBeNull()
+
+    // Fast-tap «Добавить» NOW (while inspecting). Sheet closes instantly.
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    // The commit has NOT fired yet — it's chained on the pending inspect.
+    expect(fetchCalls.some((c) => c.url === '/api/tasks/commit')).toBe(false)
+
+    // Release the inspect → the chained commit fires with the resolved listId.
+    releaseInspect!()
+    await flushPromises()
+    await flushPromises()
+    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
+    expect(commit).toBeTruthy()
+    expect(JSON.parse(commit!.init?.body as string).listId).toBe('LZ')
+    // It must NOT have deleted the list it was about to commit.
+    expect(fetchCalls.some((c) => c.url === '/api/tasks/inspect/LZ' && c.init?.method === 'DELETE')).toBe(false)
     wrapper.unmount()
   })
 })

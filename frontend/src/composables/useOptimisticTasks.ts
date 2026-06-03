@@ -38,6 +38,17 @@ export function isPending(status: string): boolean {
   return status === PENDING_STATUS
 }
 
+/**
+ * Clear all module-singleton state. Tests share one process, so without this the
+ * placeholders / seen-id baseline leak between tests; the global afterEach in
+ * test-setup.ts calls it. Not used by the app.
+ */
+export function resetOptimisticTasks(): void {
+  state.entries.splice(0)
+  seenRealIds.clear()
+  initialized = false
+}
+
 export function useOptimisticTasks() {
   /** Insert a placeholder card immediately; returns its temp id for rollback. */
   function add(input: { title: string; destination: string | null }): string {
@@ -82,12 +93,18 @@ export function useOptimisticTasks() {
       initialized = true
       appeared = 0
     }
+    // Mutate the reactive array IN PLACE and only when something is actually
+    // removed — reassigning it every call (even a no-op filter) would trigger a
+    // re-render on every poll, which in tests races component teardown
+    // (happy-dom `parent.insertBefore` null) and churns the live app.
+    // Entries are in insertion (time) order, so the oldest sit at the front.
     if (appeared > 0 && state.entries.length > 0) {
-      state.entries.sort((a, b) => a.createdAt - b.createdAt)
       state.entries.splice(0, Math.min(appeared, state.entries.length))
     }
     const cutoff = now() - OPTIMISTIC_TTL_MS
-    state.entries = state.entries.filter((e) => e.createdAt >= cutoff)
+    for (let i = state.entries.length - 1; i >= 0; i--) {
+      if (state.entries[i].createdAt < cutoff) state.entries.splice(i, 1)
+    }
   }
 
   /** Placeholders as TaskViews, newest first (shown above real tasks). */

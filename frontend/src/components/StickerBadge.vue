@@ -2,7 +2,7 @@
 // A rotated sticker label — the neo-brutalism signature. Used for status tags
 // (DOWNLOADING / DONE / STUCK), counts, and category chips. Slightly rotated by
 // default so it reads as a stuck-on sticker, not a flat pill.
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Tone } from './tones'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 
@@ -20,10 +20,36 @@ const props = withDefaults(
 // motion, so the signature is "re-asserted sparingly" and stays opt-out.
 const { prefersReducedMotion } = usePrefersReducedMotion()
 const tilt = computed(() => (prefersReducedMotion.value ? 'none' : `rotate(${props.rotate}deg)`))
+
+// Pop animation: toggle a transient CSS class when tone changes, driving
+// @keyframes badge-pop (scale 1 → 1.12 → 1). Gate behind reduced-motion:
+// when reduced, skip the class entirely so the badge sits flat.
+const isPopping = ref(false)
+let popTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(
+  () => props.tone,
+  () => {
+    if (prefersReducedMotion.value) return
+    // Reset first (handles rapid tone changes)
+    if (popTimer !== null) {
+      clearTimeout(popTimer)
+      isPopping.value = false
+    }
+    // Use rAF to let Vue apply the reset before setting the class again
+    requestAnimationFrame(() => {
+      isPopping.value = true
+      popTimer = setTimeout(() => {
+        isPopping.value = false
+        popTimer = null
+      }, 200) // slightly longer than --dur-badge-pop (180ms) to cover the full keyframe
+    })
+  },
+)
 </script>
 
 <template>
-  <span class="sticker" :class="`tone-${tone}`" :style="{ transform: tilt }">
+  <span class="sticker" :class="[`tone-${tone}`, { 'is-popping': isPopping }]" :style="{ transform: tilt }">
     <slot />
   </span>
 </template>
@@ -62,5 +88,16 @@ const tilt = computed(() => (prefersReducedMotion.value ? 'none' : `rotate(${pro
 .tone-violet {
   background: var(--violet);
   color: var(--cream);
+}
+
+/* Pop keyframe: scale up to ~1.12 then snap back. transform only — no layout. */
+@keyframes badge-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+.is-popping {
+  animation: badge-pop var(--dur-badge-pop) var(--ease-pop) both;
 }
 </style>

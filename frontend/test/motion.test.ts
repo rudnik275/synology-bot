@@ -1,15 +1,17 @@
-// Motion polish tests (#72): reduced-motion contract + usePrefersReducedMotion composable.
+// Motion polish tests (#72, #157): reduced-motion contract + usePrefersReducedMotion composable.
 //
-// Two concerns:
+// Three concerns:
 // 1. tokens.css contains the @media (prefers-reduced-motion: reduce) block that zeroes
 //    CSS transition/animation durations — this is the hard ADR 0006 requirement.
 // 2. The usePrefersReducedMotion composable correctly reads matchMedia on both branches.
-import { describe, it, expect, afterEach, mock } from 'bun:test'
+// 3. StickerBadge does NOT apply the pop class under reduced-motion (#157 A2).
+import { describe, it, expect, afterEach } from 'bun:test'
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { mount, flushPromises } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { usePrefersReducedMotion } from '../src/composables/usePrefersReducedMotion'
+import StickerBadge from '../src/components/StickerBadge.vue'
 
 // ---------------------------------------------------------------------------
 // 1. Static assertion: tokens.css contains the reduced-motion disable block.
@@ -128,5 +130,46 @@ describe('usePrefersReducedMotion', () => {
 
     expect(result.prefersReducedMotion.value).toBe(false)
     unmount()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3. StickerBadge — does NOT apply .is-popping under reduced-motion (#157 A2).
+// ---------------------------------------------------------------------------
+describe('StickerBadge — reduced-motion: no pop class', () => {
+  const originalMatchMedia = globalThis.window?.matchMedia
+
+  afterEach(() => {
+    if (typeof window !== 'undefined') {
+      if (originalMatchMedia) {
+        Object.defineProperty(window, 'matchMedia', {
+          writable: true,
+          configurable: true,
+          value: originalMatchMedia,
+        })
+      }
+    }
+  })
+
+  it('does not add .is-popping when prefers-reduced-motion is active and tone changes', async () => {
+    const mql = makeMockMql(true)
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (_query: string) => mql,
+    })
+
+    const wrapper = mount(StickerBadge, {
+      props: { tone: 'yellow' },
+      slots: { default: 'TEST' },
+    })
+    await flushPromises()
+
+    // Change tone to trigger the watcher
+    await wrapper.setProps({ tone: 'green' })
+    await nextTick()
+
+    expect(wrapper.find('.sticker').classes()).not.toContain('is-popping')
+    wrapper.unmount()
   })
 })

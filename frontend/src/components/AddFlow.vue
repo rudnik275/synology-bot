@@ -28,18 +28,12 @@ import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { useTgBackButton } from '../composables/useTgBackButton'
+import { useAddWizard } from '../composables/useAddWizard'
 import { useInspectCommit, type InspectSource } from '../composables/useInspectCommit'
-import { base64ToFile } from '../lib/base64'
 import { formatBytes } from '../format'
 import FileTree from './FileTree.vue'
 import { buildFileTree, type FileTree as FileTreeModel, type InspectFile } from './fileTree'
 import type { SearchResultView, CommitHandle } from '../types'
-
-// How the add source was supplied:
-//   'search' — in-app Toloka search (the only in-app mode)
-//   'file'   — a .torrent's bytes handed off by the bot (#99)
-//   'uri'    — a magnet/URL handed off by the bot (#120)
-type Mode = 'search' | 'file' | 'uri'
 
 // `deepLinkToken` injection seam: defaults to the token parsed from the Telegram
 // start_param (#99); overridable so the auto-open path is testable without a
@@ -53,39 +47,6 @@ const { lastFolder, recordRecent } = useFolderShortcuts()
 const { history: searchHistory, recordQuery, clearHistory: clearSearchHistory } = useSearchHistory()
 const optimistic = useOptimisticTasks()
 const inspect = useInspectCommit(api)
-
-const open = ref(false)
-// Steps are renumbered search-first:
-//   in-app:   1 Search · 2 Folder · 3 Confirm
-//   handoff:  (Search skipped) · 2 Folder · 3 Confirm — Search is not drawn.
-const step = ref<1 | 2 | 3>(1)
-const mode = ref<Mode>('search')
-
-// True for the bot-handoff path: source is pre-loaded, Search step is skipped.
-const handoff = ref(false)
-
-// Pre-loaded source for the handoff path: a reconstructed .torrent File OR a URI.
-const selectedFile = ref<File | null>(null)
-const handoffUri = ref('')
-
-// Destination path from FolderPicker
-const destination = ref('')
-
-// Submission state. The commit is fully optimistic (#161): «Добавить» closes the
-// sheet instantly and the add runs in the background, so there is no in-sheet
-// "submitting…" spinner — failures surface via errorMsg on the next open.
-const errorMsg = ref<string | null>(null)
-
-// Search mode state
-const searchQuery = ref('')
-const searchResults = ref<SearchResultView[]>([])
-const searchLoading = ref(false)
-const searchError = ref<string | null>(null)
-const searchQueried = ref(false)
-const selectedResult = ref<SearchResultView | null>(null)
-
-// Search history dropdown
-const searchHistoryVisible = ref(false)
 
 // ─── Confirm step: inspect → select → commit (#123) ──────────────────────────
 // Reaching Confirm AUTO-inspects (DS2 create_list) and shows the torrent's file
@@ -105,6 +66,59 @@ const {
   resetInspect,
   cancelInspectIfOpen,
 } = inspect
+
+// ─── Wizard step model + mode + deep-link handoff (useAddWizard, #177) ────────
+// The open/step/mode/handoff state, the drawn-step model, navigation, open/reset,
+// the pre-loaded handoff source + selected result + destination + errorMsg, and
+// the bot-handoff (startFromStashedTorrent) all live in the composable; AddFlow
+// drives the inspect machine + search + commit around it.
+const wizard = useAddWizard({
+  lastFolder,
+  torrentStash: api.torrentStash,
+  resetInspect,
+  cancelInspectIfOpen,
+  // Search-mode refs live in AddFlow (not the wizard); clear them on every reset.
+  onReset: () => resetSearchState(),
+})
+const {
+  open,
+  step,
+  mode,
+  selectedFile,
+  handoffUri,
+  destination,
+  errorMsg,
+  selectedResult,
+  firstStep,
+  lastStep,
+  drawnSteps,
+  canAdvance,
+  goNext,
+  goBack,
+  openSheet,
+  resetForm,
+  startFromStashedTorrent,
+} = wizard
+
+// Search mode state
+const searchQuery = ref('')
+const searchResults = ref<SearchResultView[]>([])
+const searchLoading = ref(false)
+const searchError = ref<string | null>(null)
+const searchQueried = ref(false)
+
+// Search history dropdown
+const searchHistoryVisible = ref(false)
+
+/** Clear the search-mode refs — runs from the wizard's resetForm (onReset hook).
+ *  selectedResult is owned + cleared by the wizard. */
+function resetSearchState(): void {
+  searchQuery.value = ''
+  searchResults.value = []
+  searchLoading.value = false
+  searchError.value = null
+  searchQueried.value = false
+}
 
 /** The built folder/file tree for the current inspect (null until ready). */
 const fileTree = computed<FileTreeModel | null>(() =>
@@ -153,16 +167,7 @@ const filteredHistory = computed<string[]>(() => {
   return searchHistory.value.filter((item) => item.toLowerCase().includes(q))
 })
 
-// ─── Step model ────────────────────────────────────────────────
-
-/** The first drawn step: 1 (Search) in-app, 2 (Folder) on the bot handoff. */
-const firstStep = computed<1 | 2>(() => (handoff.value ? 2 : 1))
-
-/** The last drawn step (always 3 = Confirm for both paths). */
-const lastStep = computed<number>(() => 3)
-
-/** Steps shown in the stepper — handoff hides Search (only Folder · Confirm). */
-const drawnSteps = computed<number[]>(() => (handoff.value ? [2, 3] : [1, 2, 3]))
+// ─── Stepper UI (derived from the wizard's drawn-step model) ──────────────────
 
 /** Russian labels for each step by step number. */
 const STEP_LABELS: Record<number, string> = {
@@ -181,15 +186,6 @@ const stepperItems = computed(() =>
   }))
 )
 
-// ─── Navigation gating ────────────────────────────────────────────────
-
-/** Whether the current step has a valid value so Next can advance. */
-const canAdvance = computed<boolean>(() => {
-  if (step.value === 1) return selectedResult.value !== null // Search (used internally by goNext)
-  if (step.value === 2) return destination.value.trim().length > 0 // Folder
-  return true // Confirm
-})
-
 /** Seed-health level for a seeder count. */
 function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   if (seeders >= 20) return 'green'
@@ -206,56 +202,10 @@ function selectAndAdvance(result: SearchResultView): void {
   goNext()
 }
 
-// ─── Actions ────────────────────────────────────────────────
-
-function openSheet(): void {
-  open.value = true
-  resetForm()
-  // Pre-populate destination from last-used folder so the confirm step shows it.
-  // FolderPicker will also open into this folder via its own onMounted logic.
-  if (lastFolder.value) {
-    destination.value = lastFolder.value
-  }
-}
-
-function resetForm(): void {
-  step.value = 1
-  mode.value = 'search'
-  handoff.value = false
-  selectedFile.value = null
-  handoffUri.value = ''
-  destination.value = ''
-  errorMsg.value = null
-  searchQuery.value = ''
-  searchResults.value = []
-  searchLoading.value = false
-  searchError.value = null
-  searchQueried.value = false
-  selectedResult.value = null
-  resetInspect()
-}
-
-function goNext(): void {
-  if (!canAdvance.value) return
-  if (step.value < 3) step.value = (step.value + 1) as 1 | 2 | 3
-}
-
 /** Sheet close (X / dismiss): release any uncommitted inspect, then reset. */
 function onClose(): void {
   cancelInspectIfOpen()
   resetForm()
-}
-
-function goBack(): void {
-  // On the handoff path the Folder step (2) is the first drawn step, so Back
-  // from Confirm lands on Folder, and there is no Back on Folder itself.
-  const floor = handoff.value ? 2 : 1
-  // Leaving Confirm without committing → release the inspecting list on the NAS.
-  if (step.value === 3) {
-    cancelInspectIfOpen()
-    resetInspect()
-  }
-  if (step.value > floor) step.value = (step.value - 1) as 1 | 2 | 3
 }
 
 // --- Telegram BackButton wiring (#5) ---
@@ -339,36 +289,9 @@ function onClearHistory(): void {
   clearSearchHistory()
 }
 
-/**
- * Deep-link entry (#99, generalized #120): the bot stashed an add source and
- * opened the Mini App with a stash token. The stash holds either a .torrent's
- * bytes (`kind: 'bytes'`) or a magnet/URL string (`kind: 'uri'`). Either way the
- * wizard opens at the Folder step with the source pre-loaded; Search is skipped.
- * On failure fall back to the in-app search flow so the owner can recover.
- */
-async function startFromStashedTorrent(token: string): Promise<void> {
-  open.value = true
-  handoff.value = true
-  if (lastFolder.value) destination.value = lastFolder.value
-  try {
-    const stash = await api.torrentStash(token)
-    if (stash.kind === 'uri') {
-      mode.value = 'uri'
-      handoffUri.value = stash.uri
-    } else {
-      mode.value = 'file'
-      selectedFile.value = base64ToFile(stash.base64, stash.name)
-    }
-    step.value = 2 // Folder
-  } catch (e) {
-    // Recovery: drop back to the normal in-app search flow.
-    handoff.value = false
-    mode.value = 'search'
-    errorMsg.value = e instanceof Error ? e.message : String(e)
-    step.value = 1
-  }
-}
-
+// Deep-link entry (#99/#120): the bot stashed an add source and opened the Mini
+// App with a stash token; startFromStashedTorrent (useAddWizard) opens at the
+// Folder step with the source pre-loaded, falling back to search on failure.
 onMounted(() => {
   if (props.torrentToken) void startFromStashedTorrent(props.torrentToken)
 })

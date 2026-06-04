@@ -1,5 +1,5 @@
 import { initData } from './telegram'
-import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView, CommitHandle } from './types'
+import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView, CommitHandle, InspectStarted } from './types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -47,18 +47,12 @@ export const api = {
   // client renders the tree NOW and skips the poll. Magnets have no local bytes →
   // `{listId}` only, client polls pollInspect then commits by listId (#161).
   inspect: (uri: string, destination: string, title?: string) =>
-    request<{ listId?: string; inspectToken?: string; files?: { index: number; name: string; size: number }[] }>(
-      '/tasks/inspect',
-      jsonBody({ uri, destination, title })
-    ),
+    request<InspectStarted>('/tasks/inspect', jsonBody({ uri, destination, title })),
   inspectFile: (file: File, destination: string) => {
     const form = new FormData()
     form.append('file', file)
     form.append('destination', destination)
-    return request<{ listId?: string; inspectToken?: string; files?: { index: number; name: string; size: number }[] }>(
-      '/tasks/inspect',
-      { method: 'POST', body: form }
-    )
+    return request<InspectStarted>('/tasks/inspect', { method: 'POST', body: form })
   },
   // Poll until `ready` — the file tree populates once DSM parses the metadata.
   pollInspect: (listId: string) =>

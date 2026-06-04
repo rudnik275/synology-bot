@@ -114,3 +114,15 @@ export interface InspectFileView {
  * with no DSM wait) or a pre-created DSM `listId` (magnet poll path).
  */
 export type CommitHandle = { inspectToken: string } | { listId: string }
+
+/** One file in a torrent, as the inspect API returns it on the wire. */
+export interface InspectFileWire { index: number; name: string; size: number }
+
+/**
+ * The two shapes POST /tasks/inspect can return (it returns exactly one):
+ *  • held-bytes (upload / Toloka): the locally-parsed tree + a deferred token
+ *  • magnet: a pre-created DSM list id the client polls
+ */
+export type InspectStarted =
+  | { inspectToken: string; files: InspectFileWire[] }
+  | { listId: string }

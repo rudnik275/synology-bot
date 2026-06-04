@@ -27,7 +27,7 @@ import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { formatBytes } from '../format'
 import FileTree from './FileTree.vue'
 import { buildFileTree, allIndices, type FileTree as FileTreeModel, type InspectFile } from './fileTree'
-import type { SearchResultView, InspectFileView, CommitHandle } from '../types'
+import type { SearchResultView, InspectFileView, CommitHandle, InspectStarted } from '../types'
 
 // How the add source was supplied:
 //   'search' — in-app Toloka search (the only in-app mode)
@@ -302,7 +302,7 @@ async function runInspect(): Promise<InspectOutcome> {
   inspectState.value = 'inspecting'
   inspectError.value = null
   try {
-    let started: { listId?: string; inspectToken?: string; files?: { index: number; name: string; size: number }[] } | null = null
+    let started: InspectStarted | null = null
     if (mode.value === 'file' && selectedFile.value) {
       started = await api.inspectFile(selectedFile.value, destination.value)
     } else if (mode.value === 'search' && selectedResult.value) {
@@ -315,14 +315,14 @@ async function runInspect(): Promise<InspectOutcome> {
     if (seq !== inspectSeq) {
       // Stale run (reset / re-open while in flight). Only the magnet path created a
       // NAS list to release; the instant-tree token path created nothing.
-      if (started.listId) void api.deleteInspect(started.listId)
+      if ('listId' in started) void api.deleteInspect(started.listId)
       return { kind: 'whole' }
     }
-    // Instant tree (#161 + deferred create): for sources we held the .torrent bytes
-    // for, the server parsed the file tree (local bencode) and returned it with an
-    // `inspectToken` — NO DSM list yet. We render NOW and skip the poll; the list is
-    // created when the (optimistic) commit fires. Magnets return no `files` → poll.
-    if (started.files && started.files.length > 0 && started.inspectToken) {
+    if ('inspectToken' in started) {
+      // Instant tree (#161 + deferred create): for sources we held the .torrent bytes
+      // for, the server parsed the file tree (local bencode) and returned it with an
+      // `inspectToken` — NO DSM list yet. We render NOW and skip the poll; the list is
+      // created when the (optimistic) commit fires.
       const handle: CommitHandle = { inspectToken: started.inspectToken }
       commitHandle.value = handle
       const files = started.files.map((f) => ({ index: f.index, path: f.name, size: f.size }))
@@ -332,12 +332,8 @@ async function runInspect(): Promise<InspectOutcome> {
       inspectState.value = 'ready'
       return { kind: 'ready', handle, indices }
     }
-    // No instant tree (magnet): the list already exists; poll it until DSM parses
+    // Magnet (no local bytes): the list already exists; poll it until DSM parses
     // the metadata, then commit by listId.
-    if (!started.listId) {
-      inspectState.value = 'whole'
-      return { kind: 'whole' }
-    }
     const handle: CommitHandle = { listId: started.listId }
     commitHandle.value = handle // set so a Back/cancel can release this list
     let files: InspectFileView[] = []

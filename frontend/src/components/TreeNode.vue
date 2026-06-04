@@ -6,6 +6,7 @@
 import { ref, computed } from 'vue'
 import type { TreeNode } from './fileTree'
 import { formatBytes } from '../format'
+import Checkbox from './ui/Checkbox.vue'
 
 const props = defineProps<{
   node: TreeNode
@@ -71,18 +72,13 @@ function toggleCollapse(): void {
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
       </button>
-      <button
-        type="button"
-        class="ck"
-        :class="{ 'ck--on': checked, 'ck--some': indeterminate }"
-        role="checkbox"
-        :aria-checked="indeterminate ? 'mixed' : checked"
+      <Checkbox
+        :checked="checked"
+        :indeterminate="indeterminate"
         :data-testid="`tree-check-folder-${node.name}`"
-        @click.stop="toggle"
-      >
-        <svg v-if="checked" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4 10-10" /></svg>
-        <span v-else-if="indeterminate" class="dash" aria-hidden="true"></span>
-      </button>
+        @click.stop
+        @change="toggle"
+      />
       <span class="gly" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z" /></svg>
       </span>
@@ -93,17 +89,11 @@ function toggleCollapse(): void {
     <!-- File row -->
     <div v-else class="trow file-row" :data-testid="`tree-file-${node.index}`">
       <span class="fileindent" aria-hidden="true"></span>
-      <button
-        type="button"
-        class="ck"
-        :class="{ 'ck--on': checked }"
-        role="checkbox"
-        :aria-checked="checked"
+      <Checkbox
+        :checked="checked"
         :data-testid="`tree-check-${node.index}`"
-        @click="toggle"
-      >
-        <svg v-if="checked" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4 10-10" /></svg>
-      </button>
+        @change="toggle"
+      />
       <span class="nm">
         <span class="lbl" data-testid="tree-label">{{ node.label }}</span>
         <span class="raw" data-testid="tree-raw">{{ node.raw }}</span>
@@ -170,42 +160,6 @@ function toggleCollapse(): void {
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-/* Square checkbox — functional, drives the BT.File subset. */
-.ck {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--ink);
-  border-radius: 6px;
-  background: var(--paper);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-}
-.ck--on {
-  background: var(--yellow);
-}
-.ck--some {
-  background: var(--yellow);
-}
-.ck svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.ck .dash {
-  width: 10px;
-  height: 3px;
-  background: var(--ink);
-  border-radius: 2px;
 }
 
 /* Folder glyph — quiet. */

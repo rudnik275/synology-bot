@@ -14,10 +14,10 @@
 // row (#118) and calls openSheet() via the exposed method. The deep-link/handoff
 // path (torrentToken / auto-open) is unchanged.
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import Sheet from './Sheet.vue'
-import Button from './Button.vue'
+import Sheet from './ui/Sheet.vue'
+import Button from './ui/Button.vue'
 import FolderPicker from './FolderPicker.vue'
-import StickerBadge from './StickerBadge.vue'
+import StickerBadge from './ui/StickerBadge.vue'
 import { api } from '../api'
 import { torrentToken as deepLinkToken } from '../telegram'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'

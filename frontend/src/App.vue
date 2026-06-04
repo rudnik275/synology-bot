@@ -4,8 +4,8 @@
 // alongside DownloadsTab; the inline «Добавить загрузку» row (#118) in
 // DownloadsTab calls addFlow.openSheet() to open the wizard.
 import { ref, useTemplateRef } from 'vue'
-import TabBar from './components/TabBar.vue'
-import type { TabKey } from './components/tabs'
+import TabBar from './components/ui/TabBar.vue'
+import type { TabKey } from './components/ui/tabs'
 import DownloadsTab from './tabs/DownloadsTab.vue'
 import NasTab from './tabs/NasTab.vue'
 import ShowsTab from './tabs/ShowsTab.vue'

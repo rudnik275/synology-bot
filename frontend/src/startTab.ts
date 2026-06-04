@@ -1,4 +1,4 @@
-import type { TabKey } from './components/tabs'
+import type { TabKey } from './components/ui/tabs'
 
 const TABS: readonly TabKey[] = ['downloads', 'nas', 'shows']
 

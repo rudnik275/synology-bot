@@ -15,10 +15,10 @@ import { useSubscriptions } from '../composables/useSubscriptions'
 import { useShowSearch } from '../composables/useShowSearch'
 import { useShowDetail } from '../composables/useShowDetail'
 import ShowDetail from '../components/ShowDetail.vue'
-import Card from '../components/Card.vue'
-import ScreenHeader from '../components/ScreenHeader.vue'
-import StickerBadge from '../components/StickerBadge.vue'
-import EmptyState from '../components/EmptyState.vue'
+import Card from '../components/ui/Card.vue'
+import ScreenHeader from '../components/ui/ScreenHeader.vue'
+import StickerBadge from '../components/ui/StickerBadge.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 
 const { subscriptions, loading: subsLoading, error: subsError, add, remove, refreshMetadata } = useSubscriptions()
 const { results: searchResults, loading: searchLoading, error: searchError, debouncedSearch } = useShowSearch()

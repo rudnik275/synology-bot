@@ -4,7 +4,7 @@
 // default so it reads as a stuck-on sticker, not a flat pill.
 import { computed, ref, watch } from 'vue'
 import type { Tone } from './tones'
-import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
+import { usePrefersReducedMotion } from '../../composables/usePrefersReducedMotion'
 
 const props = withDefaults(
   defineProps<{

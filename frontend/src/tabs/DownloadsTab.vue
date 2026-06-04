@@ -15,15 +15,15 @@
 //   • Bigger % readout, quieter meta.
 //   • Elevation tiers (#101 D) preserved: active+error → raised, settled → flat.
 import { ref, computed, watch } from 'vue'
-import Card from '../components/Card.vue'
-import Button from '../components/Button.vue'
-import ScreenHeader from '../components/ScreenHeader.vue'
-import ProgressBar from '../components/ProgressBar.vue'
-import EmptyState from '../components/EmptyState.vue'
+import Card from '../components/ui/Card.vue'
+import Button from '../components/ui/Button.vue'
+import ScreenHeader from '../components/ui/ScreenHeader.vue'
+import ProgressBar from '../components/ui/ProgressBar.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
 import { useTasks } from '../composables/useTasks'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { formatBytes, formatSpeed } from '../format'
-import type { Tone } from '../components/tones'
+import type { Tone } from '../components/ui/tones'
 import type { TaskView } from '../types'
 
 // Callback to open the Add wizard — provided by App.vue via #118.

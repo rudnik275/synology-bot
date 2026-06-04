@@ -7,12 +7,12 @@
 // mapped to the green/amber/red triad — yellow stays reserved for actions, so
 // a "warn" never reads as a button (#101 accent split).
 import { computed, ref, watch } from 'vue'
-import Card from '../components/Card.vue'
-import ProgressBar from '../components/ProgressBar.vue'
-import StickerBadge from '../components/StickerBadge.vue'
-import ScreenHeader from '../components/ScreenHeader.vue'
-import Donut from '../components/Donut.vue'
-import type { DonutSegment } from '../components/donut'
+import Card from '../components/ui/Card.vue'
+import ProgressBar from '../components/ui/ProgressBar.vue'
+import StickerBadge from '../components/ui/StickerBadge.vue'
+import ScreenHeader from '../components/ui/ScreenHeader.vue'
+import Donut from '../components/ui/Donut.vue'
+import type { DonutSegment } from '../components/ui/donut'
 import {
   useHealth,
   volumeSeverity,
@@ -20,7 +20,7 @@ import {
   pctSeverity,
   type Severity,
 } from '../composables/useHealth'
-import type { Tone } from '../components/tones'
+import type { Tone } from '../components/ui/tones'
 import { formatBytes, formatPct } from '../format'
 
 const { data, loading, error } = useHealth()

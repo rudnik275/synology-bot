@@ -1,111 +1,71 @@
-import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoStorageLoadInfo, ProcessGroupList, ProcessGroupSlice, InspectListData } from './types.ts'
-import { ok, type Result } from '../../lib/result.ts'
+import type {
+  SynologyConfig,
+  ReachabilityResult,
+  Task,
+  SystemUtilization,
+  StorageInfo,
+  DiskInfo,
+  SharedFolder,
+  FolderEntry,
+  ProcessGroupSlice,
+  InspectListData,
+} from './types.ts'
+import type { Result } from '../../lib/result.ts'
+import { SynoTransport, PATH_DOWNLOAD_INFO } from './transport.ts'
+import { DownloadTasksApi } from './download-tasks-api.ts'
+import { InspectListApi } from './inspect-list-api.ts'
+import { SystemHealthApi } from './system-health-api.ts'
+import { FileStationApi } from './file-station-api.ts'
 
-const PATH_ENTRY = 'webapi/entry.cgi'
-const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
-const PATH_DOWNLOAD_INFO = 'webapi/DownloadStation/info.cgi'
+// Re-exported so existing call sites/tests that import these from the client
+// keep working — the public module surface is unchanged.
+export { normalizeDownloadDestination, ds2CreateParams } from './ds2-params.ts'
 
 /**
- * Converts a FileStation absolute path to a DownloadStation share-relative path.
- *
- * FileStation returns paths with a leading slash (e.g. `/video/Movies`), but
- * DownloadStation `create` expects a share-relative path without the leading
- * slash (e.g. `video/Movies`). This function also strips a `/volumeN/` prefix
- * if one is present.
- *
- * @example
- * normalizeDownloadDestination('/video/Movies') // 'video/Movies'
- * normalizeDownloadDestination('/volume1/video/Movies') // 'video/Movies'
- * normalizeDownloadDestination('video/Movies') // 'video/Movies' (idempotent)
+ * Facade over the DSM API — one door for the rest of the app. Behind it sit a
+ * shared `SynoTransport` (login/session/send/retry) and grouped APIs:
+ * `DownloadTasksApi`, `InspectListApi`, `SystemHealthApi`, `FileStationApi`.
+ * Every public method below is a thin delegation, so call sites (server.ts,
+ * handlers/routes/health.ts, the domain watchers) are unchanged.
  */
-export function normalizeDownloadDestination(destination: string): string {
-  // Strip /volumeN/ prefix (e.g. /volume1/, /volume2/)
-  let normalized = destination.replace(/^\/volume\d+\//, '/')
-  // Strip leading slash
-  normalized = normalized.replace(/^\//, '')
-  return normalized
-}
-
-/** Synology HDD temperature classification, synthesised from numeric `temp` (°C). */
-function classifyTemp(t: number): 'normal' | 'warning' | 'critical' {
-  if (t >= 56) return 'critical'
-  if (t >= 50) return 'warning'
-  return 'normal'
-}
-
 export class SynologyClient {
-  private host: string
-  private user: string
-  private password: string
-  private sid: string | null = null
+  private readonly transport: SynoTransport
+  private readonly downloadTasks: DownloadTasksApi
+  private readonly inspectList: InspectListApi
+  private readonly systemHealth: SystemHealthApi
+  private readonly fileStation: FileStationApi
 
   constructor(config: SynologyConfig) {
-    this.host = config.host.replace(/\/$/, '')
-    this.user = config.user
-    this.password = config.password
+    this.transport = new SynoTransport(config)
+    this.downloadTasks = new DownloadTasksApi(this.transport)
+    this.inspectList = new InspectListApi(this.transport)
+    this.systemHealth = new SystemHealthApi(this.transport)
+    this.fileStation = new FileStationApi(this.transport)
   }
 
-  async login(): Promise<void> {
-    const url = this.buildUrl('webapi/auth.cgi', {
-      api: 'SYNO.API.Auth',
-      version: '3',
-      method: 'login',
-      account: this.user,
-      passwd: this.password,
-      session: 'DownloadStation',
-    })
+  // ── session ────────────────────────────────────────────────────────────────
 
-    const res = await fetch(url)
-    const json: SynoEnvelope<SynoAuthData> = await res.json()
-
-    if (!json.success || !json.data?.sid) {
-      throw new Error(`Login failed: code ${json.error?.code ?? 'unknown'}`)
-    }
-
-    this.sid = json.data.sid
+  login(): Promise<void> {
+    return this.transport.login()
   }
 
-  async listTasks(): Promise<Result<Task[]>> {
-    const result = await this.request<SynoTaskListData>(
-      'SYNO.DownloadStation.Task',
-      1,
-      'list',
-      { additional: 'detail,transfer' },
-      PATH_DOWNLOAD_TASK,
-    )
-    if (!result.ok) return result
-    return { ok: true, data: result.data.tasks ?? [] }
-  }
-
-  async pauseTask(taskId: string): Promise<Result> {
-    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'pause', {
-      id: taskId,
-    }, PATH_DOWNLOAD_TASK)
-    if (!result.ok) return result
-    return { ok: true }
-  }
-
-  async resumeTask(taskId: string): Promise<Result> {
-    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'resume', {
-      id: taskId,
-    }, PATH_DOWNLOAD_TASK)
-    if (!result.ok) return result
-    return { ok: true }
-  }
-
-  async deleteTask(taskId: string, deleteFiles = false): Promise<Result> {
-    const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'delete', {
-      id: taskId,
-      force_complete: 'false',
-      delete_files: deleteFiles ? 'true' : 'false',
-    }, PATH_DOWNLOAD_TASK)
-    if (!result.ok) return result
-    return { ok: true }
+  /**
+   * Low-level escape hatch retained for backward compatibility. Prefer the
+   * grouped methods below; this just forwards to the transport.
+   */
+  request<T>(
+    api: string,
+    version: number,
+    method: string,
+    params: Record<string, string | number> = {},
+    path?: string,
+  ): Promise<Result<T>> {
+    return this.transport.request<T>(api, version, method, params, path)
   }
 
   async isReachable(): Promise<ReachabilityResult> {
     try {
-      const result = await this.request<unknown>('SYNO.API.Info', 1, 'query', { query: 'all' }, 'webapi/query.cgi')
+      const result = await this.transport.request<unknown>('SYNO.API.Info', 1, 'query', { query: 'all' }, 'webapi/query.cgi')
       if (result.ok) return { ok: true }
       return result
     } catch (err) {
@@ -114,143 +74,78 @@ export class SynologyClient {
     }
   }
 
-  async request<T>(
-    api: string,
-    version: number,
-    method: string,
-    params: Record<string, string | number> = {},
-    path: string = PATH_ENTRY,
-  ): Promise<Result<T>> {
-    const url = this.buildUrl(path, {
-      api,
-      version: String(version),
-      method,
-      _sid: this.sid ?? '',
-      ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
-    })
+  // ── download tasks ───────────────────────────────────────────────────────────
 
-    const res = await fetch(url)
-    const json: SynoEnvelope<T> = await res.json()
-
-    if (!json.success) {
-      const code = json.error?.code
-
-      if (code === 119) {
-        // Session expired -- re-login once and retry
-        await this.login()
-        return this.requestOnce<T>(api, version, method, params, path)
-      }
-
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
-    }
-
-    return ok(json.data as T)
+  listTasks(): Promise<Result<Task[]>> {
+    return this.downloadTasks.listTasks()
   }
 
-  /**
-   * Add a Download Task from a `uri` — a magnet, or an HTTP(S) `.torrent` link
-   * (including one served by our own Mini App server for held bytes). Uses
-   * `SYNO.DownloadStation2.Task` `create` with `type:"url"` — the SAME call the
-   * DSM web UI's "Create via URL" makes, and the ONLY one that actually parses a
-   * `.torrent` URL and starts the download.
-   *
-   * ⚠️ Verified live on the NAS (2026-06-03): the documented
-   * `SYNO.DownloadStation.Task` v3 `create` `uri` creates a task that sits at
-   * "waiting" / size Unknown forever — DSM never parses the linked `.torrent`.
-   * The SAME url added via DownloadStation2 `type:"url"` parses immediately
-   * (e.g. a 27.5 GB torrent) and downloads. So we use DS2 here.
-   *
-   * DS2 `entry.cgi` wants JSON-encoded values: `type` as `"url"`, `url` as a
-   * JSON array `["…"]`, `destination` as `"…"` (plain values are misread).
-   * `create_list:false` adds the whole torrent (no per-file inspect list).
-   */
-  async createDownloadTask(
-    uri: string,
-    destination: string
-  ): Promise<Result> {
-    const result = await this.request<unknown>('SYNO.DownloadStation2.Task', 2, 'create', {
-      create_list: 'false',
-      type: '"url"',
-      url: JSON.stringify([uri]),
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-    })
-    if (!result.ok) return result
-    return { ok: true }
+  pauseTask(taskId: string): Promise<Result> {
+    return this.downloadTasks.pauseTask(taskId)
   }
 
-  /**
-   * Per-file selection — step 1 of 3. Inspect a torrent WITHOUT downloading it:
-   * DS2 `create` with `create_list:true` parses the torrent into a transient
-   * "list" (a `list_id`) we can read the file tree from, then commit a subset.
-   *
-   * ⚠️ Verified live 2026-06-03 (see memory reference-ds2-selective-download).
-   * `uri` is a magnet / HTTP `.torrent` link (incl. our self-hosted
-   * `/torrent-file/<token>.torrent` for held bytes). DSM fetches + parses it,
-   * so the call can take several seconds. Returns the `list_id`.
-   */
-  async createInspectList(
+  resumeTask(taskId: string): Promise<Result> {
+    return this.downloadTasks.resumeTask(taskId)
+  }
+
+  deleteTask(taskId: string, deleteFiles = false): Promise<Result> {
+    return this.downloadTasks.deleteTask(taskId, deleteFiles)
+  }
+
+  createDownloadTask(uri: string, destination: string): Promise<Result> {
+    return this.downloadTasks.createDownloadTask(uri, destination)
+  }
+
+  // ── per-file inspect list ────────────────────────────────────────────────────
+
+  createInspectList(
     uri: string,
-    destination: string
+    destination: string,
   ): Promise<{ ok: true; listId: string } | Extract<Result, { ok: false }>> {
-    const result = await this.request<{ list_id?: string[] }>('SYNO.DownloadStation2.Task', 2, 'create', {
-      create_list: 'true',
-      type: '"url"',
-      url: JSON.stringify([uri]),
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-    })
-    if (!result.ok) return result
-    const listId = result.data.list_id?.[0]
-    if (!listId) return { ok: false, reason: 'DownloadStation returned no list_id' }
-    return { ok: true, listId }
+    return this.inspectList.createInspectList(uri, destination)
   }
 
-  /**
-   * Per-file selection — step 2 of 3. Read the parsed file tree for a `list_id`.
-   * `SYNO.DownloadStation2.Task.List` `get` (NOT `…List.Polling`, which errors).
-   * The torrent's metadata may take a few seconds after createInspectList, so
-   * the caller polls until `files` is non-empty. `list_id` is a JSON string.
-   */
-  async getInspectList(
-    listId: string
-  ): Promise<Result<InspectListData>> {
-    return this.request<InspectListData>('SYNO.DownloadStation2.Task.List', 2, 'get', {
-      list_id: JSON.stringify(listId),
-    })
+  getInspectList(listId: string): Promise<Result<InspectListData>> {
+    return this.inspectList.getInspectList(listId)
   }
 
-  /**
-   * Per-file selection — step 3 of 3. Commit the chosen files into a real
-   * download task. `SYNO.DownloadStation2.Task.List` **`download`** (the only
-   * method that commits — `create`/`set`/`apply` all error 103). `selected` is
-   * the JSON array of file indices to KEEP. Verified the selection is honored
-   * (a 1-file commit downloads only that file).
-   */
-  async commitInspectList(
-    listId: string,
-    selected: number[],
-    destination: string
-  ): Promise<Result> {
-    const result = await this.request<{ task_id?: string[] }>('SYNO.DownloadStation2.Task.List', 2, 'download', {
-      list_id: JSON.stringify(listId),
-      selected: JSON.stringify(selected),
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-    })
-    if (!result.ok) return result
-    return { ok: true }
+  commitInspectList(listId: string, selected: number[], destination: string): Promise<Result> {
+    return this.inspectList.commitInspectList(listId, selected, destination)
   }
 
-  /**
-   * Abandon an un-committed inspect list (user cancelled). `Task.List` `delete`
-   * wants `list_id` as a JSON **array**. Best-effort — after a commit the
-   * list_id is already consumed and this is a no-op.
-   */
-  async deleteInspectList(listId: string): Promise<Result> {
-    const result = await this.request<unknown>('SYNO.DownloadStation2.Task.List', 2, 'delete', {
-      list_id: JSON.stringify([listId]),
-    })
-    if (!result.ok) return result
-    return { ok: true }
+  deleteInspectList(listId: string): Promise<Result> {
+    return this.inspectList.deleteInspectList(listId)
   }
+
+  // ── FileStation folders ──────────────────────────────────────────────────────
+
+  listSharedFolders(): Promise<Result<SharedFolder[]>> {
+    return this.fileStation.listSharedFolders()
+  }
+
+  listFolders(folderPath: string): Promise<Result<FolderEntry[]>> {
+    return this.fileStation.listFolders(folderPath)
+  }
+
+  // ── system health ────────────────────────────────────────────────────────────
+
+  getSystemUtilization(): Promise<Result<SystemUtilization>> {
+    return this.systemHealth.getSystemUtilization()
+  }
+
+  getStorageInfo(): Promise<Result<StorageInfo>> {
+    return this.systemHealth.getStorageInfo()
+  }
+
+  getDiskInfo(): Promise<Result<DiskInfo>> {
+    return this.systemHealth.getDiskInfo()
+  }
+
+  getProcessGroups(): Promise<Result<ProcessGroupSlice[]>> {
+    return this.systemHealth.getProcessGroups()
+  }
+
+  // ── engine self-heal ─────────────────────────────────────────────────────────
 
   /**
    * Ensure DownloadStation has a non-empty `default_destination`.
@@ -269,11 +164,14 @@ export class SynologyClient {
    * still overrides it — the global default just has to be non-empty for the
    * scheduler to run anything. Idempotent and best-effort: a failure here is
    * logged by the caller, not fatal.
+   *
+   * Lives on the facade because it spans two sub-APIs (DownloadStation.Info via
+   * the transport + FileStation share listing).
    */
   async ensureDefaultDestination(): Promise<
     { ok: true; destination: string; changed: boolean } | Extract<Result, { ok: false }>
   > {
-    const cfg = await this.request<{ default_destination: string | null }>(
+    const cfg = await this.transport.request<{ default_destination: string | null }>(
       'SYNO.DownloadStation.Info',
       1,
       'getconfig',
@@ -287,12 +185,12 @@ export class SynologyClient {
       return { ok: true, destination: current, changed: false }
     }
 
-    const shares = await this.listSharedFolders()
+    const shares = await this.fileStation.listSharedFolders()
     if (!shares.ok) return shares
     const preferred = shares.data.find((s) => s.name === 'video') ?? shares.data[0]
     if (!preferred) return { ok: false, reason: 'no shared folders available to use as default destination' }
 
-    const set = await this.request<unknown>(
+    const set = await this.transport.request<unknown>(
       'SYNO.DownloadStation.Info',
       1,
       'setserverconfig',
@@ -301,80 +199,5 @@ export class SynologyClient {
     )
     if (!set.ok) return set
     return { ok: true, destination: preferred.name, changed: true }
-  }
-
-  async listSharedFolders(): Promise<Result<SharedFolder[]>> {
-    const result = await this.request<{ shares: SharedFolder[] }>('SYNO.FileStation.List', 2, 'list_share', {})
-    if (!result.ok) return result
-    return { ok: true, data: result.data.shares ?? [] }
-  }
-
-  async listFolders(folderPath: string): Promise<Result<FolderEntry[]>> {
-    const result = await this.request<{ files: FolderEntry[] }>('SYNO.FileStation.List', 2, 'list', {
-      folder_path: folderPath,
-      filetype: 'dir',
-    })
-    if (!result.ok) return result
-    return { ok: true, data: result.data.files ?? [] }
-  }
-
-  private async requestOnce<T>(
-    api: string,
-    version: number,
-    method: string,
-    params: Record<string, string | number> = {},
-    path: string = PATH_ENTRY,
-  ): Promise<Result<T>> {
-    const url = this.buildUrl(path, {
-      api,
-      version: String(version),
-      method,
-      _sid: this.sid ?? '',
-      ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
-    })
-
-    const res = await fetch(url)
-    const json: SynoEnvelope<T> = await res.json()
-
-    if (!json.success) {
-      const code = json.error?.code
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
-    }
-
-    return ok(json.data as T)
-  }
-
-  async getSystemUtilization(): Promise<Result<SystemUtilization>> {
-    return this.request<SystemUtilization>('SYNO.Core.System.Utilization', 1, 'get')
-  }
-
-  async getStorageInfo(): Promise<Result<StorageInfo>> {
-    const result = await this.request<SynoStorageLoadInfo>('SYNO.Storage.CGI.Storage', 1, 'load_info')
-    if (!result.ok) return result
-    return { ok: true, data: { volumes: result.data.volumes ?? [] } }
-  }
-
-  async getDiskInfo(): Promise<Result<DiskInfo>> {
-    const result = await this.request<SynoStorageLoadInfo>('SYNO.Storage.CGI.Storage', 1, 'load_info')
-    if (!result.ok) return result
-    const disks: DiskEntry[] = (result.data.disks ?? []).map(d => ({
-      ...d,
-      temperature_status: classifyTemp(d.temp),
-    }))
-    return { ok: true, data: { disks } }
-  }
-
-  async getProcessGroups(): Promise<Result<ProcessGroupSlice[]>> {
-    const result = await this.request<ProcessGroupList>('SYNO.Core.System.ProcessGroup', 1, 'list')
-    if (!result.ok) return result
-    return { ok: true, data: result.data.slices ?? [] }
-  }
-
-  private buildUrl(path: string, params: Record<string, string>): string {
-    const url = new URL(`${this.host}/${path}`)
-    for (const [k, v] of Object.entries(params)) {
-      url.searchParams.set(k, v)
-    }
-    return url.toString()
   }
 }

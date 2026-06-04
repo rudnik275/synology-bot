@@ -132,16 +132,32 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     return token
   }
 
+  /** The open URL DSM fetches a stashed .torrent from, for a given stash token. */
+  function torrentFileUrl(token: string): string | null {
+    return miniappUrl ? `${miniappUrl.replace(/\/$/, '')}/torrent-file/${token}.torrent` : null
+  }
+
   /**
-   * Stash raw .torrent bytes and return a URL DownloadStation can fetch ITSELF
-   * (DSM can't pull an authenticated Toloka link or Mini-App upload). Verified
-   * live: DSM downloads + parses a .torrent served from this host through the
-   * Cloudflare tunnel. Returns null when MINIAPP_URL is unconfigured.
+   * Stash raw .torrent bytes and return both the stash `token` and a URL
+   * DownloadStation can fetch ITSELF (DSM can't pull an authenticated Toloka link
+   * or Mini-App upload). Verified live: DSM downloads + parses a .torrent served
+   * from this host through the Cloudflare tunnel. The `token` lets a DEFERRED
+   * inspect commit re-derive the URL later (instant tree, see POST /tasks/inspect).
+   * Returns null when MINIAPP_URL is unconfigured.
    */
-  function servedUrlForBytes(bytes: Uint8Array): string | null {
+  function servedUrlForBytes(bytes: Uint8Array): { url: string; token: string } | null {
     if (!miniappUrl) return null
     const token = stashServedTorrent(bytes)
-    return `${miniappUrl.replace(/\/$/, '')}/torrent-file/${token}.torrent`
+    const url = torrentFileUrl(token)
+    return url ? { url, token } : null
+  }
+
+  /** Re-derive a still-live stash's URL by token (for the deferred inspect commit).
+   *  Returns null if MINIAPP_URL is unset or the token is unknown/expired. */
+  function servedUrlForToken(token: string): string | null {
+    const entry = servedTorrents.get(token)
+    if (!entry || entry.expiresAt <= Date.now()) return null
+    return torrentFileUrl(token)
   }
 
   /**
@@ -158,7 +174,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   async function resolveSource(
     c: Context<AppEnv>
   ): Promise<
-    | { ok: true; url: string; destination: string; bytes?: Uint8Array }
+    | { ok: true; url: string; destination: string; bytes?: Uint8Array; token?: string }
     | { ok: false; status: 400 | 502; error: string }
   > {
     const contentType = c.req.header('content-type') ?? ''
@@ -171,9 +187,9 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
         return { ok: false, status: 400, error: 'file and destination are required' }
       }
       const bytes = new Uint8Array(await file.arrayBuffer())
-      const url = servedUrlForBytes(bytes)
-      if (!url) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
-      return { ok: true, url, destination, bytes }
+      const served = servedUrlForBytes(bytes)
+      if (!served) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
+      return { ok: true, url: served.url, destination, bytes, token: served.token }
     }
 
     const body = await c.req.json().catch(() => null)
@@ -190,9 +206,9 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       } catch (err) {
         return { ok: false, status: 502, error: errorMessage(err) }
       }
-      const url = servedUrlForBytes(bytes)
-      if (!url) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
-      return { ok: true, url, destination, bytes }
+      const served = servedUrlForBytes(bytes)
+      if (!served) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
+      return { ok: true, url: served.url, destination, bytes, token: served.token }
     }
 
     // Magnets and plain URLs DSM can fetch directly — no hosting hop, no bytes.
@@ -267,32 +283,40 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   // --- Per-file selection (#123): inspect → (client picks files) → commit ---
   // DS2 `create_list:true` parses the torrent into a transient `list_id` we read
   // the file tree from, then `Task.List download` commits the chosen subset.
-  // Two-call inspect (start + poll) so the metadata-fetch wait lives client-side.
-
-  // Start an inspect: same source resolution as the whole-torrent add, but
-  // create_list. Returns the list_id; for sources we hold the .torrent BYTES for
-  // (multipart upload / Toloka download), we ALSO parse the file tree locally
-  // (bencode, ~1ms) and return it INSTANTLY so the client skips DSM's ~5–10s
-  // metadata poll (#161). Magnets have no local bytes → just `{listId}`, client
-  // polls as before. The local index == DSM's index because both enumerate the
-  // .torrent's fixed `info.files` order (parity covered by bencode.test.ts), so
-  // the client's `selected` indices remain correct at commit time.
+  // Start an inspect so the owner can pick files. Two source shapes:
+  //
+  // • BYTES we hold (multipart upload / Toloka download): parse the file tree
+  //   LOCALLY (bencode, ~1ms) and return it INSTANTLY with an `inspectToken` —
+  //   WITHOUT touching DSM. createInspectList (the multi-second DSM round-trip)
+  //   is DEFERRED to the optimistic commit (POST /tasks/commit), which already
+  //   runs in the background after «Добавить». So the tree appears with no DSM
+  //   wait, and the owner never blocks on DSM. The bytes stay in the served stash
+  //   (15-min TTL) so the deferred create can self-host them; the local index ==
+  //   DSM's index because both enumerate the .torrent's fixed `info.files` order
+  //   (parity covered by bencode.test.ts), so `selected` stays correct at commit.
+  //   Bonus: no DSM list is created here → backing out of Confirm leaves no orphan.
+  //
+  // • Magnets (no local bytes): we can't parse them, so create the list NOW and
+  //   return `{listId}`; the client polls GET /tasks/inspect/:id for the tree DSM
+  //   fetches from peers, then commits by listId (unchanged two-call path).
   app.post('/api/tasks/inspect', async (c) => {
     const src = await resolveSource(c)
     if (!src.ok) return c.json({ error: src.error }, src.status)
-    const result = await synology.createInspectList(src.url, src.destination)
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    if (src.bytes) {
+    if (src.bytes && src.token) {
       try {
         const files = parseTorrentFiles(src.bytes).map((f, index) => ({ index, name: f.path, size: f.length }))
-        if (files.length > 0) return c.json({ listId: result.listId, files }, 201)
-        console.warn(`[inspect] local parse yielded 0 files (${src.bytes.length}B) — falling back to DSM poll`)
+        if (files.length > 0) return c.json({ inspectToken: src.token, files }, 201)
+        console.warn(`[inspect] local parse yielded 0 files (${src.bytes.length}B) — falling back to DSM create+poll`)
       } catch (err) {
-        // A parse error must NEVER break inspect — fall through to the poll path.
+        // A parse error must NEVER break inspect — fall through to the DSM path.
         // Log it: a silent fall-through hides the instant tree never appearing.
-        console.warn(`[inspect] local bencode parse failed (${src.bytes.length}B), falling back to DSM poll: ${errorMessage(err)}`)
+        console.warn(`[inspect] local bencode parse failed (${src.bytes.length}B), falling back to DSM create+poll: ${errorMessage(err)}`)
       }
     }
+    // Magnet (no local bytes) or local parse failed: create the DSM list now so the
+    // client can poll for the parsed tree and commit by listId.
+    const result = await synology.createInspectList(src.url, src.destination)
+    if (!result.ok) return c.json({ error: result.reason }, 502)
     return c.json({ listId: result.listId }, 201)
   })
 
@@ -318,18 +342,37 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   })
 
   // Commit the chosen files (`selected` = indices to KEEP) into a real task.
+  // Two handles, mirroring inspect:
+  //   • `inspectToken` (instant-tree path): DSM was never touched at inspect time,
+  //     so create the list NOW from the still-stashed bytes — this multi-second DSM
+  //     round-trip lives HERE, in the optimistic background — then commit it.
+  //   • `listId` (magnet path): the list was already created at inspect time; just
+  //     commit it.
   app.post('/api/tasks/commit', async (c) => {
     const body = await c.req.json().catch(() => null)
     const listId = body?.listId
+    const inspectToken = body?.inspectToken
     const destination = body?.destination
     const selected = body?.selected
-    if (typeof listId !== 'string' || !listId || typeof destination !== 'string' || !destination) {
-      return c.json({ error: 'listId and destination are required' }, 400)
+    if (typeof destination !== 'string' || !destination) {
+      return c.json({ error: 'destination is required' }, 400)
     }
     if (!Array.isArray(selected) || !selected.every((n) => Number.isInteger(n))) {
       return c.json({ error: 'selected must be an array of file indices' }, 400)
     }
-    const result = await synology.commitInspectList(listId, selected, destination)
+    let listIdToCommit: string
+    if (typeof inspectToken === 'string' && inspectToken) {
+      const url = servedUrlForToken(inspectToken)
+      if (!url) return c.json({ error: 'inspect expired — reopen the torrent' }, 410)
+      const created = await synology.createInspectList(url, destination)
+      if (!created.ok) return c.json({ error: created.reason }, 502)
+      listIdToCommit = created.listId
+    } else if (typeof listId === 'string' && listId) {
+      listIdToCommit = listId
+    } else {
+      return c.json({ error: 'listId or inspectToken is required' }, 400)
+    }
+    const result = await synology.commitInspectList(listIdToCommit, selected, destination)
     if (!result.ok) return c.json({ error: result.reason }, 502)
     return c.json({ ok: true }, 201)
   })

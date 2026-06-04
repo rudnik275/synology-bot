@@ -364,33 +364,37 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
     expect('files' in body).toBe(false)
   })
 
-  it('POST /api/tasks/inspect (multipart .torrent) returns the file tree INSTANTLY via local bencode parse (#161)', async () => {
+  it('POST /api/tasks/inspect (multipart .torrent) returns the file tree INSTANTLY via local bencode parse, with NO DSM call (#161 deferred-create)', async () => {
     // d4:infod5:filesld6:lengthi100e4:pathl3:dir5:a.mp4eed6:lengthi200e4:pathl5:b.mp4eee4:name3:topee
     const torrentBytes = new TextEncoder().encode(
       'd4:infod5:filesld6:lengthi100e4:pathl3:dir5:a.mp4eed6:lengthi200e4:pathl5:b.mp4eee4:name3:topee'
     )
+    let createCalled = false
     const app = makeApp(makeSynology({
-      createInspectList: async () => ({ ok: true, listId: 'btdlLOCAL' }),
+      createInspectList: async () => { createCalled = true; return { ok: true, listId: 'btdlLOCAL' } },
     }))
     const fd = new FormData()
     fd.append('destination', '/volume1/films')
     fd.append('file', new Blob([torrentBytes], { type: 'application/x-bittorrent' }), 'movie.torrent')
     const res = await app.request('/api/tasks/inspect', { method: 'POST', headers: ownerHeaders(), body: fd })
     expect(res.status).toBe(201)
-    expect(await res.json()).toEqual({
-      listId: 'btdlLOCAL',
-      // Order follows info.files; index is the array position (parity with DSM).
-      files: [
-        { index: 0, name: 'dir/a.mp4', size: 100 },
-        { index: 1, name: 'b.mp4', size: 200 },
-      ],
-    })
+    const body = await res.json()
+    // The DSM round-trip is deferred to commit — inspect returns an opaque token.
+    expect(typeof body.inspectToken).toBe('string')
+    expect('listId' in body).toBe(false)
+    expect(createCalled).toBe(false)
+    // Order follows info.files; index is the array position (parity with DSM).
+    expect(body.files).toEqual([
+      { index: 0, name: 'dir/a.mp4', size: 100 },
+      { index: 1, name: 'b.mp4', size: 200 },
+    ])
   })
 
-  it('POST /api/tasks/inspect (Toloka) returns the local file tree from the fetched bytes (#161)', async () => {
+  it('POST /api/tasks/inspect (Toloka) returns the local file tree from the fetched bytes, no DSM call (#161 deferred-create)', async () => {
     const torrentBytes = new TextEncoder().encode('d4:infod6:lengthi500e4:name9:movie.mkvee')
+    let createCalled = false
     const synology = makeSynology({
-      createInspectList: async () => ({ ok: true, listId: 'btdlTOL' }),
+      createInspectList: async () => { createCalled = true; return { ok: true, listId: 'btdlTOL' } },
     })
     const toloka = makeToloka({ downloadTorrent: async () => torrentBytes })
     const res = await makeApp(synology, toloka).request(
@@ -398,10 +402,11 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
       jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/films' })
     )
     expect(res.status).toBe(201)
-    expect(await res.json()).toEqual({
-      listId: 'btdlTOL',
-      files: [{ index: 0, name: 'movie.mkv', size: 500 }],
-    })
+    const body = await res.json()
+    expect(typeof body.inspectToken).toBe('string')
+    expect('listId' in body).toBe(false)
+    expect(createCalled).toBe(false)
+    expect(body.files).toEqual([{ index: 0, name: 'movie.mkv', size: 500 }])
   })
 
   it('POST /api/tasks/inspect falls back to {listId} only when local bytes do not parse (#161)', async () => {
@@ -420,19 +425,45 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
     expect('files' in body).toBe(false)
   })
 
-  it('POST /api/tasks/inspect (Toloka) self-hosts the .torrent, then inspects that URL', async () => {
-    let inspectArgs: { uri: string; dest: string } | undefined
+  it('deferred-create: inspect returns a token (DSM untouched); commit then self-hosts the .torrent, creates the list, and commits the subset', async () => {
+    const torrentBytes = new TextEncoder().encode('d4:infod6:lengthi500e4:name9:movie.mkvee')
+    let createArgs: { uri: string; dest: string } | undefined
+    let commitArgs: { listId: string; selected: number[]; dest: string } | undefined
     const synology = makeSynology({
-      createInspectList: async (uri, dest) => { inspectArgs = { uri, dest }; return { ok: true, listId: 'btdlT' } },
+      createInspectList: async (uri, dest) => { createArgs = { uri, dest }; return { ok: true, listId: 'btdlDEFER' } },
+      commitInspectList: async (listId, selected, dest) => { commitArgs = { listId, selected, dest }; return { ok: true } },
     })
-    const toloka = makeToloka({ downloadTorrent: async () => new Uint8Array([9, 9]) })
-    const res = await makeApp(synology, toloka).request(
+    const toloka = makeToloka({ downloadTorrent: async () => torrentBytes })
+    const app = makeApp(synology, toloka)
+
+    // 1. Inspect — instant local tree, no DSM call yet.
+    const inspectRes = await app.request(
       '/api/tasks/inspect',
       jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/films' })
     )
-    expect(res.status).toBe(201)
-    expect(inspectArgs?.dest).toBe('/films')
-    expect(inspectArgs?.uri).toMatch(/^https:\/\/nas\.test\/torrent-file\/[a-f0-9]+\.torrent$/)
+    expect(inspectRes.status).toBe(201)
+    const inspectBody = await inspectRes.json()
+    expect(typeof inspectBody.inspectToken).toBe('string')
+    expect(createArgs).toBeUndefined()
+
+    // 2. Commit with that token — NOW the list is created from the self-hosted bytes
+    //    (the deferred DSM round-trip) and the selected subset is committed.
+    const commitRes = await app.request(
+      '/api/tasks/commit',
+      jsonReq({ inspectToken: inspectBody.inspectToken, selected: [0], destination: '/films' })
+    )
+    expect(commitRes.status).toBe(201)
+    expect(createArgs?.dest).toBe('/films')
+    expect(createArgs?.uri).toMatch(/^https:\/\/nas\.test\/torrent-file\/[a-f0-9]+\.torrent$/)
+    expect(commitArgs).toEqual({ listId: 'btdlDEFER', selected: [0], dest: '/films' })
+  })
+
+  it('POST /api/tasks/commit 410 when the inspectToken is unknown/expired', async () => {
+    const res = await makeApp().request(
+      '/api/tasks/commit',
+      jsonReq({ inspectToken: 'deadbeefdeadbeef', selected: [0], destination: '/v1' })
+    )
+    expect(res.status).toBe(410)
   })
 
   it('POST /api/tasks/inspect 502 when createInspectList fails', async () => {
@@ -476,8 +507,13 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
     expect(args).toEqual({ listId: 'btdlABC', selected: [0, 5], dest: '/v1' })
   })
 
-  it('POST /api/tasks/commit 400 when listId or destination missing', async () => {
+  it('POST /api/tasks/commit 400 when neither listId nor inspectToken is given', async () => {
     const res = await makeApp().request('/api/tasks/commit', jsonReq({ selected: [0], destination: '/v1' }))
+    expect(res.status).toBe(400)
+  })
+
+  it('POST /api/tasks/commit 400 when destination missing', async () => {
+    const res = await makeApp().request('/api/tasks/commit', jsonReq({ listId: 'x', selected: [0] }))
     expect(res.status).toBe(400)
   })
 

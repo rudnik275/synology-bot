@@ -107,3 +107,10 @@ export interface InspectFileView {
   path: string
   size: number
 }
+
+/**
+ * Handle for committing an inspected torrent. Either a deferred `inspectToken`
+ * (instant-tree bytes path — DSM list is created at commit time so the tree shows
+ * with no DSM wait) or a pre-created DSM `listId` (magnet poll path).
+ */
+export type CommitHandle = { inspectToken: string } | { listId: string }

@@ -27,7 +27,7 @@ import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { formatBytes } from '../format'
 import FileTree from './FileTree.vue'
 import { buildFileTree, allIndices, type FileTree as FileTreeModel, type InspectFile } from './fileTree'
-import type { SearchResultView, InspectFileView } from '../types'
+import type { SearchResultView, InspectFileView, CommitHandle } from '../types'
 
 // How the add source was supplied:
 //   'search' — in-app Toloka search (the only in-app mode)
@@ -87,7 +87,10 @@ const searchHistoryVisible = ref(false)
 // back to a whole-torrent add ('whole'), so the owner can always proceed.
 type InspectState = 'idle' | 'inspecting' | 'ready' | 'whole'
 const inspectState = ref<InspectState>('idle')
-const inspectListId = ref<string | null>(null)
+// The handle used to commit the current inspect: a deferred `inspectToken` (instant
+// tree — no DSM list exists yet) or a pre-created `listId` (magnet poll path). Only
+// the listId path has a NAS list to release on cancel; the token path has nothing.
+const commitHandle = ref<CommitHandle | null>(null)
 const inspectFiles = ref<InspectFileView[]>([])
 const selectedIndices = ref<number[]>([])
 const inspectError = ref<string | null>(null)
@@ -95,9 +98,9 @@ let inspectSeq = 0 // drop a stale poll that resolves after reset / re-open
 // The result an inspect run settled to. A fast «Добавить» tap chains its commit
 // on this (rather than reading the component refs, which resetForm() clears the
 // instant the sheet closes) so the owner never waits for inspect to finish — #161.
-//   'ready' → commit listId + indices; 'whole' → whole-torrent fallback.
+//   'ready' → commit handle + indices; 'whole' → whole-torrent fallback.
 type InspectOutcome =
-  | { kind: 'ready'; listId: string; indices: number[] }
+  | { kind: 'ready'; handle: CommitHandle; indices: number[] }
   | { kind: 'whole' }
 // The in-flight runInspect() promise, captured at fast-tap time so its commit
 // fires the moment inspect resolves.
@@ -299,7 +302,7 @@ async function runInspect(): Promise<InspectOutcome> {
   inspectState.value = 'inspecting'
   inspectError.value = null
   try {
-    let started: { listId: string; files?: { index: number; name: string; size: number }[] } | null = null
+    let started: { listId?: string; inspectToken?: string; files?: { index: number; name: string; size: number }[] } | null = null
     if (mode.value === 'file' && selectedFile.value) {
       started = await api.inspectFile(selectedFile.value, destination.value)
     } else if (mode.value === 'search' && selectedResult.value) {
@@ -310,22 +313,33 @@ async function runInspect(): Promise<InspectOutcome> {
       return { kind: 'whole' }
     }
     if (seq !== inspectSeq) {
-      void api.deleteInspect(started.listId)
+      // Stale run (reset / re-open while in flight). Only the magnet path created a
+      // NAS list to release; the instant-tree token path created nothing.
+      if (started.listId) void api.deleteInspect(started.listId)
       return { kind: 'whole' }
     }
-    inspectListId.value = started.listId
-    // Instant tree (#161): for sources we held the .torrent bytes for, the server
-    // already parsed the file tree (local bencode) and returned it with listId, so
-    // we render it NOW and skip the poll. Magnets return no `files` → poll below.
-    if (started.files && started.files.length > 0) {
+    // Instant tree (#161 + deferred create): for sources we held the .torrent bytes
+    // for, the server parsed the file tree (local bencode) and returned it with an
+    // `inspectToken` — NO DSM list yet. We render NOW and skip the poll; the list is
+    // created when the (optimistic) commit fires. Magnets return no `files` → poll.
+    if (started.files && started.files.length > 0 && started.inspectToken) {
+      const handle: CommitHandle = { inspectToken: started.inspectToken }
+      commitHandle.value = handle
       const files = started.files.map((f) => ({ index: f.index, path: f.name, size: f.size }))
       inspectFiles.value = files
       const indices = allIndices(files as InspectFile[])
       selectedIndices.value = indices // all ticked by default
       inspectState.value = 'ready'
-      return { kind: 'ready', listId: started.listId, indices }
+      return { kind: 'ready', handle, indices }
     }
-    // No instant tree (magnet): poll the inspect list until DSM parses the metadata.
+    // No instant tree (magnet): the list already exists; poll it until DSM parses
+    // the metadata, then commit by listId.
+    if (!started.listId) {
+      inspectState.value = 'whole'
+      return { kind: 'whole' }
+    }
+    const handle: CommitHandle = { listId: started.listId }
+    commitHandle.value = handle // set so a Back/cancel can release this list
     let files: InspectFileView[] = []
     for (let i = 0; i < 20 && seq === inspectSeq; i++) {
       const poll = await api.pollInspect(started.listId)
@@ -341,7 +355,7 @@ async function runInspect(): Promise<InspectOutcome> {
     const indices = allIndices(files as InspectFile[])
     selectedIndices.value = indices // all ticked by default
     inspectState.value = files.length > 0 ? 'ready' : 'whole'
-    return files.length > 0 ? { kind: 'ready', listId: started.listId, indices } : { kind: 'whole' }
+    return files.length > 0 ? { kind: 'ready', handle, indices } : { kind: 'whole' }
   } catch (e) {
     inspectError.value = e instanceof Error ? e.message : String(e)
     inspectState.value = 'whole'
@@ -352,22 +366,24 @@ async function runInspect(): Promise<InspectOutcome> {
 /** Clear inspect/selection state (reset / leaving Confirm). */
 function resetInspect(): void {
   // When a fast-tap commit is chained on the in-flight inspect, DON'T bump the seq
-  // — that run must finish and hand its listId to the pending commit. We only clear
+  // — that run must finish and hand its handle to the pending commit. We only clear
   // the visible refs (the sheet is closing anyway); the run owns its own lifecycle.
   if (!protectInflightInspect) inspectSeq++
   inspectState.value = 'idle'
   inspectFiles.value = []
   selectedIndices.value = []
   inspectError.value = null
-  if (!protectInflightInspect) inspectListId.value = null
+  if (!protectInflightInspect) commitHandle.value = null
 }
 
-/** Best-effort release of an uncommitted inspect so no orphan lingers on the NAS. */
+/** Best-effort release of an uncommitted inspect so no orphan lingers on the NAS.
+ *  Only the magnet/listId path has a NAS list; the instant-tree token path created
+ *  none (the list is born at commit), so cancelling it is a pure no-op. */
 function cancelInspectIfOpen(): void {
   inspectSeq++
-  const id = inspectListId.value
-  if (id && inspectState.value !== 'whole') void api.deleteInspect(id)
-  inspectListId.value = null
+  const handle = commitHandle.value
+  if (handle && 'listId' in handle && inspectState.value !== 'whole') void api.deleteInspect(handle.listId)
+  commitHandle.value = null
 }
 
 // Auto-inspect when the Confirm step is entered (both in-app and handoff paths).
@@ -480,24 +496,24 @@ function create(): void {
   // via the documented create — a .torrent upload (file) or a uri (magnet /
   // search / handoff URL).
   let doAdd: () => Promise<unknown>
-  let committedListId: string | null = null
-  if (inspectState.value === 'ready' && inspectListId.value) {
+  let committedHandle: CommitHandle | null = null
+  if (inspectState.value === 'ready' && commitHandle.value) {
     if (selectedIndices.value.length === 0) {
       errorMsg.value = 'Выберите хотя бы один файл.'
       return
     }
-    const listId = inspectListId.value
+    const handle = commitHandle.value
     const indices = [...selectedIndices.value]
-    committedListId = listId
-    doAdd = () => api.commitTask(listId, indices, dest)
+    committedHandle = handle
+    doAdd = () => api.commitTask(handle, indices, dest)
   } else if (inspectState.value === 'inspecting' && canInspect.value && inspectInFlight) {
     // Fast-tap: the owner hit «Добавить» before inspect resolved. Don't make them
     // wait — CHAIN the commit on the in-flight inspect promise in the background.
     // The placeholder shows immediately; the commit fires the moment inspect
-    // settles. The outcome (listId + indices, or whole-torrent fallback) comes from
-    // the promise's RESOLVED VALUE, not the component refs — resetForm() clears
-    // those the instant the sheet closes below. `protectInflightInspect` stops the
-    // imminent resetForm() from invalidating (and deleting) the run we're awaiting.
+    // settles. The outcome (commit handle + indices, or whole-torrent fallback)
+    // comes from the promise's RESOLVED VALUE, not the component refs — resetForm()
+    // clears those the instant the sheet closes below. `protectInflightInspect`
+    // stops the imminent resetForm() from invalidating the run we're awaiting.
     const pending = inspectInFlight
     protectInflightInspect = true
     // Capture the whole-torrent fallback source NOW (refs are about to be cleared).
@@ -506,12 +522,12 @@ function create(): void {
       try {
         const outcome = await pending
         if (outcome.kind === 'ready' && outcome.indices.length > 0) {
-          return await api.commitTask(outcome.listId, outcome.indices, dest)
+          return await api.commitTask(outcome.handle, outcome.indices, dest)
         }
         return await fallback()
       } finally {
         protectInflightInspect = false
-        inspectListId.value = null // the run's list is now consumed (or never existed)
+        commitHandle.value = null // the run's list is now consumed (or never existed)
       }
     }
   } else if (mode.value === 'file') {
@@ -544,10 +560,10 @@ function create(): void {
   const optimisticId = optimistic.add({ title, destination: dest })
   if (dest) recordRecent(dest)
 
-  // The committed inspect list_id is consumed by doAdd — null it BEFORE resetForm
-  // so resetForm's abandon path doesn't fire a redundant delete for the list we're
-  // committing. (The fast-tap branch nulls it inside doAdd, once it has the id.)
-  if (committedListId) inspectListId.value = null
+  // The commit handle is consumed by doAdd — null it BEFORE resetForm so resetForm's
+  // abandon path doesn't fire a redundant delete for the list we're committing.
+  // (The fast-tap branch nulls it inside doAdd, once it has the handle.)
+  if (committedHandle) commitHandle.value = null
 
   // Close the sheet + reset INSTANTLY (synchronously) — the placeholder is already
   // showing in the list — then fire the add in the BACKGROUND without awaiting, so

@@ -54,10 +54,11 @@ beforeEach(() => {
       return Promise.resolve(jsonResponse({ results: SEARCH_RESULTS }))
     }
     if ((url as string) === '/api/tasks/inspect') {
-      // Instant-tree contract (#161): the server parsed the .torrent bytes
-      // locally and returns the file tree with the listId — no poll needed.
-      // An empty list omits `files` so the client falls back to the poll/whole.
-      if (inspectFiles.length > 0) return Promise.resolve(jsonResponse({ listId: 'LZ', files: inspectFiles }, 201))
+      // Instant-tree contract (#161, deferred-create): the server parsed the
+      // .torrent bytes locally and returns the file tree with an `inspectToken`
+      // (no DSM list yet, no poll). An empty list returns just `{listId}` so the
+      // client falls back to the magnet-style poll/whole path.
+      if (inspectFiles.length > 0) return Promise.resolve(jsonResponse({ inspectToken: 'TOK', files: inspectFiles }, 201))
       return Promise.resolve(jsonResponse({ listId: 'LZ' }, 201))
     }
     if ((url as string).startsWith('/api/tasks/inspect/')) {
@@ -144,7 +145,7 @@ describe('AddFlow confirm — inspect → file tree (#123)', () => {
     const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
     expect(commit).toBeTruthy()
     const body = JSON.parse(commit!.init?.body as string)
-    expect(body.listId).toBe('LZ')
+    expect(body.inspectToken).toBe('TOK')
     expect([...body.selected].sort((a: number, b: number) => a - b)).toEqual([0, 1, 2])
     wrapper.unmount()
   })
@@ -175,12 +176,14 @@ describe('AddFlow confirm — inspect → file tree (#123)', () => {
     wrapper.unmount()
   })
 
-  it('cancels the inspect on the NAS when the owner goes Back from Confirm (Изменить)', async () => {
+  it('does NOT hit the NAS when the owner goes Back from Confirm (instant-tree creates no list to release)', async () => {
     const wrapper = await openWizard()
     await toConfirm()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-edit-folder"]')!.click()
     await flushPromises()
-    expect(fetchCalls.some((c) => c.url === '/api/tasks/inspect/LZ' && c.init?.method === 'DELETE')).toBe(true)
+    // The instant-tree path defers createInspectList to commit, so reaching Confirm
+    // creates no DSM list — backing out has nothing to delete (no orphan, no call).
+    expect(fetchCalls.some((c) => c.url.startsWith('/api/tasks/inspect/') && c.init?.method === 'DELETE')).toBe(false)
     wrapper.unmount()
   })
 })
@@ -200,7 +203,7 @@ describe('AddFlow confirm — fast-tap while still inspecting (#161)', () => {
       }
       if ((url as string) === '/api/tasks/inspect') {
         // Resolve only after the gate opens — the tap happens before this.
-        return gate.then(() => jsonResponse({ listId: 'LZ', files: INSPECT_FILES }, 201))
+        return gate.then(() => jsonResponse({ inspectToken: 'TOK', files: INSPECT_FILES }, 201))
       }
       if ((url as string) === '/api/tasks/commit') {
         return Promise.resolve(jsonResponse({ ok: true }, 201))
@@ -236,15 +239,15 @@ describe('AddFlow confirm — fast-tap while still inspecting (#161)', () => {
     // The commit has NOT fired yet — it's chained on the pending inspect.
     expect(fetchCalls.some((c) => c.url === '/api/tasks/commit')).toBe(false)
 
-    // Release the inspect → the chained commit fires with the resolved listId.
+    // Release the inspect → the chained commit fires with the resolved handle.
     releaseInspect!()
     await flushPromises()
     await flushPromises()
     const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
     expect(commit).toBeTruthy()
-    expect(JSON.parse(commit!.init?.body as string).listId).toBe('LZ')
-    // It must NOT have deleted the list it was about to commit.
-    expect(fetchCalls.some((c) => c.url === '/api/tasks/inspect/LZ' && c.init?.method === 'DELETE')).toBe(false)
+    expect(JSON.parse(commit!.init?.body as string).inspectToken).toBe('TOK')
+    // It must NOT have deleted anything (the instant-tree path holds no NAS list).
+    expect(fetchCalls.some((c) => c.url.startsWith('/api/tasks/inspect/') && c.init?.method === 'DELETE')).toBe(false)
     wrapper.unmount()
   })
 })

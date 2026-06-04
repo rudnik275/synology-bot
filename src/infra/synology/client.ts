@@ -26,6 +26,39 @@ export function normalizeDownloadDestination(destination: string): string {
   return normalized
 }
 
+/**
+ * Build the JSON-string-quoted params DS2 `entry.cgi` insists on.
+ *
+ * DS2 misreads plain values, so `type` must be the string `"url"`, `url` a JSON
+ * array `["…"]`, `destination` a quoted `"…"`, and `list_id`/`selected` JSON.
+ * Centralising the quoting here removes the 3× foot-gun previously duplicated in
+ * `createDownloadTask` / `createInspectList` / `commitInspectList`.
+ *
+ * Two shapes:
+ *   - create:  `{ uri, destination, createList }` → `SYNO.DownloadStation2.Task` `create`
+ *   - commit:  `{ listId, selected, destination }` → `SYNO.DownloadStation2.Task.List` `download`
+ */
+export function ds2CreateParams(
+  args:
+    | { uri: string; destination: string; createList: boolean }
+    | { listId: string; selected: number[]; destination: string },
+): Record<string, string> {
+  const destination = `"${normalizeDownloadDestination(args.destination)}"`
+  if ('uri' in args) {
+    return {
+      create_list: args.createList ? 'true' : 'false',
+      type: '"url"',
+      url: JSON.stringify([args.uri]),
+      destination,
+    }
+  }
+  return {
+    list_id: JSON.stringify(args.listId),
+    selected: JSON.stringify(args.selected),
+    destination,
+  }
+}
+
 /** Synology HDD temperature classification, synthesised from numeric `temp` (°C). */
 function classifyTemp(t: number): 'normal' | 'warning' | 'critical' {
   if (t >= 56) return 'critical'
@@ -189,12 +222,12 @@ export class SynologyClient {
     uri: string,
     destination: string
   ): Promise<Result> {
-    const result = await this.request<unknown>('SYNO.DownloadStation2.Task', 2, 'create', {
-      create_list: 'false',
-      type: '"url"',
-      url: JSON.stringify([uri]),
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-    })
+    const result = await this.request<unknown>(
+      'SYNO.DownloadStation2.Task',
+      2,
+      'create',
+      ds2CreateParams({ uri, destination, createList: false }),
+    )
     if (!result.ok) return result
     return { ok: true }
   }
@@ -213,12 +246,12 @@ export class SynologyClient {
     uri: string,
     destination: string
   ): Promise<{ ok: true; listId: string } | Extract<Result, { ok: false }>> {
-    const result = await this.request<{ list_id?: string[] }>('SYNO.DownloadStation2.Task', 2, 'create', {
-      create_list: 'true',
-      type: '"url"',
-      url: JSON.stringify([uri]),
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-    })
+    const result = await this.request<{ list_id?: string[] }>(
+      'SYNO.DownloadStation2.Task',
+      2,
+      'create',
+      ds2CreateParams({ uri, destination, createList: true }),
+    )
     if (!result.ok) return result
     const listId = result.data.list_id?.[0]
     if (!listId) return { ok: false, reason: 'DownloadStation returned no list_id' }
@@ -251,11 +284,12 @@ export class SynologyClient {
     selected: number[],
     destination: string
   ): Promise<Result> {
-    const result = await this.request<{ task_id?: string[] }>('SYNO.DownloadStation2.Task.List', 2, 'download', {
-      list_id: JSON.stringify(listId),
-      selected: JSON.stringify(selected),
-      destination: `"${normalizeDownloadDestination(destination)}"`,
-    })
+    const result = await this.request<{ task_id?: string[] }>(
+      'SYNO.DownloadStation2.Task.List',
+      2,
+      'download',
+      ds2CreateParams({ listId, selected, destination }),
+    )
     if (!result.ok) return result
     return { ok: true }
   }

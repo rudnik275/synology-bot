@@ -22,6 +22,7 @@ import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import Spinner from '../components/ui/Spinner.vue'
+import Skeleton from '../components/ui/Skeleton.vue'
 import { useTasks } from '../composables/useTasks'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { formatBytes, formatSpeed } from '../format'
@@ -157,22 +158,22 @@ function qualityChips(task: TaskView): string[] {
         <div class="sk-edge" />
         <!-- Title row: ~60% title bar + small status label placeholder -->
         <div class="sk-row">
-          <div class="sk-line sk-title" />
-          <div class="sk-line sk-label" />
+          <Skeleton class="sk-title" />
+          <Skeleton class="sk-label" />
         </div>
         <!-- Quality chip placeholders (year / resolution / codec) -->
         <div class="sk-chips">
-          <div class="sk-chip" />
-          <div class="sk-chip" />
-          <div v-if="i !== 2" class="sk-chip" />
+          <Skeleton class="sk-chip" />
+          <Skeleton class="sk-chip" />
+          <Skeleton v-if="i !== 2" class="sk-chip" />
         </div>
         <!-- Progress bar placeholder (full-width container + partial fill block) -->
         <div class="sk-bar">
-          <div class="sk-bar-fill" :style="{ width: i === 1 ? '55%' : '78%' }" />
+          <Skeleton class="sk-bar-fill" :style="{ width: i === 1 ? '55%' : '78%' }" />
         </div>
         <!-- Meta line placeholder -->
         <div class="sk-row">
-          <div class="sk-line sk-meta" />
+          <Skeleton class="sk-meta" />
         </div>
       </div>
     </div>
@@ -560,18 +561,11 @@ function qualityChips(task: TaskView): string[] {
  * ── Skeleton loader — Variant A (#115) ───────────────────────────────────────
  *
  * Content-shaped cards that mirror the real download card geometry (#116):
- * same border / radius / shadow / left edge stripe.  Animated via a horizontal
- * left→right shimmer sweep on the skeleton colour (background-position only,
- * no layout thrash).  Only renders on first load (loading && tasks.length===0).
- *
- * Skeleton palette:
- *   --sk-base   the quiet fill  (#e9e4d4 — warm parchment, no hue association)
- *   --sk-sheen  the shimmer peak (a lighter warm tone blended inline)
- *
- * Reduced motion: the global tokens.css block already sets
- *   animation-duration: 0.01ms; animation-iteration-count: 1
- * on * which effectively stops the shimmer.  The local override below
- * additionally freezes background-position so there is truly no movement.
+ * same border / radius / shadow / left edge stripe.  Shimmer animation is
+ * delegated to the <Skeleton> primitive (components/ui/Skeleton.vue) which
+ * owns the keyframe + token-based gradient.  Only the structural layout and
+ * sizing classes remain here.  Only renders on first load
+ * (loading && tasks.length===0).
  */
 .loading-state {
   display: flex;
@@ -602,32 +596,6 @@ function qualityChips(task: TaskView): string[] {
   width: 5px;
   border-radius: var(--radius) 0 0 var(--radius);
   background: var(--sk-edge); /* neutral skeleton grey — no status hue */
-}
-
-/* Shimmer keyframe: left → right sweep using background-position */
-@keyframes sk-shimmer {
-  0%   { background-position: -200px 0; }
-  100% { background-position: calc(200px + 100%) 0; }
-}
-
-/*
- * Shimmer base: applied to every skeleton placeholder element.
- * The gradient blends skeleton-base → lighter sheen → skeleton-base,
- * which slides across via background-position.
- */
-.sk-line,
-.sk-chip {
-  border-radius: 6px;
-  background: var(--sk-base);
-  background-image: linear-gradient(
-    90deg,
-    var(--sk-base) 0,
-    var(--sk-sheen) 40px,
-    var(--sk-base) 80px
-  );
-  background-size: 300px 100%;
-  background-repeat: no-repeat;
-  animation: sk-shimmer 1.3s linear infinite;
 }
 
 /* Header row: title bar + status label placeholder */
@@ -671,35 +639,13 @@ function qualityChips(task: TaskView): string[] {
 }
 
 .sk-bar-fill {
-  --sk-base: #e9e4d4;
-  --sk-sheen: #f3eedf;
   height: 100%;
-  background: var(--sk-base);
-  background-image: linear-gradient(
-    90deg,
-    var(--sk-base) 0,
-    var(--sk-sheen) 40px,
-    var(--sk-base) 80px
-  );
-  background-size: 300px 100%;
-  background-repeat: no-repeat;
-  animation: sk-shimmer 1.3s linear infinite;
 }
 
 /* Meta line */
 .sk-meta {
   height: 12px;
   width: 45%;
-}
-
-/* Reduced motion: neutralise the shimmer sweep — fall back to a static tint. */
-@media (prefers-reduced-motion: reduce) {
-  .sk-line,
-  .sk-chip,
-  .sk-bar-fill {
-    animation: none;
-    background-image: none; /* remove the gradient; flat skeleton colour only */
-  }
 }
 
 /*

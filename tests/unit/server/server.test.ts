@@ -529,6 +529,69 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
     expect(res.status).toBe(200)
     expect(deleted).toBe('btdlABC')
   })
+
+  it('deferred-token commit: releases (deleteInspectList) the created list when commitInspectList fails, returns 502 with the commit reason', async () => {
+    const torrentBytes = new TextEncoder().encode('d4:infod6:lengthi500e4:name9:movie.mkvee')
+    const toloka = makeToloka({ downloadTorrent: async () => torrentBytes })
+
+    const deletedIds: string[] = []
+    const synology = makeSynology({
+      createInspectList: async () => ({ ok: true, listId: 'btdlORPHAN' }),
+      commitInspectList: async () => ({ ok: false, reason: 'DSM commit error' }),
+      deleteInspectList: async (listId) => { deletedIds.push(listId); return { ok: true } },
+    })
+    const app = makeApp(synology, toloka)
+
+    // 1. Inspect — get an inspectToken (no DSM call yet).
+    const inspectRes = await app.request(
+      '/api/tasks/inspect',
+      jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/films' })
+    )
+    expect(inspectRes.status).toBe(201)
+    const { inspectToken } = await inspectRes.json()
+    expect(typeof inspectToken).toBe('string')
+
+    // 2. Commit — createInspectList succeeds but commitInspectList fails.
+    //    The server must release the orphaned list and return 502.
+    const commitRes = await app.request(
+      '/api/tasks/commit',
+      jsonReq({ inspectToken, selected: [0], destination: '/films' })
+    )
+    expect(commitRes.status).toBe(502)
+    expect(await commitRes.json()).toEqual({ error: 'DSM commit error' })
+    // deleteInspectList must have been called exactly once with the list the server created.
+    expect(deletedIds).toHaveLength(1)
+    expect(deletedIds[0]).toBe('btdlORPHAN')
+  })
+
+  it('inspect XOR contract: held-bytes path returns inspectToken + files, never listId', async () => {
+    const torrentBytes = new TextEncoder().encode(
+      'd4:infod5:filesld6:lengthi100e4:pathl3:dir5:a.mp4eed6:lengthi200e4:pathl5:b.mp4eee4:name3:topee'
+    )
+    const fd = new FormData()
+    fd.append('destination', '/volume1/films')
+    fd.append('file', new Blob([torrentBytes], { type: 'application/x-bittorrent' }), 'movie.torrent')
+    const res = await makeApp().request('/api/tasks/inspect', { method: 'POST', headers: ownerHeaders(), body: fd })
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    // Must have inspectToken and files — no listId.
+    expect(typeof body.inspectToken).toBe('string')
+    expect(Array.isArray(body.files)).toBe(true)
+    expect('listId' in body).toBe(false)
+  })
+
+  it('inspect XOR contract: magnet path returns listId, never inspectToken or files', async () => {
+    const app = makeApp(makeSynology({
+      createInspectList: async () => ({ ok: true, listId: 'btdlMAGNET' }),
+    }))
+    const res = await app.request('/api/tasks/inspect', jsonReq({ uri: 'magnet:?xt=urn:btih:abc', destination: '/v1' }))
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    // Must have listId — no inspectToken, no files.
+    expect(body.listId).toBe('btdlMAGNET')
+    expect('inspectToken' in body).toBe(false)
+    expect('files' in body).toBe(false)
+  })
 })
 
 describe('Mini App server — folders & search', () => {

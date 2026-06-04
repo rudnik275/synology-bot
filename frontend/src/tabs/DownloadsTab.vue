@@ -448,7 +448,7 @@ function qualityChips(task: TaskView): string[] {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  border: 2px solid rgba(9, 9, 11, 0.2);
+  border: 2px solid var(--spinner-track);
   border-top-color: var(--ink);
   border-radius: 50%;
   animation: dl-spin 0.7s linear infinite;
@@ -505,7 +505,7 @@ function qualityChips(task: TaskView): string[] {
 .confirm-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(9, 9, 11, 0.5);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -629,7 +629,7 @@ function qualityChips(task: TaskView): string[] {
   inset: 0 auto 0 0;
   width: 5px;
   border-radius: var(--radius) 0 0 var(--radius);
-  background: #e2ddd1; /* neutral skeleton grey — no status hue */
+  background: var(--sk-edge); /* neutral skeleton grey — no status hue */
 }
 
 /* Shimmer keyframe: left → right sweep using background-position */
@@ -645,8 +645,6 @@ function qualityChips(task: TaskView): string[] {
  */
 .sk-line,
 .sk-chip {
-  --sk-base: #e9e4d4;
-  --sk-sheen: #f3eedf;
   border-radius: 6px;
   background: var(--sk-base);
   background-image: linear-gradient(
@@ -688,7 +686,7 @@ function qualityChips(task: TaskView): string[] {
 .sk-chip {
   width: 42px;
   height: 18px;
-  border-radius: 999px; /* fully-rounded pill like real chips */
+  border-radius: var(--radius-pill); /* fully-rounded pill like real chips */
 }
 
 /* Progress bar — full-width container (bordered, like ProgressBar), partial fill block */

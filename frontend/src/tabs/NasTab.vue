@@ -286,6 +286,7 @@ const ramDonut = computed(() => {
   opacity: 0.45;
 }
 .live-dot {
+  --pulse-ink: rgba(9, 9, 11, 0.35); /* ink-alpha for pulse ring start — local one-off */
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -296,15 +297,15 @@ const ramDonut = computed(() => {
 @keyframes live-pulse {
   0% {
     transform: scale(0.4);
-    box-shadow: 0 0 0 0 rgba(9, 9, 11, 0.35);
+    box-shadow: 0 0 0 0 var(--pulse-ink);
   }
   60% {
     transform: scale(1.25);
-    box-shadow: 0 0 0 6px rgba(9, 9, 11, 0);
+    box-shadow: 0 0 0 6px transparent;
   }
   100% {
     transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(9, 9, 11, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 

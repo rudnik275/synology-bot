@@ -1057,7 +1057,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   padding: var(--space-2) var(--space-3);
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(9, 9, 11, 0.12); /* --hairline */
+  border-bottom: 1px solid var(--hairline-color);
   border-radius: 0;
   cursor: pointer;
   text-align: left;
@@ -1072,7 +1072,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   border-bottom: none;
 }
 .result-row:active {
-  background: rgba(9, 9, 11, 0.04);
+  background: var(--ink-active);
 }
 
 /* Content column: takes all remaining width */
@@ -1110,7 +1110,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   font-weight: var(--fw-bold);
   padding: 2px 7px;
   border: 2px solid var(--ink);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--paper);
   white-space: nowrap;
   flex-shrink: 0;
@@ -1219,9 +1219,9 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   font-size: 11px;
   font-weight: var(--fw-bold);
   padding: 5px 11px;
-  border-radius: 999px;
-  background: rgba(9, 9, 11, 0.06);
-  color: rgba(9, 9, 11, 0.7);
+  border-radius: var(--radius-pill);
+  background: var(--ink-chip-bg);
+  color: var(--ink-secondary);
 }
 
 /* Files block — NO outer box: header rule + tree directly in the card. */
@@ -1237,7 +1237,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   justify-content: space-between;
   gap: var(--space-2);
   padding-bottom: var(--space-2);
-  border-bottom: 2px solid rgba(9, 9, 11, 0.13);
+  border-bottom: 2px solid var(--hairline-strong-color);
 }
 .files-t {
   display: flex;
@@ -1274,7 +1274,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(9, 9, 11, 0.2);
+  border: 2px solid var(--spinner-track);
   border-top-color: var(--ink);
   border-radius: 50%;
   animation: addflow-spin 0.7s linear infinite;
@@ -1307,7 +1307,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   justify-content: space-between;
   gap: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 2px solid rgba(9, 9, 11, 0.13);
+  border-top: 2px solid var(--hairline-strong-color);
 }
 .dest-info {
   min-width: 0;
@@ -1336,7 +1336,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   text-transform: uppercase;
   padding: 7px 14px;
   border: 2px solid var(--ink);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--yellow);
   color: var(--ink);
   cursor: pointer;

@@ -23,7 +23,12 @@ const props = defineProps<{
 // the severity colours so a process slice never reads as "warn"/"critical".
 const HUES = ['var(--violet)', '#2bc4d4', '#ff6db3', '#ffb02e']
 // Neutral greys for aggregate buckets: "other" (mid) then "free" (faint).
-const NEUTRAL = ['rgba(9, 9, 11, 0.32)', 'rgba(9, 9, 11, 0.12)']
+// Values mirror --donut-neutral and --donut-faint in tokens.css — read at
+// runtime via getComputedStyle so the token is the single source of truth.
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+const NEUTRAL = computed(() => [cssVar('--donut-neutral'), cssVar('--donut-faint')])
 
 const total = computed(() =>
   Math.max(1, props.segments.reduce((sum, s) => sum + Math.max(0, s.value), 0)),
@@ -37,8 +42,9 @@ const rows = computed(() => {
     const start = (acc / total.value) * 100
     acc += Math.max(0, s.value)
     const end = (acc / total.value) * 100
+    const neutral = NEUTRAL.value
     const color = s.neutral
-      ? NEUTRAL[Math.min(grey++, NEUTRAL.length - 1)]!
+      ? neutral[Math.min(grey++, neutral.length - 1)]!
       : HUES[Math.min(hue++, HUES.length - 1)]!
     return { ...s, color, start, end }
   })

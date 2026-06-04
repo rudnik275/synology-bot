@@ -40,7 +40,10 @@
   /* Hairline: the faint internal divider between rows grouped inside one flat
    * surface (#101 elevation tiers — a grouped panel reads as ONE card with
    * quiet rows, not a stack of identical bordered boxes). */
-  --hairline: var(--border-thin) solid rgba(9, 9, 11, 0.12);
+  --hairline-color: rgba(9, 9, 11, 0.12);
+  --hairline: var(--border-thin) solid var(--hairline-color);
+  /* Slightly stronger divider for confirm-card section headers (0.13 vs 0.12). */
+  --hairline-strong-color: rgba(9, 9, 11, 0.13);
 
   /* --- Hard offset shadows (Npx Npx 0, no blur) --- */
   --shadow-sm: 3px 3px 0 var(--ink);
@@ -54,6 +57,31 @@
    * every surface (cards, buttons, bars, FAB, hero) inherits these. --- */
   --radius: 12px;
   --radius-lg: 16px;
+  /* Pill: fully-rounded capsule shape for chips, badges, and pill buttons. */
+  --radius-pill: 999px;
+
+  /* --- Overlays & interaction states --- */
+  /* Modal/sheet/confirm backdrops. */
+  --scrim: rgba(9, 9, 11, 0.5);
+  /* Row active/pressed tint (very faint, no border). */
+  --ink-active: rgba(9, 9, 11, 0.04);
+  /* Chip/tag muted background. */
+  --ink-chip-bg: rgba(9, 9, 11, 0.06);
+  /* Secondary/muted text (e.g. chip label). */
+  --ink-secondary: rgba(9, 9, 11, 0.7);
+  /* Spinner track — the unfilled ring of an activity indicator. */
+  --spinner-track: rgba(9, 9, 11, 0.2);
+  /* Donut chart neutral segment colours (mid-grey "other" + faint "free"). */
+  --donut-neutral: rgba(9, 9, 11, 0.32);
+  --donut-faint: var(--hairline-color);
+
+  /* --- Skeleton shimmer --- */
+  /* Base fill of every skeleton placeholder element. */
+  --sk-base: #e9e4d4;
+  /* Lighter sheen that sweeps across via background-position animation. */
+  --sk-sheen: #f3eedf;
+  /* Neutral left-edge stripe (no status hue, matches card stripe position). */
+  --sk-edge: #e2ddd1;
 
   /* --- Spacing rhythm (4/8) --- */
   --space-1: 4px;

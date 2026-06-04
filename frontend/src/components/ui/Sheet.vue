@@ -71,7 +71,7 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(9, 9, 11, 0.5);
+  background: var(--scrim);
 }
 .scrim--fullscreen {
   align-items: stretch;

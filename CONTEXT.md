@@ -41,7 +41,7 @@ Design system: ADR 0006 ([`docs/adr/0006-mini-app-design-system-neo-brutalism.md
 
 ## Frontend state architecture
 
-State is managed through **composables** (`useApi`, `useHealth`, `useTasks`, `useSubscriptions`). **Pinia is not used** — this is a single-user mini-app; an extra state-management dependency was not warranted. Each composable owns its reactive state and exposes actions; components import composables directly.
+State is managed through **composables** (`useApi`, `useHealth`, `useTasks`, `useSubscriptions`, `useInspectCommit`). **Pinia is not used** — this is a single-user mini-app; an extra state-management dependency was not warranted. Each composable owns its reactive state and exposes actions; components import composables directly. `useInspectCommit` owns the add-flow inspect→commit state machine (stale-run guard + fast-tap chained commit) behind a small interface, keeping `AddFlow.vue` focused on the sheet/step lifecycle and source modes.
 
 ## Architecture decisions
 

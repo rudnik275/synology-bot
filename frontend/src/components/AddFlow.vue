@@ -13,31 +13,23 @@
 // out of this component — DownloadsTab renders an inline «Добавить загрузку»
 // row (#118) and calls openSheet() via the exposed method. The deep-link/handoff
 // path (torrentToken / auto-open) is unchanged.
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import Sheet from './ui/Sheet.vue'
 import Button from './ui/Button.vue'
-import Chip from './ui/Chip.vue'
-import SearchField from './ui/SearchField.vue'
-import LoadingText from './ui/LoadingText.vue'
 import FolderPicker from './FolderPicker.vue'
-import StickerBadge from './ui/StickerBadge.vue'
+import AddSearchStep from './AddSearchStep.vue'
+import AddConfirmStep from './AddConfirmStep.vue'
 import { api } from '../api'
 import { torrentToken as deepLinkToken } from '../telegram'
 import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
+import { useTgBackButton } from '../composables/useTgBackButton'
+import { useAddWizard } from '../composables/useAddWizard'
 import { useInspectCommit, type InspectSource } from '../composables/useInspectCommit'
-import { formatBytes } from '../format'
-import FileTree from './FileTree.vue'
 import { buildFileTree, type FileTree as FileTreeModel, type InspectFile } from './fileTree'
 import type { SearchResultView, CommitHandle } from '../types'
-
-// How the add source was supplied:
-//   'search' — in-app Toloka search (the only in-app mode)
-//   'file'   — a .torrent's bytes handed off by the bot (#99)
-//   'uri'    — a magnet/URL handed off by the bot (#120)
-type Mode = 'search' | 'file' | 'uri'
 
 // `deepLinkToken` injection seam: defaults to the token parsed from the Telegram
 // start_param (#99); overridable so the auto-open path is testable without a
@@ -51,39 +43,6 @@ const { lastFolder, recordRecent } = useFolderShortcuts()
 const { history: searchHistory, recordQuery, clearHistory: clearSearchHistory } = useSearchHistory()
 const optimistic = useOptimisticTasks()
 const inspect = useInspectCommit(api)
-
-const open = ref(false)
-// Steps are renumbered search-first:
-//   in-app:   1 Search · 2 Folder · 3 Confirm
-//   handoff:  (Search skipped) · 2 Folder · 3 Confirm — Search is not drawn.
-const step = ref<1 | 2 | 3>(1)
-const mode = ref<Mode>('search')
-
-// True for the bot-handoff path: source is pre-loaded, Search step is skipped.
-const handoff = ref(false)
-
-// Pre-loaded source for the handoff path: a reconstructed .torrent File OR a URI.
-const selectedFile = ref<File | null>(null)
-const handoffUri = ref('')
-
-// Destination path from FolderPicker
-const destination = ref('')
-
-// Submission state. The commit is fully optimistic (#161): «Добавить» closes the
-// sheet instantly and the add runs in the background, so there is no in-sheet
-// "submitting…" spinner — failures surface via errorMsg on the next open.
-const errorMsg = ref<string | null>(null)
-
-// Search mode state
-const searchQuery = ref('')
-const searchResults = ref<SearchResultView[]>([])
-const searchLoading = ref(false)
-const searchError = ref<string | null>(null)
-const searchQueried = ref(false)
-const selectedResult = ref<SearchResultView | null>(null)
-
-// Search history dropdown
-const searchHistoryVisible = ref(false)
 
 // ─── Confirm step: inspect → select → commit (#123) ──────────────────────────
 // Reaching Confirm AUTO-inspects (DS2 create_list) and shows the torrent's file
@@ -103,6 +62,59 @@ const {
   resetInspect,
   cancelInspectIfOpen,
 } = inspect
+
+// ─── Wizard step model + mode + deep-link handoff (useAddWizard, #177) ────────
+// The open/step/mode/handoff state, the drawn-step model, navigation, open/reset,
+// the pre-loaded handoff source + selected result + destination + errorMsg, and
+// the bot-handoff (startFromStashedTorrent) all live in the composable; AddFlow
+// drives the inspect machine + search + commit around it.
+const wizard = useAddWizard({
+  lastFolder,
+  torrentStash: api.torrentStash,
+  resetInspect,
+  cancelInspectIfOpen,
+  // Search-mode refs live in AddFlow (not the wizard); clear them on every reset.
+  onReset: () => resetSearchState(),
+})
+const {
+  open,
+  step,
+  mode,
+  selectedFile,
+  handoffUri,
+  destination,
+  errorMsg,
+  selectedResult,
+  firstStep,
+  lastStep,
+  drawnSteps,
+  canAdvance,
+  goNext,
+  goBack,
+  openSheet,
+  resetForm,
+  startFromStashedTorrent,
+} = wizard
+
+// Search mode state
+const searchQuery = ref('')
+const searchResults = ref<SearchResultView[]>([])
+const searchLoading = ref(false)
+const searchError = ref<string | null>(null)
+const searchQueried = ref(false)
+
+// Search history dropdown
+const searchHistoryVisible = ref(false)
+
+/** Clear the search-mode refs — runs from the wizard's resetForm (onReset hook).
+ *  selectedResult is owned + cleared by the wizard. */
+function resetSearchState(): void {
+  searchQuery.value = ''
+  searchResults.value = []
+  searchLoading.value = false
+  searchError.value = null
+  searchQueried.value = false
+}
 
 /** The built folder/file tree for the current inspect (null until ready). */
 const fileTree = computed<FileTreeModel | null>(() =>
@@ -151,16 +163,7 @@ const filteredHistory = computed<string[]>(() => {
   return searchHistory.value.filter((item) => item.toLowerCase().includes(q))
 })
 
-// ─── Step model ────────────────────────────────────────────────
-
-/** The first drawn step: 1 (Search) in-app, 2 (Folder) on the bot handoff. */
-const firstStep = computed<1 | 2>(() => (handoff.value ? 2 : 1))
-
-/** The last drawn step (always 3 = Confirm for both paths). */
-const lastStep = computed<number>(() => 3)
-
-/** Steps shown in the stepper — handoff hides Search (only Folder · Confirm). */
-const drawnSteps = computed<number[]>(() => (handoff.value ? [2, 3] : [1, 2, 3]))
+// ─── Stepper UI (derived from the wizard's drawn-step model) ──────────────────
 
 /** Russian labels for each step by step number. */
 const STEP_LABELS: Record<number, string> = {
@@ -179,22 +182,6 @@ const stepperItems = computed(() =>
   }))
 )
 
-// ─── Navigation gating ────────────────────────────────────────────────
-
-/** Whether the current step has a valid value so Next can advance. */
-const canAdvance = computed<boolean>(() => {
-  if (step.value === 1) return selectedResult.value !== null // Search (used internally by goNext)
-  if (step.value === 2) return destination.value.trim().length > 0 // Folder
-  return true // Confirm
-})
-
-/** Seed-health level for a seeder count. */
-function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
-  if (seeders >= 20) return 'green'
-  if (seeders >= 5) return 'amber'
-  return 'red'
-}
-
 /** Select a search result and immediately advance to the Folder step (#121). */
 function selectAndAdvance(result: SearchResultView): void {
   // Dismiss the on-screen keyboard before leaving the search step — tapping a
@@ -204,56 +191,10 @@ function selectAndAdvance(result: SearchResultView): void {
   goNext()
 }
 
-// ─── Actions ────────────────────────────────────────────────
-
-function openSheet(): void {
-  open.value = true
-  resetForm()
-  // Pre-populate destination from last-used folder so the confirm step shows it.
-  // FolderPicker will also open into this folder via its own onMounted logic.
-  if (lastFolder.value) {
-    destination.value = lastFolder.value
-  }
-}
-
-function resetForm(): void {
-  step.value = 1
-  mode.value = 'search'
-  handoff.value = false
-  selectedFile.value = null
-  handoffUri.value = ''
-  destination.value = ''
-  errorMsg.value = null
-  searchQuery.value = ''
-  searchResults.value = []
-  searchLoading.value = false
-  searchError.value = null
-  searchQueried.value = false
-  selectedResult.value = null
-  resetInspect()
-}
-
-function goNext(): void {
-  if (!canAdvance.value) return
-  if (step.value < 3) step.value = (step.value + 1) as 1 | 2 | 3
-}
-
 /** Sheet close (X / dismiss): release any uncommitted inspect, then reset. */
 function onClose(): void {
   cancelInspectIfOpen()
   resetForm()
-}
-
-function goBack(): void {
-  // On the handoff path the Folder step (2) is the first drawn step, so Back
-  // from Confirm lands on Folder, and there is no Back on Folder itself.
-  const floor = handoff.value ? 2 : 1
-  // Leaving Confirm without committing → release the inspecting list on the NAS.
-  if (step.value === 3) {
-    cancelInspectIfOpen()
-    resetInspect()
-  }
-  if (step.value > floor) step.value = (step.value - 1) as 1 | 2 | 3
 }
 
 // --- Telegram BackButton wiring (#5) ---
@@ -261,27 +202,13 @@ function goBack(): void {
 // affordance the Show-detail page uses, ADR 0009), not an in-sheet button. It
 // shows whenever there is a previous step to return to; on the first drawn step
 // the sheet's close (X) is the way out. Driven by a watcher so we never sprinkle
-// show/hide calls across the navigation handlers.
-function onTgBack(): void {
-  goBack()
-}
-function showTgBackButton(): void {
-  const btn = window.Telegram?.WebApp?.BackButton
-  if (!btn) return
-  btn.show()
-  btn.onClick(onTgBack)
-}
-function hideTgBackButton(): void {
-  const btn = window.Telegram?.WebApp?.BackButton
-  if (!btn) return
-  btn.hide()
-  btn.offClick(onTgBack)
-}
+// show/hide calls across the navigation handlers. The SDK wiring + unmount
+// cleanup live in useTgBackButton (#177; shared with ShowsTab).
+const { show: showTgBackButton, hide: hideTgBackButton } = useTgBackButton(goBack)
 watch([open, step], ([isOpen, cur]) => {
   if (isOpen && cur > firstStep.value) showTgBackButton()
   else hideTgBackButton()
 })
-onUnmounted(hideTgBackButton)
 
 // --- Inspect-on-Confirm (#123) ---
 // The inspect→commit state machine lives in useInspectCommit (#171). This
@@ -351,44 +278,9 @@ function onClearHistory(): void {
   clearSearchHistory()
 }
 
-/** Rebuild a File from the base64 payload the bot stashed (#99). */
-function base64ToFile(base64: string, name: string): File {
-  const bin = atob(base64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return new File([bytes], name, { type: 'application/x-bittorrent' })
-}
-
-/**
- * Deep-link entry (#99, generalized #120): the bot stashed an add source and
- * opened the Mini App with a stash token. The stash holds either a .torrent's
- * bytes (`kind: 'bytes'`) or a magnet/URL string (`kind: 'uri'`). Either way the
- * wizard opens at the Folder step with the source pre-loaded; Search is skipped.
- * On failure fall back to the in-app search flow so the owner can recover.
- */
-async function startFromStashedTorrent(token: string): Promise<void> {
-  open.value = true
-  handoff.value = true
-  if (lastFolder.value) destination.value = lastFolder.value
-  try {
-    const stash = await api.torrentStash(token)
-    if (stash.kind === 'uri') {
-      mode.value = 'uri'
-      handoffUri.value = stash.uri
-    } else {
-      mode.value = 'file'
-      selectedFile.value = base64ToFile(stash.base64, stash.name)
-    }
-    step.value = 2 // Folder
-  } catch (e) {
-    // Recovery: drop back to the normal in-app search flow.
-    handoff.value = false
-    mode.value = 'search'
-    errorMsg.value = e instanceof Error ? e.message : String(e)
-    step.value = 1
-  }
-}
-
+// Deep-link entry (#99/#120): the bot stashed an add source and opened the Mini
+// App with a stash token; startFromStashedTorrent (useAddWizard) opens at the
+// Folder step with the source pre-loaded, falling back to search on failure.
 onMounted(() => {
   if (props.torrentToken) void startFromStashedTorrent(props.torrentToken)
 })
@@ -522,111 +414,23 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
       <component :is="'div'" :class="['wizard-step', { 'wizard-step--animated': !prefersReducedMotion }]">
 
         <!-- ── Step 1: Search (in-app primary entry; skipped on bot handoff) ── -->
-        <div v-if="step === 1" class="step-input">
-          <div class="field search-field">
-            <label class="field-label" for="search-query">Поиск</label>
-            <div class="search-row">
-              <SearchField
-                id="search-query"
-                v-model="searchQuery"
-                placeholder="Введите название…"
-                data-testid="search-query"
-                class="search-row-field"
-                @search="runSearch"
-                @focus="onSearchFocus"
-                @blur="onSearchBlur"
-              >
-                <!-- History dropdown — data/logic stays in AddFlow, slot keeps primitive dumb -->
-                <div
-                  v-if="searchHistoryVisible && (filteredHistory.length > 0 || searchHistory.length > 0)"
-                  class="search-history-dropdown"
-                  data-testid="search-history"
-                >
-                  <div class="search-history-header">
-                    <span class="search-history-label">Недавнее</span>
-                    <button
-                      type="button"
-                      class="search-history-clear"
-                      data-testid="search-history-clear"
-                      @mousedown.prevent="onClearHistory"
-                    >
-                      Очистить
-                    </button>
-                  </div>
-                  <ul class="search-history-list" role="listbox">
-                    <li
-                      v-for="item in filteredHistory"
-                      :key="item"
-                      class="search-history-item"
-                      data-testid="history-item"
-                      role="option"
-                      @mousedown.prevent="selectHistoryItem(item)"
-                    >
-                      {{ item }}
-                    </li>
-                  </ul>
-                </div>
-              </SearchField>
-              <Button
-                variant="ink"
-                size="md"
-                class="search-btn"
-                data-testid="search-btn"
-                :disabled="searchLoading"
-                @click="runSearch"
-              >
-                {{ searchLoading ? '…' : 'Поиск' }}
-              </Button>
-            </div>
-
-            <!-- Loading -->
-            <LoadingText
-              v-if="searchLoading"
-              class="search-loading"
-              data-testid="search-loading"
-            />
-
-            <!-- Error -->
-            <div v-else-if="searchError" class="search-error" role="alert" data-testid="search-error">
-              {{ searchError }}
-            </div>
-
-            <!-- Empty results -->
-            <div v-else-if="searchQueried && searchResults.length === 0" class="search-empty" data-testid="search-empty">
-              Ничего не найдено
-            </div>
-
-            <!-- Results — grouped card with hairline dividers (Variant B, #121) -->
-            <div v-else-if="searchResults.length > 0" class="search-results" role="list" data-testid="search-results">
-              <button
-                v-for="result in searchResults"
-                :key="result.id"
-                type="button"
-                class="result-row nb-pressable"
-                role="listitem"
-                :data-testid="`result-${result.id}`"
-                @click="selectAndAdvance(result)"
-              >
-                <div class="result-row-content">
-                  <span class="result-title" data-testid="result-title">{{ result.title }}</span>
-                  <span class="result-meta">
-                    <Chip
-                      v-if="result.quality && result.quality.length > 0"
-                      variant="outlined"
-                      data-testid="result-quality"
-                    >{{ result.quality[0] }}</Chip>
-                    <span class="result-health" :data-health="seedHealth(result.seeders)">
-                      <span class="result-health-dot" :class="`result-health-dot--${seedHealth(result.seeders)}`" aria-hidden="true"></span>
-                      <span data-testid="result-seeders">{{ result.seeders }}</span>
-                    </span>
-                    <span class="result-size" data-testid="result-size">{{ result.size }}</span>
-                  </span>
-                </div>
-                <svg class="result-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-              </button>
-            </div>
-          </div>
-        </div>
+        <AddSearchStep
+          v-if="step === 1"
+          v-model:search-query="searchQuery"
+          :search-loading="searchLoading"
+          :search-error="searchError"
+          :search-queried="searchQueried"
+          :search-results="searchResults"
+          :search-history-visible="searchHistoryVisible"
+          :filtered-history="filteredHistory"
+          :search-history="searchHistory"
+          @search="runSearch"
+          @focus="onSearchFocus"
+          @blur="onSearchBlur"
+          @clear-history="onClearHistory"
+          @select-history="selectHistoryItem"
+          @select-result="selectAndAdvance"
+        />
 
         <!-- ── Step 2: Destination folder ── -->
         <!-- One label only (#2): FolderPicker owns its own «Куда сохранить»
@@ -637,73 +441,20 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
         </div>
 
         <!-- ── Step 3: Confirm — pudgy card (title + chips + folder) ── -->
-        <div v-else-if="step === 3" class="step-confirm">
-          <!-- THE one heavy container: title + chips + folder. -->
-          <div class="bigcard" data-testid="confirm-card">
-            <div class="bc-head">
-              <h3 class="bc-title" data-testid="confirm-title">{{ confirmTitle }}</h3>
-              <StickerBadge tone="violet" data-testid="confirm-sticker">К&nbsp;загрузке</StickerBadge>
-            </div>
-
-            <!-- Flat metadata chips (year / quality / source / languages, #117). -->
-            <div v-if="confirmChips.length > 0" class="bc-chips" data-testid="confirm-chips">
-              <Chip v-for="chip in confirmChips" :key="chip" variant="flat">{{ chip }}</Chip>
-            </div>
-
-            <!-- Files section (#123): auto-inspect → file TREE → commit subset.
-                 Header rule + tree, NO outer box (border diet). -->
-            <div class="files">
-              <div class="files-hd">
-                <span class="files-t">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
-                  Файлы<template v-if="inspectState === 'ready'"> · {{ inspectFiles.length }}</template>
-                </span>
-                <span v-if="inspectState === 'ready'" class="files-sz" data-testid="confirm-size">
-                  {{ formatBytes(selectedSize) }}
-                </span>
-              </div>
-
-              <!-- Inspecting: loading state while polling the inspect list. -->
-              <LoadingText
-                v-if="inspectState === 'inspecting'"
-                label="Читаю содержимое торрента…"
-                :size="16"
-                class="files-loading"
-                data-testid="inspect-loading"
-              />
-
-              <!-- Ready: the interactive tree with functional checkboxes. -->
-              <FileTree
-                v-else-if="inspectState === 'ready' && fileTree"
-                :tree="fileTree"
-                v-model:selected="selectedIndices"
-              />
-
-              <!-- Whole-torrent fallback (magnet / inspect unavailable or failed). -->
-              <div v-else class="files-whole" data-testid="inspect-whole">
-                <p class="files-whole-msg">
-                  {{ inspectError
-                    ? 'Не удалось прочитать список файлов — будет добавлен торрент целиком.'
-                    : 'Для этого источника список файлов недоступен — торрент добавится целиком.' }}
-                </p>
-              </div>
-            </div>
-
-            <!-- Folder block (variant A): label + path + «Изменить» (no pin). -->
-            <div class="dest">
-              <div class="dest-info">
-                <div class="dest-lab">Папка на NAS</div>
-                <div class="dest-path" data-testid="confirm-destination">{{ destination }}</div>
-              </div>
-              <button type="button" class="dest-edit" data-testid="confirm-edit-folder" @click="goBack">
-                Изменить
-              </button>
-            </div>
-          </div>
-
-          <!-- Error message -->
-          <p v-if="errorMsg" class="error-msg" role="alert">{{ errorMsg }}</p>
-        </div>
+        <AddConfirmStep
+          v-else-if="step === 3"
+          v-model:selected="selectedIndices"
+          :confirm-title="confirmTitle"
+          :confirm-chips="confirmChips"
+          :inspect-state="inspectState"
+          :inspect-files="inspectFiles"
+          :file-tree="fileTree"
+          :selected-size="selectedSize"
+          :inspect-error="inspectError"
+          :destination="destination"
+          :error-msg="errorMsg"
+          @go-back="goBack"
+        />
 
       </component>
     </div>
@@ -893,410 +644,13 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   opacity: 0.22;
 }
 
-/* ── Step label ── */
-.step-label {
-  margin: 0 0 var(--space-4);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.6;
-}
-
-/* ── Step 1: Search input ── */
-.step-input {
-  flex: 1;
-}
-
-.field {
-  margin-bottom: var(--space-4);
-}
-
-.field-label {
-  display: block;
-  margin-bottom: var(--space-1);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* Search */
-.search-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.search-row {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.search-row-field {
-  flex: 1;
-}
-
-/* Layout only — the recipe lives in the shared <Button variant="ink">. */
-.search-btn {
-  white-space: nowrap;
-}
-
-.search-loading,
-.search-empty {
-  padding: var(--space-3);
-  text-align: center;
-  font-size: var(--fs-sm);
-  opacity: 0.7;
-}
-
-.search-error {
-  padding: var(--space-2) var(--space-3);
-  background: var(--red);
-  border: var(--border);
-  border-radius: var(--radius);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-}
-
-/* Search history dropdown */
-.search-history-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 48px; /* leave room for Search button */
-  background: var(--paper);
-  border: var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
-  z-index: 100;
-  overflow: hidden;
-}
-
-.search-history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-1) var(--space-3);
-  border-bottom: var(--border);
-}
-
-.search-history-label {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.5;
-}
-
-.search-history-clear {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.6;
-  color: var(--ink);
-}
-.search-history-clear:hover {
-  opacity: 1;
-}
-
-.search-history-list {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-1) 0;
-}
-
-.search-history-item {
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.search-history-item:hover {
-  background: var(--yellow);
-}
-
-/* ── Grouped results card (Variant B, #121) ── */
-
-/* Outer container: single border, single shadow — the "one grouped card" */
-.search-results {
-  border: var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--paper);
-  box-shadow: var(--shadow-sm);
-}
-
-/* Each row is a full-width button with a hairline divider beneath it */
-.result-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 44px; /* touch target */
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--hairline-color);
-  border-radius: 0;
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--font);
-  color: var(--ink);
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical),
-    background var(--dur-fast) var(--ease-out);
-}
-.result-row:last-child {
-  border-bottom: none;
-}
-.result-row:active {
-  background: var(--ink-active);
-}
-
-/* Content column: takes all remaining width */
-.result-row-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-/* Title: bold, single line, ellipsis */
-.result-title {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Meta row: quality chip + seed health + size */
-.result-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-}
-
-/* Seed-health indicator: dot + count */
-.result-health {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: var(--fw-bold);
-  flex-shrink: 0;
-}
-
-.result-health-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  border: 2px solid var(--ink);
-  flex-shrink: 0;
-}
-.result-health-dot--green  { background: var(--green); }
-.result-health-dot--amber  { background: var(--orange); }
-.result-health-dot--red    { background: var(--red); }
-
-/* File size */
-.result-size {
-  font-size: 10px;
-  font-weight: var(--fw-bold);
-  opacity: 0.7;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* Chevron affordance */
-.result-chevron {
-  width: 16px;
-  height: 16px;
-  opacity: 0.4;
-  flex-shrink: 0;
-}
-
-/* ── Step 3: Folder ── */
+/* ── Step 2: Folder ── */
 .step-folder {
   flex: 1;
 }
 
-.destination-preview {
-  margin: var(--space-1) 0 0;
-  font-size: var(--fs-xs);
-  opacity: 0.7;
-}
-.destination-preview code {
-  font-family: monospace;
-}
-
-/* ── Step 3: Confirm — pudgy card + file tree (#123) ──
-   Border diet: ONE loud frame (the card). Inside, hairline dividers + flat
-   chips replace nested boxes. overflow:visible so the card's offset shadow
-   isn't clipped against the footer. */
-.step-confirm {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: visible;
-}
-
-.bigcard {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--paper);
-  border: var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-}
-
-.bc-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
-/* Title wraps FULLY — the confirm step shows the complete name, no truncation. */
-.bc-title {
-  margin: 0;
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-  line-height: 1.18;
-  overflow-wrap: anywhere;
-}
-
-/* Chips: FLAT tags — no border, no shadow. */
-.bc-chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-/* Files block — NO outer box: header rule + tree directly in the card. */
-.files {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-}
-.files-hd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding-bottom: var(--space-2);
-  border-bottom: 2px solid var(--hairline-strong-color);
-}
-.files-t {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-sm);
-}
-.files-t svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.files-sz {
-  font-family: var(--mono, monospace);
-  font-size: 12px;
-  font-weight: var(--fw-bold);
-  opacity: 0.6;
-}
-
-/* Inspecting / loading state. */
-.files-loading {
-  padding: var(--space-4) 0;
-}
-
-/* Whole-torrent fallback message. */
-.files-whole {
-  padding: var(--space-3) 0;
-}
-.files-whole-msg {
-  margin: 0;
-  font-size: var(--fs-sm);
-  opacity: 0.7;
-}
-
-/* Folder block (variant A): hairline above; only «Изменить» is bordered. */
-.dest {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 2px solid var(--hairline-strong-color);
-}
-.dest-info {
-  min-width: 0;
-}
-.dest-lab {
-  font-size: 10px;
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.45;
-}
-.dest-path {
-  font-family: var(--mono, monospace);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.dest-edit {
-  flex: 0 0 auto;
-  min-height: 44px;
-  font-family: var(--font);
-  font-size: 11px;
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  padding: 7px 14px;
-  border: 2px solid var(--ink);
-  border-radius: var(--radius-pill);
-  background: var(--yellow);
-  color: var(--ink);
-  cursor: pointer;
-}
-
-/* The «Добавить» CTA is coral on this step (commit = terminal add action). */
+/* The «Добавить» CTA is coral on the Confirm step (commit = terminal add action). */
 .footer-btn--coral {
   background: var(--coral);
-}
-
-.error-msg {
-  margin: var(--space-3) 0 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--red);
-  border: var(--border);
-  border-radius: var(--radius);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
 }
 </style>

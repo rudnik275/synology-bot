@@ -10,10 +10,11 @@
  * Subscribe / Unsubscribe lives ONLY on the detail page.
  * The in-app "today" block is removed; daily push covers same-day airings.
  */
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useSubscriptions } from '../composables/useSubscriptions'
 import { useShowSearch } from '../composables/useShowSearch'
 import { useShowDetail } from '../composables/useShowDetail'
+import { useTgBackButton } from '../composables/useTgBackButton'
 import ShowDetail from '../components/ShowDetail.vue'
 import Card from '../components/ui/Card.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
@@ -57,25 +58,8 @@ function fmtEp(season: number, episode: number): string {
   return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`
 }
 
-// --- Telegram BackButton wiring ---
-
-function showTgBackButton(): void {
-  const btn = window.Telegram?.WebApp?.BackButton
-  if (!btn) return
-  btn.show()
-  btn.onClick(handleBack)
-}
-
-function hideTgBackButton(): void {
-  const btn = window.Telegram?.WebApp?.BackButton
-  if (!btn) return
-  btn.hide()
-  btn.offClick(handleBack)
-}
-
-onUnmounted(() => {
-  hideTgBackButton()
-})
+// --- Telegram BackButton wiring (shared with AddFlow via useTgBackButton, #177) ---
+const { show: showTgBackButton, hide: hideTgBackButton } = useTgBackButton(handleBack)
 
 // --- Row tap: open detail ---
 

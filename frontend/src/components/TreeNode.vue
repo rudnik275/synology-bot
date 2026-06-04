@@ -134,7 +134,7 @@ function toggleCollapse(): void {
   gap: var(--space-2);
   min-height: 44px;
   padding: var(--space-1) 0;
-  border-bottom: 1px solid rgba(9, 9, 11, 0.12);
+  border-bottom: 1px solid var(--hairline-color);
 }
 .node-folder:last-child > .trow,
 .node-file:last-child > .trow {
@@ -268,6 +268,6 @@ function toggleCollapse(): void {
 .children {
   padding-left: 12px;
   margin-left: 14px;
-  border-left: 1px solid rgba(9, 9, 11, 0.12);
+  border-left: 1px solid var(--hairline-color);
 }
 </style>

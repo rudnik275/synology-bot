@@ -13,7 +13,7 @@
 // out of this component — DownloadsTab renders an inline «Добавить загрузку»
 // row (#118) and calls openSheet() via the exposed method. The deep-link/handoff
 // path (torrentToken / auto-open) is unchanged.
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import Sheet from './ui/Sheet.vue'
 import Button from './ui/Button.vue'
 import Chip from './ui/Chip.vue'
@@ -27,6 +27,7 @@ import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
+import { useTgBackButton } from '../composables/useTgBackButton'
 import { useInspectCommit, type InspectSource } from '../composables/useInspectCommit'
 import { base64ToFile } from '../lib/base64'
 import { formatBytes } from '../format'
@@ -262,27 +263,13 @@ function goBack(): void {
 // affordance the Show-detail page uses, ADR 0009), not an in-sheet button. It
 // shows whenever there is a previous step to return to; on the first drawn step
 // the sheet's close (X) is the way out. Driven by a watcher so we never sprinkle
-// show/hide calls across the navigation handlers.
-function onTgBack(): void {
-  goBack()
-}
-function showTgBackButton(): void {
-  const btn = window.Telegram?.WebApp?.BackButton
-  if (!btn) return
-  btn.show()
-  btn.onClick(onTgBack)
-}
-function hideTgBackButton(): void {
-  const btn = window.Telegram?.WebApp?.BackButton
-  if (!btn) return
-  btn.hide()
-  btn.offClick(onTgBack)
-}
+// show/hide calls across the navigation handlers. The SDK wiring + unmount
+// cleanup live in useTgBackButton (#177; shared with ShowsTab).
+const { show: showTgBackButton, hide: hideTgBackButton } = useTgBackButton(goBack)
 watch([open, step], ([isOpen, cur]) => {
   if (isOpen && cur > firstStep.value) showTgBackButton()
   else hideTgBackButton()
 })
-onUnmounted(hideTgBackButton)
 
 // --- Inspect-on-Confirm (#123) ---
 // The inspect→commit state machine lives in useInspectCommit (#171). This

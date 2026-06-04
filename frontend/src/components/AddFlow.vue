@@ -17,6 +17,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import Sheet from './ui/Sheet.vue'
 import Button from './ui/Button.vue'
 import Chip from './ui/Chip.vue'
+import SearchField from './ui/SearchField.vue'
 import FolderPicker from './FolderPicker.vue'
 import StickerBadge from './ui/StickerBadge.vue'
 import { api } from '../api'
@@ -523,19 +524,48 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
         <div v-if="step === 1" class="step-input">
           <div class="field search-field">
             <label class="field-label" for="search-query">Поиск</label>
-            <div class="search-row" style="position: relative;">
-              <input
+            <div class="search-row">
+              <SearchField
                 id="search-query"
                 v-model="searchQuery"
-                type="text"
-                class="field-input"
                 placeholder="Введите название…"
-                autocomplete="off"
                 data-testid="search-query"
-                @keydown.enter="runSearch"
+                class="search-row-field"
+                @search="runSearch"
                 @focus="onSearchFocus"
                 @blur="onSearchBlur"
-              />
+              >
+                <!-- History dropdown — data/logic stays in AddFlow, slot keeps primitive dumb -->
+                <div
+                  v-if="searchHistoryVisible && (filteredHistory.length > 0 || searchHistory.length > 0)"
+                  class="search-history-dropdown"
+                  data-testid="search-history"
+                >
+                  <div class="search-history-header">
+                    <span class="search-history-label">Недавнее</span>
+                    <button
+                      type="button"
+                      class="search-history-clear"
+                      data-testid="search-history-clear"
+                      @mousedown.prevent="onClearHistory"
+                    >
+                      Очистить
+                    </button>
+                  </div>
+                  <ul class="search-history-list" role="listbox">
+                    <li
+                      v-for="item in filteredHistory"
+                      :key="item"
+                      class="search-history-item"
+                      data-testid="history-item"
+                      role="option"
+                      @mousedown.prevent="selectHistoryItem(item)"
+                    >
+                      {{ item }}
+                    </li>
+                  </ul>
+                </div>
+              </SearchField>
               <Button
                 variant="ink"
                 size="md"
@@ -546,36 +576,6 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
               >
                 {{ searchLoading ? '…' : 'Поиск' }}
               </Button>
-              <!-- History dropdown -->
-              <div
-                v-if="searchHistoryVisible && (filteredHistory.length > 0 || searchHistory.length > 0)"
-                class="search-history-dropdown"
-                data-testid="search-history"
-              >
-                <div class="search-history-header">
-                  <span class="search-history-label">Недавнее</span>
-                  <button
-                    type="button"
-                    class="search-history-clear"
-                    data-testid="search-history-clear"
-                    @mousedown.prevent="onClearHistory"
-                  >
-                    Очистить
-                  </button>
-                </div>
-                <ul class="search-history-list" role="listbox">
-                  <li
-                    v-for="item in filteredHistory"
-                    :key="item"
-                    class="search-history-item"
-                    data-testid="history-item"
-                    role="option"
-                    @mousedown.prevent="selectHistoryItem(item)"
-                  >
-                    {{ item }}
-                  </li>
-                </ul>
-              </div>
             </div>
 
             <!-- Loading -->
@@ -915,23 +915,6 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   letter-spacing: 0.04em;
 }
 
-.field-input {
-  width: 100%;
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  background: var(--paper);
-  border: var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  font-family: var(--font);
-  font-size: var(--fs-md);
-  color: var(--ink);
-}
-.field-input:focus {
-  outline: none;
-  box-shadow: var(--shadow-md);
-}
-
 /* Search */
 .search-field {
   display: flex;
@@ -944,10 +927,8 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   gap: var(--space-2);
 }
 
-.search-row .field-input {
+.search-row-field {
   flex: 1;
-  min-height: 44px;
-  resize: none;
 }
 
 /* Layout only — the recipe lives in the shared <Button variant="ink">. */

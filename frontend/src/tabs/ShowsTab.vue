@@ -19,6 +19,7 @@ import Card from '../components/ui/Card.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import SearchField from '../components/ui/SearchField.vue'
 
 const { subscriptions, loading: subsLoading, error: subsError, add, remove, refreshMetadata } = useSubscriptions()
 const { results: searchResults, loading: searchLoading, error: searchError, debouncedSearch } = useShowSearch()
@@ -142,14 +143,12 @@ async function handleUnsubscribe(): Promise<void> {
 
       <!-- Pinned search field -->
       <div class="search-wrapper">
-        <input
+        <SearchField
           v-model="query"
           data-testid="search-input"
           type="search"
           placeholder="Поиск шоу…"
-          class="search-input"
-          autocomplete="off"
-          @keydown.enter="(e) => (e.target as HTMLElement).blur()"
+          @search="(e) => (e.target as HTMLElement).blur()"
         />
       </div>
 
@@ -267,22 +266,6 @@ async function handleUnsubscribe(): Promise<void> {
   padding: var(--space-1) 0 var(--space-2);
 }
 
-.search-input {
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font);
-  font-size: var(--fs-md);
-  font-weight: var(--fw-medium);
-  color: var(--ink);
-  background: var(--paper);
-  border: var(--border);
-  border-radius: var(--radius);
-  outline: none;
-  box-sizing: border-box;
-  /* Static neo-brutal shadow, matching the show rows/folder tiles. Previously the
-     shadow only appeared on :focus, which read as a second border popping in (#6). */
-  box-shadow: var(--shadow-sm);
-}
 
 .loading-hint {
   text-align: center;

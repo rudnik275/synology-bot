@@ -23,6 +23,7 @@ import {
 import type { MyShowsShowDetailed, MyShowsSearchResult } from '../infra/myshows/client.ts'
 import { refreshSubscriptionMetadata } from '../domain/subscription-metadata-refresh.ts'
 import { parseTorrentFiles } from '../infra/torrent/bencode.ts'
+import { tryResult, toHttpError } from '../lib/result.ts'
 
 /** Narrow slice of PersistentStore the subscriptions endpoints need. */
 export interface SubscriptionStore {
@@ -200,15 +201,11 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     }
 
     if (!uri.startsWith('magnet:') && isTolokaUrl(uri, tolokaBaseUrl)) {
-      let bytes: Uint8Array
-      try {
-        bytes = await toloka.downloadTorrent(uri)
-      } catch (err) {
-        return { ok: false, status: 502, error: errorMessage(err) }
-      }
-      const served = servedUrlForBytes(bytes)
+      const downloaded = await tryResult(() => toloka.downloadTorrent(uri))
+      if (!downloaded.ok) return { ok: false, status: 502, error: downloaded.reason }
+      const served = servedUrlForBytes(downloaded.data)
       if (!served) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
-      return { ok: true, url: served.url, destination, bytes, token: served.token }
+      return { ok: true, url: served.url, destination, bytes: downloaded.data, token: served.token }
     }
 
     // Magnets and plain URLs DSM can fetch directly — no hosting hop, no bytes.
@@ -445,15 +442,12 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   app.get('/api/search', async (c) => {
     const q = c.req.query('q')?.trim()
     if (!q) return c.json({ error: 'q is required' }, 400)
-    try {
-      const results = await toloka.search(q)
-      // Surface the healthiest releases first: sort by seeders desc so dead
-      // (0-seed) torrents sink to the bottom instead of hiding in Toloka's order.
-      const sorted = [...results].sort((a, b) => b.seeders - a.seeders)
-      return c.json({ results: sorted.map(serializeSearchResult) })
-    } catch (err) {
-      return c.json({ error: errorMessage(err) }, 502)
-    }
+    const r = await tryResult(() => toloka.search(q))
+    if (!r.ok) return c.json(...toHttpError(r))
+    // Surface the healthiest releases first: sort by seeders desc so dead
+    // (0-seed) torrents sink to the bottom instead of hiding in Toloka's order.
+    const sorted = [...r.data].sort((a, b) => b.seeders - a.seeders)
+    return c.json({ results: sorted.map(serializeSearchResult) })
   })
 
   // --- NAS health ---
@@ -521,12 +515,9 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const existing = store.getSubscription(String(showId))
     if (existing) return c.json({ subscription: serializeSubscription(existing) })
 
-    let show: MyShowsShowDetailed
-    try {
-      show = await getShowById(showId)
-    } catch (err) {
-      return c.json({ error: errorMessage(err) }, 502)
-    }
+    const r = await tryResult(() => getShowById(showId))
+    if (!r.ok) return c.json(...toHttpError(r))
+    const show = r.data
     const sub: Subscription = { id: String(showId), showId, title: show.title, poster: show.image }
     store.addSubscription(sub)
     return c.json({ subscription: serializeSubscription(sub) }, 201)
@@ -545,13 +536,10 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   app.get('/api/shows/search', async (c) => {
     const q = c.req.query('q')?.trim()
     if (!q) return c.json({ error: 'q is required' }, 400)
-    try {
-      const results = await searchShows(q)
-      const subscribedIds = new Set(store.listSubscriptions().map((s) => s.showId))
-      return c.json({ results: results.map((r) => serializeShowSearchResult(r, subscribedIds)) })
-    } catch (err) {
-      return c.json({ error: errorMessage(err) }, 502)
-    }
+    const r = await tryResult(() => searchShows(q))
+    if (!r.ok) return c.json(...toHttpError(r))
+    const subscribedIds = new Set(store.listSubscriptions().map((s) => s.showId))
+    return c.json({ results: r.data.map((s) => serializeShowSearchResult(s, subscribedIds)) })
   })
 
   app.get('/api/shows/:id', async (c) => {
@@ -560,12 +548,9 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       return c.json({ error: 'showId must be a positive integer' }, 400)
     }
 
-    let show: MyShowsShowDetailed
-    try {
-      show = await getShowById(showId)
-    } catch (err) {
-      return c.json({ error: errorMessage(err) }, 502)
-    }
+    const r = await tryResult(() => getShowById(showId))
+    if (!r.ok) return c.json(...toHttpError(r))
+    const show = r.data
 
     const subscribedIds = new Set(store.listSubscriptions().map((s) => s.showId))
 
@@ -591,12 +576,9 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   // deploys, and the NAS tab surfaces the last Watchtower check).
 
   app.get('/api/deploy-status', async (c) => {
-    let container
-    try {
-      container = await docker.getContainerByName('watchtower')
-    } catch (err) {
-      return c.json({ error: errorMessage(err) }, 502)
-    }
+    const r = await tryResult(() => docker.getContainerByName('watchtower'))
+    if (!r.ok) return c.json(...toHttpError(r))
+    const container = r.data
     if (!container) return c.json({ state: 'not_found' })
     if (container.state !== 'running') {
       return c.json({ state: 'stopped', status: container.status })

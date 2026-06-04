@@ -709,6 +709,7 @@ describe('Mini App server — subscriptions', () => {
       body: JSON.stringify({ showId: 7 }),
     })
     expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'myshows down' })
   })
 
   it('DELETE /api/subscriptions/:id removes an existing subscription', async () => {
@@ -803,6 +804,7 @@ describe('Mini App server — shows search & detail (ADR 0009)', () => {
     const app = makeApp(makeSynology(), makeToloka(), { searchShows: async () => { throw new Error('rpc error') } })
     const res = await app.request('/api/shows/search?q=test', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'rpc error' })
   })
 
   it('GET /api/shows/:id returns the detail view', async () => {
@@ -844,6 +846,7 @@ describe('Mini App server — shows search & detail (ADR 0009)', () => {
     const app = makeApp(makeSynology(), makeToloka(), { getShowById: async (): Promise<MyShowsShowDetailed> => { throw new Error('offline') } })
     const res = await app.request('/api/shows/1', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'offline' })
   })
 })
 
@@ -877,5 +880,6 @@ describe('Mini App server — deploy status', () => {
     const docker = makeDocker({ getContainerByName: async () => { throw new Error('ECONNREFUSED') } })
     const res = await makeApp(makeSynology(), makeToloka(), { docker }).request('/api/deploy-status', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({ error: 'ECONNREFUSED' })
   })
 })

@@ -2,8 +2,7 @@ import type { Bot, Context } from 'grammy'
 import type { SynologyClient } from '../../infra/synology/client.ts'
 import type { SystemUtilization, StorageInfo, DiskInfo, ProcessGroupSlice } from '../../infra/synology/types.ts'
 import { formatBytes, formatBytesPair } from '../../lib/format-size.ts'
-
-type QueryResult<T> = { ok: true; data: T } | { ok: false; reason: string }
+import type { Result } from '../../lib/result.ts'
 
 const TOP_RAM_LIMIT = 3
 const TOP_CPU_LIMIT = 3
@@ -44,9 +43,9 @@ function topCpuLines(slices: ProcessGroupSlice[], limit: number): string[] {
 // ─── Pure formatter (exported for tests) ────────────────────────────────────
 
 export function formatHealthMessage(
-  utilResult: QueryResult<SystemUtilization>,
-  storageResult: QueryResult<StorageInfo>,
-  diskResult: QueryResult<DiskInfo>,
+  utilResult: Result<SystemUtilization>,
+  storageResult: Result<StorageInfo>,
+  diskResult: Result<DiskInfo>,
   processGroups: ProcessGroupSlice[] = [],
 ): string {
   const allFailed = !utilResult.ok && !storageResult.ok && !diskResult.ok

@@ -1,4 +1,5 @@
 import type { SynoEnvelope, SynoAuthData, SynologyConfig, ReachabilityResult, Task, SynoTaskListData, SystemUtilization, StorageInfo, DiskInfo, DiskEntry, SharedFolder, FolderEntry, SynoStorageLoadInfo, ProcessGroupList, ProcessGroupSlice, InspectListData } from './types.ts'
+import { ok, type Result } from '../../lib/result.ts'
 
 const PATH_ENTRY = 'webapi/entry.cgi'
 const PATH_DOWNLOAD_TASK = 'webapi/DownloadStation/task.cgi'
@@ -64,7 +65,7 @@ export class SynologyClient {
     this.sid = json.data.sid
   }
 
-  async listTasks(): Promise<{ ok: true; data: Task[] } | { ok: false; reason: string }> {
+  async listTasks(): Promise<Result<Task[]>> {
     const result = await this.request<SynoTaskListData>(
       'SYNO.DownloadStation.Task',
       1,
@@ -76,7 +77,7 @@ export class SynologyClient {
     return { ok: true, data: result.data.tasks ?? [] }
   }
 
-  async pauseTask(taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async pauseTask(taskId: string): Promise<Result> {
     const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'pause', {
       id: taskId,
     }, PATH_DOWNLOAD_TASK)
@@ -84,7 +85,7 @@ export class SynologyClient {
     return { ok: true }
   }
 
-  async resumeTask(taskId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async resumeTask(taskId: string): Promise<Result> {
     const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'resume', {
       id: taskId,
     }, PATH_DOWNLOAD_TASK)
@@ -92,7 +93,7 @@ export class SynologyClient {
     return { ok: true }
   }
 
-  async deleteTask(taskId: string, deleteFiles = false): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async deleteTask(taskId: string, deleteFiles = false): Promise<Result> {
     const result = await this.request<unknown>('SYNO.DownloadStation.Task', 1, 'delete', {
       id: taskId,
       force_complete: 'false',
@@ -119,7 +120,7 @@ export class SynologyClient {
     method: string,
     params: Record<string, string | number> = {},
     path: string = PATH_ENTRY,
-  ): Promise<{ ok: true; data: T } | { ok: false; reason: string }> {
+  ): Promise<Result<T>> {
     const url = this.buildUrl(path, {
       api,
       version: String(version),
@@ -143,7 +144,7 @@ export class SynologyClient {
       return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
     }
 
-    return { ok: true, data: json.data as T }
+    return ok(json.data as T)
   }
 
   /**
@@ -166,7 +167,7 @@ export class SynologyClient {
   async createDownloadTask(
     uri: string,
     destination: string
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  ): Promise<Result> {
     const result = await this.request<unknown>('SYNO.DownloadStation2.Task', 2, 'create', {
       create_list: 'false',
       type: '"url"',
@@ -190,7 +191,7 @@ export class SynologyClient {
   async createInspectList(
     uri: string,
     destination: string
-  ): Promise<{ ok: true; listId: string } | { ok: false; reason: string }> {
+  ): Promise<{ ok: true; listId: string } | Extract<Result, { ok: false }>> {
     const result = await this.request<{ list_id?: string[] }>('SYNO.DownloadStation2.Task', 2, 'create', {
       create_list: 'true',
       type: '"url"',
@@ -211,7 +212,7 @@ export class SynologyClient {
    */
   async getInspectList(
     listId: string
-  ): Promise<{ ok: true; data: InspectListData } | { ok: false; reason: string }> {
+  ): Promise<Result<InspectListData>> {
     return this.request<InspectListData>('SYNO.DownloadStation2.Task.List', 2, 'get', {
       list_id: JSON.stringify(listId),
     })
@@ -228,7 +229,7 @@ export class SynologyClient {
     listId: string,
     selected: number[],
     destination: string
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  ): Promise<Result> {
     const result = await this.request<{ task_id?: string[] }>('SYNO.DownloadStation2.Task.List', 2, 'download', {
       list_id: JSON.stringify(listId),
       selected: JSON.stringify(selected),
@@ -243,7 +244,7 @@ export class SynologyClient {
    * wants `list_id` as a JSON **array**. Best-effort — after a commit the
    * list_id is already consumed and this is a no-op.
    */
-  async deleteInspectList(listId: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async deleteInspectList(listId: string): Promise<Result> {
     const result = await this.request<unknown>('SYNO.DownloadStation2.Task.List', 2, 'delete', {
       list_id: JSON.stringify([listId]),
     })
@@ -270,7 +271,7 @@ export class SynologyClient {
    * logged by the caller, not fatal.
    */
   async ensureDefaultDestination(): Promise<
-    { ok: true; destination: string; changed: boolean } | { ok: false; reason: string }
+    { ok: true; destination: string; changed: boolean } | Extract<Result, { ok: false }>
   > {
     const cfg = await this.request<{ default_destination: string | null }>(
       'SYNO.DownloadStation.Info',
@@ -302,13 +303,13 @@ export class SynologyClient {
     return { ok: true, destination: preferred.name, changed: true }
   }
 
-  async listSharedFolders(): Promise<{ ok: true; data: SharedFolder[] } | { ok: false; reason: string }> {
+  async listSharedFolders(): Promise<Result<SharedFolder[]>> {
     const result = await this.request<{ shares: SharedFolder[] }>('SYNO.FileStation.List', 2, 'list_share', {})
     if (!result.ok) return result
     return { ok: true, data: result.data.shares ?? [] }
   }
 
-  async listFolders(folderPath: string): Promise<{ ok: true; data: FolderEntry[] } | { ok: false; reason: string }> {
+  async listFolders(folderPath: string): Promise<Result<FolderEntry[]>> {
     const result = await this.request<{ files: FolderEntry[] }>('SYNO.FileStation.List', 2, 'list', {
       folder_path: folderPath,
       filetype: 'dir',
@@ -323,7 +324,7 @@ export class SynologyClient {
     method: string,
     params: Record<string, string | number> = {},
     path: string = PATH_ENTRY,
-  ): Promise<{ ok: true; data: T } | { ok: false; reason: string }> {
+  ): Promise<Result<T>> {
     const url = this.buildUrl(path, {
       api,
       version: String(version),
@@ -340,20 +341,20 @@ export class SynologyClient {
       return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
     }
 
-    return { ok: true, data: json.data as T }
+    return ok(json.data as T)
   }
 
-  async getSystemUtilization(): Promise<{ ok: true; data: SystemUtilization } | { ok: false; reason: string }> {
+  async getSystemUtilization(): Promise<Result<SystemUtilization>> {
     return this.request<SystemUtilization>('SYNO.Core.System.Utilization', 1, 'get')
   }
 
-  async getStorageInfo(): Promise<{ ok: true; data: StorageInfo } | { ok: false; reason: string }> {
+  async getStorageInfo(): Promise<Result<StorageInfo>> {
     const result = await this.request<SynoStorageLoadInfo>('SYNO.Storage.CGI.Storage', 1, 'load_info')
     if (!result.ok) return result
     return { ok: true, data: { volumes: result.data.volumes ?? [] } }
   }
 
-  async getDiskInfo(): Promise<{ ok: true; data: DiskInfo } | { ok: false; reason: string }> {
+  async getDiskInfo(): Promise<Result<DiskInfo>> {
     const result = await this.request<SynoStorageLoadInfo>('SYNO.Storage.CGI.Storage', 1, 'load_info')
     if (!result.ok) return result
     const disks: DiskEntry[] = (result.data.disks ?? []).map(d => ({
@@ -363,7 +364,7 @@ export class SynologyClient {
     return { ok: true, data: { disks } }
   }
 
-  async getProcessGroups(): Promise<{ ok: true; data: ProcessGroupSlice[] } | { ok: false; reason: string }> {
+  async getProcessGroups(): Promise<Result<ProcessGroupSlice[]>> {
     const result = await this.request<ProcessGroupList>('SYNO.Core.System.ProcessGroup', 1, 'list')
     if (!result.ok) return result
     return { ok: true, data: result.data.slices ?? [] }

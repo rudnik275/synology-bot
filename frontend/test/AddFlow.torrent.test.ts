@@ -38,9 +38,10 @@ beforeEach(() => {
       return Promise.resolve(jsonResponse({ folders: [{ name: 'downloads', path: '/volume1/downloads' }] }))
     }
     if ((url as string) === '/api/tasks/inspect') {
-      // Instant-tree contract (#161): the server parsed the uploaded .torrent
-      // bytes locally and returns the tree alongside the listId (no poll).
-      return Promise.resolve(jsonResponse({ listId: 'LH', files: [{ index: 0, name: 'Forwarded/movie.mkv', size: 100 }] }, 201))
+      // Instant-tree contract (#161, deferred-create): the server parsed the
+      // uploaded .torrent bytes locally and returns the tree with an inspectToken
+      // (no DSM list yet, no poll — createInspectList is deferred to commit).
+      return Promise.resolve(jsonResponse({ inspectToken: 'TOKH', files: [{ index: 0, name: 'Forwarded/movie.mkv', size: 100 }] }, 201))
     }
     if ((url as string).startsWith('/api/tasks/inspect/')) {
       if (init?.method === 'DELETE') return Promise.resolve(jsonResponse({ ok: true }))
@@ -102,7 +103,7 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     await flushPromises()
     const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
     expect(commit).toBeTruthy()
-    expect(JSON.parse(commit!.init?.body as string).listId).toBe('LH')
+    expect(JSON.parse(commit!.init?.body as string).inspectToken).toBe('TOKH')
     wrapper.unmount()
   })
 

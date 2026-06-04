@@ -41,6 +41,38 @@ The `selected` parameter is an array of zero-based file indices where `enable ==
 - **Frontend — optimistic store.** The composable is a module singleton so the placeholder survives component remounts (e.g. navigating away and back during the poll window). The 30-second TTL prevents orphaned placeholders if the DS2 task never registers (e.g. DSM rejects it silently).
 - **Magnets cannot be selectively downloaded.** This is a fundamental constraint of the BitTorrent protocol — metadata (file list) is only available after the client has the `.torrent` bytes. Documented in the UI with a short notice on the confirm step for magnet-sourced adds.
 
+## Update (2026-06-04): instant tree via deferred `create_list`
+
+The three calls above are still the commit-time sequence, but **when** the first
+call fires changed for sources we hold the `.torrent` bytes for (search/Toloka
+downloads and `.torrent` uploads — everything except magnets):
+
+- **#161 (instant tree).** The server parses the `.torrent` bytes locally
+  (bencode, ~1 ms) and returns the file tree directly, so the confirm step no
+  longer polls DSM for parsed metadata. The local file index equals DSM's index
+  (both enumerate the torrent's fixed `info.files` order — covered by
+  `bencode.test.ts`), so `selected` stays correct.
+- **Deferred `create_list` (this change).** `inspect` no longer calls DSM at all
+  for held-bytes sources. It returns the locally-parsed tree plus an opaque
+  `inspectToken` (a handle to the still-stashed bytes). The `create_list` call
+  (step 1) is deferred to `commit`, which runs `create_list` → `download`
+  (steps 1+3) back-to-back **inside the optimistic background** after «Добавить».
+  Because the commit is already fully optimistic (the placeholder shows and the
+  sheet closes before any DSM call), the multi-second DSM round-trip is now
+  invisible to the owner. The file tree appears with **no DSM wait**.
+
+  Two further consequences: reaching the confirm step creates **no transient NAS
+  list** (it's born at commit), so backing out leaves no orphan to release; and
+  the `selected`-array contract from this ADR is unchanged. Magnets keep the
+  original create-at-inspect + poll path — they have no local bytes to parse, so
+  `inspect` still calls `create_list` and returns a `listId` the client polls.
+
+The contract: `inspect` returns `{ files, inspectToken }` (held bytes) or
+`{ listId }` (magnet); `commit` accepts either an `inspectToken` (create-then-
+commit) or a `listId` (commit only). This makes the line-below "client-side
+parsing rejected" tradeoff moot — the parse happens **server-side** (no browser
+dependency) and a backend commit call was always required regardless.
+
 ## Alternatives considered
 
 - **Block the UI until DSM registers the real task.** Rejected — the three-call sequence takes 1–3 seconds on a LAN NAS and longer over a tunnel; blocking with a spinner gives no progress signal and makes the add feel unreliable. A placeholder card is immediate and communicates intent.

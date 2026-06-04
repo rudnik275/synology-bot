@@ -1,5 +1,5 @@
 import { initData } from './telegram'
-import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView } from './types'
+import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView, CommitHandle } from './types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -39,13 +39,15 @@ export const api = {
   },
 
   // --- Per-file selection (#123, instant tree #161): inspect → (poll?) → commit ---
-  // Inspect parses the torrent into a transient list_id WITHOUT downloading, so
-  // the user can pick files. Same two source shapes as create (uri / .torrent file).
-  // When the bot held the .torrent bytes (upload / Toloka), the server parses the
-  // file tree locally and returns `files` immediately — the client then SKIPS the
-  // poll. Magnets have no local bytes → no `files`, client polls pollInspect (#161).
+  // Inspect lets the owner pick files WITHOUT downloading. Same two source shapes
+  // as create (uri / .torrent file). When the bot held the .torrent bytes (upload /
+  // Toloka), the server parses the file tree locally and returns `files` + an
+  // `inspectToken` INSTANTLY, touching no DSM — the slow createInspectList is
+  // deferred to commitTask (which runs optimistically in the background). The
+  // client renders the tree NOW and skips the poll. Magnets have no local bytes →
+  // `{listId}` only, client polls pollInspect then commits by listId (#161).
   inspect: (uri: string, destination: string, title?: string) =>
-    request<{ listId: string; files?: { index: number; name: string; size: number }[] }>(
+    request<{ listId?: string; inspectToken?: string; files?: { index: number; name: string; size: number }[] }>(
       '/tasks/inspect',
       jsonBody({ uri, destination, title })
     ),
@@ -53,7 +55,7 @@ export const api = {
     const form = new FormData()
     form.append('file', file)
     form.append('destination', destination)
-    return request<{ listId: string; files?: { index: number; name: string; size: number }[] }>(
+    return request<{ listId?: string; inspectToken?: string; files?: { index: number; name: string; size: number }[] }>(
       '/tasks/inspect',
       { method: 'POST', body: form }
     )
@@ -63,10 +65,13 @@ export const api = {
     request<{ ready: boolean; title: string; size: number; files: { index: number; name: string; size: number }[] }>(
       `/tasks/inspect/${encodeURIComponent(listId)}`
     ),
-  // Commit the chosen file indices (those to KEEP) into a real download task.
-  commitTask: (listId: string, selected: number[], destination: string) =>
-    request<{ ok: true }>('/tasks/commit', jsonBody({ listId, selected, destination })),
-  // Abandon an inspect the user cancelled (best-effort).
+  // Commit the chosen file indices (those to KEEP) into a real download task. The
+  // handle is either a deferred `inspectToken` (server creates the DSM list now,
+  // then commits) or a pre-created `listId` (magnet path) — see CommitHandle.
+  commitTask: (handle: CommitHandle, selected: number[], destination: string) =>
+    request<{ ok: true }>('/tasks/commit', jsonBody({ ...handle, selected, destination })),
+  // Abandon an inspect the user cancelled (best-effort). Only meaningful for the
+  // magnet/listId path — the instant-tree path creates no DSM list to abandon.
   deleteInspect: (listId: string) =>
     request<{ ok: true }>(`/tasks/inspect/${encodeURIComponent(listId)}`, { method: 'DELETE' }).catch(() => undefined),
 

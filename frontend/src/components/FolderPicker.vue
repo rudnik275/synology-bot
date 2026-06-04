@@ -8,6 +8,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
+import LoadingText from './ui/LoadingText.vue'
 import type { FolderView } from '../types'
 
 defineProps<{
@@ -199,9 +200,7 @@ function shortName(path: string): string {
       </nav>
 
       <!-- Loading indicator -->
-      <div v-if="loading" class="picker-loading" data-testid="loading">
-        Загрузка…
-      </div>
+      <LoadingText v-if="loading" class="picker-loading" data-testid="loading" />
 
       <!-- Folder list -->
       <ul v-else class="folder-list" role="list">

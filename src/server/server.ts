@@ -361,19 +361,28 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       return c.json({ error: 'selected must be an array of file indices' }, 400)
     }
     let listIdToCommit: string
+    // Track lists we create HERE (the deferred token path) so a failed commit can
+    // release them — the client never saw this listId and can't clean it up.
+    let createdFromToken = false
     if (typeof inspectToken === 'string' && inspectToken) {
       const url = servedUrlForToken(inspectToken)
       if (!url) return c.json({ error: 'inspect expired — reopen the torrent' }, 410)
       const created = await synology.createInspectList(url, destination)
       if (!created.ok) return c.json({ error: created.reason }, 502)
       listIdToCommit = created.listId
+      createdFromToken = true
     } else if (typeof listId === 'string' && listId) {
       listIdToCommit = listId
     } else {
       return c.json({ error: 'listId or inspectToken is required' }, 400)
     }
     const result = await synology.commitInspectList(listIdToCommit, selected, destination)
-    if (!result.ok) return c.json({ error: result.reason }, 502)
+    if (!result.ok) {
+      // Deferred path just created this transient list; release it so a failed
+      // commit doesn't orphan it on the NAS (best-effort — ignore the result).
+      if (createdFromToken) void synology.deleteInspectList(listIdToCommit)
+      return c.json({ error: result.reason }, 502)
+    }
     return c.json({ ok: true }, 201)
   })
 

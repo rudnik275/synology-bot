@@ -17,6 +17,7 @@
 import { ref, computed, watch } from 'vue'
 import Card from '../components/ui/Card.vue'
 import Button from '../components/ui/Button.vue'
+import Chip from '../components/ui/Chip.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
@@ -262,7 +263,7 @@ function qualityChips(task: TaskView): string[] {
 
         <!-- Quality chips: year / resolution / codec / languages (#117) -->
         <div v-if="qualityChips(task).length > 0" class="task-chips">
-          <span v-for="chip in qualityChips(task)" :key="chip" class="chip">{{ chip }}</span>
+          <Chip v-for="chip in qualityChips(task)" :key="chip" variant="tag">{{ chip }}</Chip>
         </div>
 
         <!-- Progress bar (ink-colored for settled tasks, status-colored for active) -->
@@ -385,21 +386,6 @@ function qualityChips(task: TaskView): string[] {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
-}
-.chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px var(--space-2);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--ink);
-  background: var(--cream);
-  border: var(--border-thin) solid var(--ink);
-  border-radius: var(--radius);
-  opacity: 0.75;
-  white-space: nowrap;
 }
 
 .task-progress {

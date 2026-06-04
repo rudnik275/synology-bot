@@ -16,6 +16,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import Sheet from './ui/Sheet.vue'
 import Button from './ui/Button.vue'
+import Chip from './ui/Chip.vue'
 import FolderPicker from './FolderPicker.vue'
 import StickerBadge from './ui/StickerBadge.vue'
 import { api } from '../api'
@@ -606,11 +607,11 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
                 <div class="result-row-content">
                   <span class="result-title" data-testid="result-title">{{ result.title }}</span>
                   <span class="result-meta">
-                    <span
+                    <Chip
                       v-if="result.quality && result.quality.length > 0"
-                      class="result-chip"
+                      variant="outlined"
                       data-testid="result-quality"
-                    >{{ result.quality[0] }}</span>
+                    >{{ result.quality[0] }}</Chip>
                     <span class="result-health" :data-health="seedHealth(result.seeders)">
                       <span class="result-health-dot" :class="`result-health-dot--${seedHealth(result.seeders)}`" aria-hidden="true"></span>
                       <span data-testid="result-seeders">{{ result.seeders }}</span>
@@ -643,7 +644,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
 
             <!-- Flat metadata chips (year / quality / source / languages, #117). -->
             <div v-if="confirmChips.length > 0" class="bc-chips" data-testid="confirm-chips">
-              <span v-for="chip in confirmChips" :key="chip" class="chip">{{ chip }}</span>
+              <Chip v-for="chip in confirmChips" :key="chip" variant="flat">{{ chip }}</Chip>
             </div>
 
             <!-- Files section (#123): auto-inspect → file TREE → commit subset.
@@ -1102,20 +1103,6 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   flex-wrap: nowrap;
 }
 
-/* Quality chip (resolution badge) */
-.result-chip {
-  display: inline-flex;
-  align-items: center;
-  font-size: 10px;
-  font-weight: var(--fw-bold);
-  padding: 2px 7px;
-  border: 2px solid var(--ink);
-  border-radius: var(--radius-pill);
-  background: var(--paper);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 /* Seed-health indicator: dot + count */
 .result-health {
   display: inline-flex;
@@ -1214,14 +1201,6 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-}
-.chip {
-  font-size: 11px;
-  font-weight: var(--fw-bold);
-  padding: 5px 11px;
-  border-radius: var(--radius-pill);
-  background: var(--ink-chip-bg);
-  color: var(--ink-secondary);
 }
 
 /* Files block — NO outer box: header rule + tree directly in the card. */

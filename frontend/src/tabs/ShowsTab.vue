@@ -20,6 +20,7 @@ import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SearchField from '../components/ui/SearchField.vue'
+import LoadingText from '../components/ui/LoadingText.vue'
 
 const { subscriptions, loading: subsLoading, error: subsError, add, remove, refreshMetadata } = useSubscriptions()
 const { results: searchResults, loading: searchLoading, error: searchError, debouncedSearch } = useShowSearch()
@@ -126,7 +127,7 @@ async function handleUnsubscribe(): Promise<void> {
     <!-- Show detail sub-view: covers the list -->
     <template v-if="hasDetail">
       <ScreenHeader title="Шоу" />
-      <div v-if="detailLoading" class="loading-hint">Загрузка…</div>
+      <LoadingText v-if="detailLoading" class="loading-hint" />
       <div v-else-if="detailError" class="fetch-error">{{ detailError }}</div>
       <ShowDetail
         v-else-if="showDetail"
@@ -157,7 +158,7 @@ async function handleUnsubscribe(): Promise<void> {
 
       <!-- Search results mode -->
       <template v-if="isSearchMode">
-        <div v-if="searchLoading" class="loading-hint">Поиск…</div>
+        <LoadingText v-if="searchLoading" label="Поиск…" class="loading-hint" />
         <EmptyState
           v-else-if="!searchLoading && (searchResults?.length ?? 0) === 0"
           title="Ничего не найдено"
@@ -201,7 +202,7 @@ async function handleUnsubscribe(): Promise<void> {
 
       <!-- Subscriptions mode (default: empty query) -->
       <template v-else>
-        <div v-if="subsLoading" class="loading-hint">Загрузка…</div>
+        <LoadingText v-if="subsLoading" class="loading-hint" />
 
         <EmptyState
           v-else-if="subscriptions.length === 0"

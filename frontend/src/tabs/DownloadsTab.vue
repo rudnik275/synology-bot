@@ -21,6 +21,7 @@ import Chip from '../components/ui/Chip.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
+import Spinner from '../components/ui/Spinner.vue'
 import { useTasks } from '../composables/useTasks'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { formatBytes, formatSpeed } from '../format'
@@ -238,7 +239,7 @@ function qualityChips(task: TaskView): string[] {
           <span class="task-status-label">Добавление…</span>
         </div>
         <div class="task-pending">
-          <span class="task-spinner" aria-hidden="true"></span>
+          <Spinner :size="18" aria-hidden="true" />
           <span class="task-pending-text">Добавляем на NAS…</span>
         </div>
         <div v-if="p.destination" class="task-meta">
@@ -430,25 +431,10 @@ function qualityChips(task: TaskView): string[] {
   align-items: center;
   gap: var(--space-2);
 }
-.task-spinner {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  border: 2px solid var(--spinner-track);
-  border-top-color: var(--ink);
-  border-radius: 50%;
-  animation: dl-spin 0.7s linear infinite;
-}
 .task-pending-text {
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   opacity: 0.75;
-}
-@keyframes dl-spin {
-  to { transform: rotate(360deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .task-spinner { animation: none; }
 }
 
 /* ── Action row ── */

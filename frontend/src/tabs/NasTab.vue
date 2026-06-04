@@ -12,6 +12,7 @@ import ProgressBar from '../components/ui/ProgressBar.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import Donut from '../components/ui/Donut.vue'
+import LoadingText from '../components/ui/LoadingText.vue'
 import type { DonutSegment } from '../components/ui/donut'
 import {
   useHealth,
@@ -115,7 +116,7 @@ const ramDonut = computed(() => {
 <template>
   <!-- Loading state -->
   <div v-if="loading && !data" class="nas-tab nas-loading" aria-busy="true">
-    <Card><span class="section-label">Загрузка…</span></Card>
+    <Card><LoadingText /></Card>
   </div>
 
   <!-- Network / auth error (no data at all) -->

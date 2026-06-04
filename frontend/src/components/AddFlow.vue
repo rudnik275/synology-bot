@@ -18,6 +18,7 @@ import Sheet from './ui/Sheet.vue'
 import Button from './ui/Button.vue'
 import Chip from './ui/Chip.vue'
 import SearchField from './ui/SearchField.vue'
+import LoadingText from './ui/LoadingText.vue'
 import FolderPicker from './FolderPicker.vue'
 import StickerBadge from './ui/StickerBadge.vue'
 import { api } from '../api'
@@ -579,9 +580,11 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
             </div>
 
             <!-- Loading -->
-            <div v-if="searchLoading" class="search-loading" data-testid="search-loading">
-              Загрузка…
-            </div>
+            <LoadingText
+              v-if="searchLoading"
+              class="search-loading"
+              data-testid="search-loading"
+            />
 
             <!-- Error -->
             <div v-else-if="searchError" class="search-error" role="alert" data-testid="search-error">
@@ -661,10 +664,13 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
               </div>
 
               <!-- Inspecting: loading state while polling the inspect list. -->
-              <div v-if="inspectState === 'inspecting'" class="files-loading" data-testid="inspect-loading">
-                <span class="spinner" aria-hidden="true"></span>
-                Читаю содержимое торрента…
-              </div>
+              <LoadingText
+                v-if="inspectState === 'inspecting'"
+                label="Читаю содержимое торрента…"
+                :size="16"
+                class="files-loading"
+                data-testid="inspect-loading"
+              />
 
               <!-- Ready: the interactive tree with functional checkboxes. -->
               <FileTree
@@ -1224,30 +1230,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
 
 /* Inspecting / loading state. */
 .files-loading {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
   padding: var(--space-4) 0;
-  font-size: var(--fs-sm);
-  opacity: 0.75;
-}
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--spinner-track);
-  border-top-color: var(--ink);
-  border-radius: 50%;
-  animation: addflow-spin 0.7s linear infinite;
-}
-@keyframes addflow-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation: none;
-  }
 }
 
 /* Whole-torrent fallback message. */

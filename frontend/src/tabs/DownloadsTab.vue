@@ -121,6 +121,7 @@ function statusLabel(status: string): string {
   switch (status) {
     case 'downloading': return 'Загрузка'
     case 'finishing':   return 'Завершение'
+    case 'hash_checking': return 'Проверка'
     case 'waiting':     return 'Ожидание'
     case 'paused':      return 'Пауза'
     case 'finished':    return 'Готово'

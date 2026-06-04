@@ -11,7 +11,7 @@ import { resolve } from 'path'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { usePrefersReducedMotion } from '../src/composables/usePrefersReducedMotion'
-import StickerBadge from '../src/components/StickerBadge.vue'
+import StickerBadge from '../src/components/ui/StickerBadge.vue'
 
 // ---------------------------------------------------------------------------
 // 1. Static assertion: tokens.css contains the reduced-motion disable block.

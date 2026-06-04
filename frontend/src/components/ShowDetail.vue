@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { ShowDetailView } from '../types'
 import SeasonAccordion from './SeasonAccordion.vue'
-import Button from './Button.vue'
-import EmptyState from './EmptyState.vue'
+import Button from './ui/Button.vue'
+import EmptyState from './ui/EmptyState.vue'
 
 defineProps<{
   show: ShowDetailView

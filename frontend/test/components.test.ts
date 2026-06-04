@@ -2,13 +2,13 @@
 // harness, so these assert structure/props/behaviour, not visuals.
 import { describe, it, expect } from 'bun:test'
 import { mount } from '@vue/test-utils'
-import ProgressBar from '../src/components/ProgressBar.vue'
-import StickerBadge from '../src/components/StickerBadge.vue'
-import EmptyState from '../src/components/EmptyState.vue'
-import Sheet from '../src/components/Sheet.vue'
-import FAB from '../src/components/FAB.vue'
-import Button from '../src/components/Button.vue'
-import Donut from '../src/components/Donut.vue'
+import ProgressBar from '../src/components/ui/ProgressBar.vue'
+import StickerBadge from '../src/components/ui/StickerBadge.vue'
+import EmptyState from '../src/components/ui/EmptyState.vue'
+import Sheet from '../src/components/ui/Sheet.vue'
+import FAB from '../src/components/ui/FAB.vue'
+import Button from '../src/components/ui/Button.vue'
+import Donut from '../src/components/ui/Donut.vue'
 
 describe('ProgressBar', () => {
   it('clamps the value into 0–100 and reports it via aria', () => {

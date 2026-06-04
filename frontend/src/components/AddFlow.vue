@@ -28,6 +28,7 @@ import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import { useInspectCommit, type InspectSource } from '../composables/useInspectCommit'
+import { base64ToFile } from '../lib/base64'
 import { formatBytes } from '../format'
 import FileTree from './FileTree.vue'
 import { buildFileTree, type FileTree as FileTreeModel, type InspectFile } from './fileTree'
@@ -349,14 +350,6 @@ function selectHistoryItem(item: string): void {
 
 function onClearHistory(): void {
   clearSearchHistory()
-}
-
-/** Rebuild a File from the base64 payload the bot stashed (#99). */
-function base64ToFile(base64: string, name: string): File {
-  const bin = atob(base64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return new File([bytes], name, { type: 'application/x-bittorrent' })
 }
 
 /**

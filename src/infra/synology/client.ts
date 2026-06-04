@@ -121,6 +121,34 @@ export class SynologyClient {
     params: Record<string, string | number> = {},
     path: string = PATH_ENTRY,
   ): Promise<Result<T>> {
+    const first = await this.send<T>(api, version, method, params, path)
+    if (first.ok) return first
+
+    // Session expired -- re-login once and retry exactly once. The retry goes
+    // through send() directly (NOT request()), so a second failure surfaces as
+    // { ok: false } instead of recursing into another re-login.
+    if (first.code === 119) {
+      await this.login()
+      return this.send<T>(api, version, method, params, path)
+    }
+
+    return { ok: false, reason: first.reason }
+  }
+
+  /**
+   * One round-trip to the DSM API: buildUrl + fetch + parse + `json.success`.
+   * Returns the parsed data on success, or a failure carrying the Synology
+   * error `code` so the caller (`request`) can decide whether to re-login.
+   * This is the single shared core that both the first attempt and the
+   * post-re-login retry call — there is no duplicated fetch/parse block.
+   */
+  private async send<T>(
+    api: string,
+    version: number,
+    method: string,
+    params: Record<string, string | number> = {},
+    path: string = PATH_ENTRY,
+  ): Promise<Result<T> & { code?: number }> {
     const url = this.buildUrl(path, {
       api,
       version: String(version),
@@ -134,14 +162,7 @@ export class SynologyClient {
 
     if (!json.success) {
       const code = json.error?.code
-
-      if (code === 119) {
-        // Session expired -- re-login once and retry
-        await this.login()
-        return this.requestOnce<T>(api, version, method, params, path)
-      }
-
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
+      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}`, code }
     }
 
     return ok(json.data as T)
@@ -316,32 +337,6 @@ export class SynologyClient {
     })
     if (!result.ok) return result
     return { ok: true, data: result.data.files ?? [] }
-  }
-
-  private async requestOnce<T>(
-    api: string,
-    version: number,
-    method: string,
-    params: Record<string, string | number> = {},
-    path: string = PATH_ENTRY,
-  ): Promise<Result<T>> {
-    const url = this.buildUrl(path, {
-      api,
-      version: String(version),
-      method,
-      _sid: this.sid ?? '',
-      ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
-    })
-
-    const res = await fetch(url)
-    const json: SynoEnvelope<T> = await res.json()
-
-    if (!json.success) {
-      const code = json.error?.code
-      return { ok: false, reason: `Synology error code ${code ?? 'unknown'}` }
-    }
-
-    return ok(json.data as T)
   }
 
   async getSystemUtilization(): Promise<Result<SystemUtilization>> {

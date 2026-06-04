@@ -8,10 +8,9 @@
  * server.ts:357-362 and :417-419.
  */
 import type { Context } from 'hono'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { Result } from '../lib/result.ts'
 import { toHttpError } from '../lib/result.ts'
-
-type StatusCode = Parameters<Context['json']>[1]
 
 /**
  * Map a `Result<T>` to a Hono JSON response.
@@ -20,15 +19,15 @@ type StatusCode = Parameters<Context['json']>[1]
  * - ok (void)  → `c.json({ ok: true }, okStatus ?? 200)`
  * - !ok        → `c.json({ error }, 502)` via `toHttpError`
  */
-export function respondResult<T>(
+export function respondResult<T = void>(
   c: Context,
   result: Result<T>,
-  opts?: { okStatus?: StatusCode }
+  opts?: { okStatus?: ContentfulStatusCode }
 ): Response {
   if (!result.ok) {
     return c.json(...toHttpError(result))
   }
-  const status = opts?.okStatus ?? 200
+  const status: ContentfulStatusCode = opts?.okStatus ?? 200
   if ('data' in result) {
     return c.json(result.data as Record<string, unknown>, status)
   }

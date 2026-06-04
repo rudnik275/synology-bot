@@ -23,7 +23,8 @@ import {
 import type { MyShowsShowDetailed, MyShowsSearchResult } from '../infra/myshows/client.ts'
 import { refreshSubscriptionMetadata } from '../domain/subscription-metadata-refresh.ts'
 import { parseTorrentFiles } from '../infra/torrent/bencode.ts'
-import { tryResult, toHttpError } from '../lib/result.ts'
+import { tryResult } from '../lib/result.ts'
+import { respondResult, requireString, requireIntArray } from './respond.ts'
 
 /** Narrow slice of PersistentStore the subscriptions endpoints need. */
 export interface SubscriptionStore {
@@ -239,7 +240,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
 
   app.get('/api/tasks', async (c) => {
     const result = await synology.listTasks()
-    if (!result.ok) return c.json({ error: result.reason }, 502)
+    if (!result.ok) return respondResult(c, result)
     return c.json({ tasks: result.data.map(serializeTask) })
   })
 
@@ -247,21 +248,18 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
 
   app.post('/api/tasks/:id/pause', async (c) => {
     const result = await synology.pauseTask(c.req.param('id'))
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    return c.json({ ok: true })
+    return respondResult(c, result)
   })
 
   app.post('/api/tasks/:id/resume', async (c) => {
     const result = await synology.resumeTask(c.req.param('id'))
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    return c.json({ ok: true })
+    return respondResult(c, result)
   })
 
   app.delete('/api/tasks/:id', async (c) => {
     const deleteFiles = c.req.query('deleteFiles') === 'true'
     const result = await synology.deleteTask(c.req.param('id'), deleteFiles)
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    return c.json({ ok: true })
+    return respondResult(c, result)
   })
 
   // --- Tasks: create whole torrent (unified, per #58) ---
@@ -273,8 +271,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const src = await resolveSource(c)
     if (!src.ok) return c.json({ error: src.error }, src.status)
     const result = await synology.createDownloadTask(src.url, src.destination)
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    return c.json({ ok: true }, 201)
+    return respondResult(c, result, { okStatus: 201 })
   })
 
   // --- Per-file selection (#123): inspect → (client picks files) → commit ---
@@ -313,7 +310,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     // Magnet (no local bytes) or local parse failed: create the DSM list now so the
     // client can poll for the parsed tree and commit by listId.
     const result = await synology.createInspectList(src.url, src.destination)
-    if (!result.ok) return c.json({ error: result.reason }, 502)
+    if (!result.ok) return respondResult(c, result)
     return c.json({ listId: result.listId }, 201)
   })
 
@@ -321,7 +318,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   // parsed the torrent's metadata (the client polls until then).
   app.get('/api/tasks/inspect/:listId', async (c) => {
     const result = await synology.getInspectList(c.req.param('listId'))
-    if (!result.ok) return c.json({ error: result.reason }, 502)
+    if (!result.ok) return respondResult(c, result)
     const files = result.data.files ?? []
     return c.json({
       ready: files.length > 0,
@@ -334,8 +331,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   // Abandon an inspect the user cancelled (best-effort).
   app.delete('/api/tasks/inspect/:listId', async (c) => {
     const result = await synology.deleteInspectList(c.req.param('listId'))
-    if (!result.ok) return c.json({ error: result.reason }, 502)
-    return c.json({ ok: true })
+    return respondResult(c, result)
   })
 
   // Commit the chosen files (`selected` = indices to KEEP) into a real task.
@@ -349,14 +345,12 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const body = await c.req.json().catch(() => null)
     const listId = body?.listId
     const inspectToken = body?.inspectToken
-    const destination = body?.destination
-    const selected = body?.selected
-    if (typeof destination !== 'string' || !destination) {
-      return c.json({ error: 'destination is required' }, 400)
-    }
-    if (!Array.isArray(selected) || !selected.every((n) => Number.isInteger(n))) {
-      return c.json({ error: 'selected must be an array of file indices' }, 400)
-    }
+    const destGuard = requireString(body, 'destination')
+    if (!destGuard.ok) return c.json({ error: destGuard.error }, 400)
+    const destination = destGuard.value
+    const selectedGuard = requireIntArray(body, 'selected')
+    if (!selectedGuard.ok) return c.json({ error: selectedGuard.error }, 400)
+    const selected = selectedGuard.value
     let listIdToCommit: string
     // Track lists we create HERE (the deferred token path) so a failed commit can
     // release them — the client never saw this listId and can't clean it up.
@@ -365,7 +359,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       const url = servedUrlForToken(inspectToken)
       if (!url) return c.json({ error: 'inspect expired — reopen the torrent' }, 410)
       const created = await synology.createInspectList(url, destination)
-      if (!created.ok) return c.json({ error: created.reason }, 502)
+      if (!created.ok) return respondResult(c, created)
       listIdToCommit = created.listId
       createdFromToken = true
     } else if (typeof listId === 'string' && listId) {
@@ -378,7 +372,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
       // Deferred path just created this transient list; release it so a failed
       // commit doesn't orphan it on the NAS (best-effort — ignore the result).
       if (createdFromToken) void synology.deleteInspectList(listIdToCommit)
-      return c.json({ error: result.reason }, 502)
+      return respondResult(c, result)
     }
     return c.json({ ok: true }, 201)
   })
@@ -420,7 +414,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const key = c.req.param('key')
     if (!UI_STATE_KEYS.has(key)) return c.json({ error: 'unknown ui-state key' }, 404)
     const body = await c.req.json().catch(() => null)
-    const values = body?.values
+    const values = (body as Record<string, unknown> | null)?.values
     if (!Array.isArray(values) || !values.every((v) => typeof v === 'string')) {
       return c.json({ error: 'values must be an array of strings' }, 400)
     }
@@ -433,7 +427,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   app.get('/api/folders', async (c) => {
     const path = c.req.query('path')
     const result = path ? await synology.listFolders(path) : await synology.listSharedFolders()
-    if (!result.ok) return c.json({ error: result.reason }, 502)
+    if (!result.ok) return respondResult(c, result)
     return c.json({ folders: result.data })
   })
 
@@ -443,7 +437,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const q = c.req.query('q')?.trim()
     if (!q) return c.json({ error: 'q is required' }, 400)
     const r = await tryResult(() => toloka.search(q))
-    if (!r.ok) return c.json(...toHttpError(r))
+    if (!r.ok) return respondResult(c, r)
     // Surface the healthiest releases first: sort by seeders desc so dead
     // (0-seed) torrents sink to the bottom instead of hiding in Toloka's order.
     const sorted = [...r.data].sort((a, b) => b.seeders - a.seeders)
@@ -516,7 +510,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     if (existing) return c.json({ subscription: serializeSubscription(existing) })
 
     const r = await tryResult(() => getShowById(showId))
-    if (!r.ok) return c.json(...toHttpError(r))
+    if (!r.ok) return respondResult(c, r)
     const show = r.data
     const sub: Subscription = { id: String(showId), showId, title: show.title, poster: show.image }
     store.addSubscription(sub)
@@ -537,7 +531,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     const q = c.req.query('q')?.trim()
     if (!q) return c.json({ error: 'q is required' }, 400)
     const r = await tryResult(() => searchShows(q))
-    if (!r.ok) return c.json(...toHttpError(r))
+    if (!r.ok) return respondResult(c, r)
     const subscribedIds = new Set(store.listSubscriptions().map((s) => s.showId))
     return c.json({ results: r.data.map((s) => serializeShowSearchResult(s, subscribedIds)) })
   })
@@ -549,7 +543,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
     }
 
     const r = await tryResult(() => getShowById(showId))
-    if (!r.ok) return c.json(...toHttpError(r))
+    if (!r.ok) return respondResult(c, r)
     const show = r.data
 
     const subscribedIds = new Set(store.listSubscriptions().map((s) => s.showId))
@@ -577,7 +571,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
 
   app.get('/api/deploy-status', async (c) => {
     const r = await tryResult(() => docker.getContainerByName('watchtower'))
-    if (!r.ok) return c.json(...toHttpError(r))
+    if (!r.ok) return respondResult(c, r)
     const container = r.data
     if (!container) return c.json({ state: 'not_found' })
     if (container.state !== 'running') {

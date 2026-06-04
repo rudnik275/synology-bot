@@ -21,6 +21,7 @@ import { OwnerNotifier } from './infra/notify/owner-notifier.ts'
 import { openMiniAppButton, miniAppTabUrl } from './infra/notify/miniapp-link.ts'
 import { createServer } from './server/server.ts'
 import { DeployReporter } from './domain/deploy-reporter.ts'
+import { runPollingLoop } from './lib/runPollingLoop.ts'
 import pkg from '../package.json' with { type: 'json' }
 
 export async function startApp(): Promise<void> {
@@ -239,18 +240,7 @@ function startReachabilityWatcher({ config, store, synology, ownerNotifier }: Wa
     { debounceCount: config.nasDownDebounceCount }
   )
 
-  const pollIntervalMs = config.nasReachabilityPollMs
-  const loop = async (): Promise<void> => {
-    while (true) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-      try {
-        await monitor.poll()
-      } catch (err) {
-        console.error('[ReachabilityWatcher] Unexpected error in poll:', err)
-      }
-    }
-  }
-  loop().catch((err) => console.error('[ReachabilityWatcher] Loop crashed:', err))
+  runPollingLoop({ intervalMs: config.nasReachabilityPollMs, tick: () => monitor.poll(), name: 'ReachabilityWatcher' })
 }
 
 function startDiskUsageWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
@@ -266,18 +256,7 @@ function startDiskUsageWatcher({ config, store, synology, ownerNotifier }: Watch
     lowPct: config.diskFullLowPct,
   })
 
-  const pollIntervalMs = config.diskUsagePollMs
-  const loop = async (): Promise<void> => {
-    while (true) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-      try {
-        await watcher.check()
-      } catch (err) {
-        console.error('[DiskUsageWatcher] Unexpected error in poll:', err)
-      }
-    }
-  }
-  loop().catch((err) => console.error('[DiskUsageWatcher] Loop crashed:', err))
+  runPollingLoop({ intervalMs: config.diskUsagePollMs, tick: () => watcher.check(), name: 'DiskUsageWatcher' })
 }
 
 function startDiskHealthWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
@@ -299,14 +278,7 @@ function startDiskHealthWatcher({ config, store, synology, ownerNotifier }: Watc
     }),
   })
 
-  const pollIntervalMs = config.diskHealthPollMs
-  const loop = async (): Promise<void> => {
-    while (true) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-      await watcher.check()
-    }
-  }
-  loop().catch((err) => console.error('[DiskHealthWatcher] Loop crashed:', err))
+  runPollingLoop({ intervalMs: config.diskHealthPollMs, tick: () => watcher.check(), name: 'DiskHealthWatcher' })
 }
 
 function startAutoCleaner({ config, store, synology, ownerNotifier }: WatcherDeps): void {
@@ -321,19 +293,8 @@ function startAutoCleaner({ config, store, synology, ownerNotifier }: WatcherDep
     now: () => Date.now(),
   })
 
-  const pollIntervalMs = config.autoCleanerPollMs
-  const loop = async (): Promise<void> => {
-    while (true) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-      try {
-        await cleaner.cleanup()
-      } catch (err) {
-        console.error('[AutoCleaner] Unexpected error in cleanup tick:', err)
-      }
-    }
-  }
-  console.log(`[AutoCleaner] Starting cleanup loop every ${pollIntervalMs}ms (retention: ${config.autoCleanerRetentionDays} days)`)
-  loop().catch((err) => console.error('[AutoCleaner] Loop crashed:', err))
+  console.log(`[AutoCleaner] Starting cleanup loop every ${config.autoCleanerPollMs}ms (retention: ${config.autoCleanerRetentionDays} days)`)
+  runPollingLoop({ intervalMs: config.autoCleanerPollMs, tick: () => cleaner.cleanup(), name: 'AutoCleaner' })
 }
 
 async function runDeployReporter({

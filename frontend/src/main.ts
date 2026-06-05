@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import { initTelegram } from './telegram'
+import { enableIosActive } from './enableIosActive'
 import './styles/tokens.css'
 
 // In dev, optionally serve the API from in-memory mocks so the whole design is
@@ -12,6 +13,8 @@ async function bootstrap(): Promise<void> {
     installMockApi()
   }
   initTelegram()
+  // iOS Safari fires :active on non-native elements only if a touchstart listener exists.
+  enableIosActive()
   createApp(App).mount('#app')
 }
 

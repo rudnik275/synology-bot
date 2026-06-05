@@ -17,13 +17,15 @@
 // The Add wizard is mounted at the SHELL level (not gated behind the Downloads
 // section) so it is reachable from the hub and any section, and the `tor-<token>`
 // deep-link auto-open still fires on boot (AddFlow self-opens onMounted).
+// The global FAB was removed in #249 — Downloads uses an inline add-row instead
+// (restored from d635453). After a successful add, AddFlow emits 'added' and the
+// shell navigates to the Downloads section so the user lands on the right screen.
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import HomeHub from './components/HomeHub.vue'
 import DownloadsTab from './tabs/DownloadsTab.vue'
 import NasTab from './tabs/NasTab.vue'
 import ShowsTab from './tabs/ShowsTab.vue'
 import AddFlow from './components/AddFlow.vue'
-import FAB from './components/ui/FAB.vue'
 import { startParam } from './telegram'
 import { resolveStartView } from './startTab'
 import type { SectionKey } from './sections'
@@ -32,9 +34,6 @@ import { useTgBackButton } from './composables/useTgBackButton'
 // Root view: the hub, or a pushed full-screen section. Deep-links retarget here
 // (downloads/nas/shows → that section directly; anything else → hub).
 const view = ref(resolveStartView(startParam))
-
-// The global Add FAB is shown on hub + Downloads; hidden on NAS/Shows (ADR 0015, S3 #224).
-const showFab = computed(() => view.value === 'hub' || view.value === 'downloads')
 
 const SECTION_VIEWS = {
   downloads: DownloadsTab,
@@ -83,8 +82,8 @@ watch(shellBackActive, (active) => {
         <!-- Hub root: plain section rows; tapping one pushes that section. -->
         <HomeHub v-if="isHub" key="hub" @navigate="navigateTo" />
 
-        <!-- Downloads section: the global FAB (below) is the Add affordance. -->
-        <DownloadsTab v-else-if="view === 'downloads'" key="downloads" />
+        <!-- Downloads section: inline add-row is the Add affordance (#249). -->
+        <DownloadsTab v-else-if="view === 'downloads'" key="downloads" :on-add-click="openAddWizard" />
 
         <!-- Shows reports detail-open via owns-back so the shell yields native Back. -->
         <ShowsTab v-else-if="view === 'shows'" key="shows" @owns-back="onChildOwnsBack" />
@@ -93,14 +92,10 @@ watch(shellBackActive, (active) => {
       </Transition>
     </main>
 
-    <!-- Mounted at the shell so the wizard is reachable from the hub and any
-         section, and the tor-<token> auto-open fires on boot regardless of view.
-         While open it owns native Back; owns-back keeps the shell off the button. -->
-    <AddFlow ref="addFlow" @owns-back="onChildOwnsBack" />
-
-    <!-- Global Add FAB (ADR 0015, S3 #224): shown on hub + Downloads; hidden on NAS/Shows.
-         Single affordance to open the Add wizard from the hub or Downloads. -->
-    <FAB v-if="showFab" @click="openAddWizard" />
+    <!-- Mounted at the shell so the wizard is reachable from any section/hub, and
+         the tor-<token> auto-open fires on boot regardless of view. While open it
+         owns native Back; 'added' navigates to Downloads so the user lands there. -->
+    <AddFlow ref="addFlow" @owns-back="onChildOwnsBack" @added="navigateTo('downloads')" />
   </div>
 </template>
 

@@ -6,7 +6,6 @@ import ProgressBar from '../src/components/ui/ProgressBar.vue'
 import StickerBadge from '../src/components/ui/StickerBadge.vue'
 import EmptyState from '../src/components/ui/EmptyState.vue'
 import Sheet from '../src/components/ui/Sheet.vue'
-import FAB from '../src/components/ui/FAB.vue'
 import Button from '../src/components/ui/Button.vue'
 import Donut from '../src/components/ui/Donut.vue'
 
@@ -30,14 +29,6 @@ describe('EmptyState', () => {
     const wrapper = mount(EmptyState, { props: { title: 'Nothing', message: 'Add something' } })
     expect(wrapper.text()).toContain('Nothing')
     expect(wrapper.text()).toContain('Add something')
-  })
-})
-
-describe('FAB', () => {
-  it('emits click', async () => {
-    const wrapper = mount(FAB)
-    await wrapper.get('button').trigger('click')
-    expect(wrapper.emitted('click')).toHaveLength(1)
   })
 })
 

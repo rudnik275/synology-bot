@@ -29,6 +29,12 @@ import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/ui/tones'
 import type { TaskView } from '../types'
 
+// Callback to open the Add wizard — provided by App.vue via #249 (restored from d635453).
+// Optional so DownloadsTab can still be mounted in tests without wiring.
+const props = withDefaults(defineProps<{ onAddClick?: () => void }>(), {
+  onAddClick: undefined,
+})
+
 const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
 
 // Optimistic placeholders (added by AddFlow on «Добавить») render as their own
@@ -98,11 +104,6 @@ function isPaused(status: string): boolean {
 /** Whether to show a primary action button (one or zero per card). */
 function hasPrimaryAction(status: string): boolean {
   return isActive(status) || isPaused(status)
-}
-
-/** Label for the single primary action button. */
-function primaryLabel(status: string): string {
-  return isPaused(status) ? 'Продолжить' : 'Пауза'
 }
 
 async function onPrimary(task: TaskView): Promise<void> {
@@ -183,11 +184,35 @@ function qualityChips(task: TaskView): string[] {
       </template>
     </EmptyState>
 
-    <!-- Empty state: the global FAB (in App.vue shell) is the Add affordance. -->
-    <EmptyState v-else-if="!loading && tasks.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать." />
+    <!-- Empty state: inline add-row as the Add affordance (#249). -->
+    <EmptyState v-else-if="!loading && tasks.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать.">
+      <template #action>
+        <button
+          type="button"
+          class="add-row nb-pressable"
+          data-testid="add-row"
+          @click="props.onAddClick?.()"
+        >
+          <span class="add-row-chip" aria-hidden="true">+</span>
+          <span class="add-row-label">Добавить загрузку</span>
+        </button>
+      </template>
+    </EmptyState>
 
-    <!-- Task list: the global FAB (in App.vue shell) is the Add affordance (#224). -->
+    <!-- Task list: inline add-row is the Add affordance (#249, restored from d635453). -->
     <TransitionGroup v-else tag="div" name="task-list" class="task-list" appear>
+      <!-- Inline «Добавить загрузку» row — always the first item, scrolls with the list -->
+      <button
+        key="__add-row__"
+        type="button"
+        class="add-row nb-pressable"
+        data-testid="add-row"
+        @click="props.onAddClick?.()"
+      >
+        <span class="add-row-chip" aria-hidden="true">+</span>
+        <span class="add-row-label">Добавить загрузку</span>
+      </button>
+
       <!-- Optimistic placeholders (#instant-add): a loader card per just-added
            download, shown the moment the Add sheet closes and retired when the
            real task lands on a poll. Empty in steady state — leaves the real-task
@@ -250,17 +275,28 @@ function qualityChips(task: TaskView): string[] {
           <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
         </div>
 
-        <!-- Action row: 0 or 1 primary button + direct delete (trash) button -->
+        <!-- Action row: 0 or 1 primary icon button + direct delete (trash) button (#249) -->
         <div class="task-actions">
-          <!-- Primary action (Variant B: exactly one per status group, or none) -->
-          <Button
+          <!-- Primary action: icon-only for pause/resume to keep cards compact (#249).
+               Pause glyph (⏸) while downloading/waiting/finishing; play glyph (▶) while paused. -->
+          <button
             v-if="hasPrimaryAction(task.status)"
-            variant="primary"
-            size="sm"
-            class="btn-primary-action"
+            type="button"
+            class="btn-primary-icon nb-pressable"
+            :aria-label="isPaused(task.status) ? 'Продолжить' : 'Пауза'"
             :data-testid="`btn-primary-${task.id}`"
             @click="onPrimary(task)"
-          >{{ primaryLabel(task.status) }}</Button>
+          >
+            <!-- Pause glyph: two vertical bars -->
+            <svg v-if="!isPaused(task.status)" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="6" y="4" width="4" height="16" rx="1" />
+              <rect x="14" y="4" width="4" height="16" rx="1" />
+            </svg>
+            <!-- Play/resume glyph: right-pointing triangle -->
+            <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <polygon points="5,3 19,12 5,21" />
+            </svg>
+          </button>
 
           <!-- Delete: a direct trash-icon button → one tap opens the confirm dialog. -->
           <button
@@ -410,14 +446,33 @@ function qualityChips(task: TaskView): string[] {
   align-items: center;
 }
 
-.btn-primary-action {
-  flex: 1;
+/* Icon-only pause/resume button (#249): compact, same height as the delete button.
+   margin-left:auto pushes the delete to the far right when no icon is present;
+   when both are shown the icon sits flush-left and delete is at the far right. */
+.btn-primary-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  min-height: 44px;
+  color: var(--ink);
+  background: var(--yellow);
+  border: var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  user-select: none;
+}
+.btn-primary-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* Delete: direct trash-icon button. Black ink icon (the confirmation dialog
    carries the destructive weight). Sits as the trailing action (margin-left:auto
    right-aligns it when there is no primary button; when a primary is present its
-   flex:1 pushes this right). */
+   the icon button is already left of it). */
 .btn-delete {
   display: inline-flex;
   align-items: center;
@@ -613,6 +668,52 @@ function qualityChips(task: TaskView): string[] {
   width: 45%;
 }
 
-/* (add-row CSS removed in S3 #224 — the global FAB in App.vue is now the sole
-   Add affordance on Downloads; no inline row here.) */
+/*
+ * ── Inline «Добавить загрузку» add row (#249, restored from d635453) ──────────
+ *
+ * Neo-Brutalism: thick dashed ink border, yellow «+» chip, mechanical press.
+ * Full-width, min-height 56px (>= 44px touch target with visual breathing room).
+ * Scrolls with the list — not fixed/floating.
+ * Appears as the first item in both the task list AND the empty state action slot.
+ */
+.add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--paper);
+  border: 3px dashed var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--ink);
+  text-align: left;
+  /* Mechanical press (neo-brutalism): sinks into an offset shadow */
+  --press: 3px;
+}
+
+/* Yellow «+» chip — the sole accent colour per ADR 0006 addendum */
+.add-row-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--yellow);
+  border: var(--border-strong);
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.add-row-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
 </style>

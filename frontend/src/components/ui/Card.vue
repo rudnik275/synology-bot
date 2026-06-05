@@ -71,6 +71,9 @@ withDefaults(
   inset: 0 0 auto 0;
   height: 6px;
   border-bottom: var(--border-thin) solid var(--ink);
+  /* #250 fix 1: match the card's own corner radius so the strip doesn't poke
+   * past the rounded corners. Only the top two corners need rounding. */
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 .tone-red::before {
   background: var(--red);

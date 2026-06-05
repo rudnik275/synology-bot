@@ -212,6 +212,11 @@ const shows = computed(() => deriveShowsSummary(subscriptions.value))
 <style scoped>
 .hub {
   padding: var(--space-4);
+  /* #250 fix 2: the 5px offset box-shadow on hub-cards bleeds past the right
+   * edge if the viewport is tight. 16px padding clears 5px shadow, but adding
+   * overflow-x:clip as a backstop catches any edge case without creating a new
+   * BFC (clip does not affect position:sticky unlike overflow:hidden). */
+  overflow-x: clip;
 }
 
 .hub-rows {
@@ -243,11 +248,14 @@ const shows = computed(() => deriveShowsSummary(subscriptions.value))
 }
 
 .card-label {
-  font-size: var(--fs-xs);
+  /* #250 fix 3: bump from xs (12px) to md (16px) and full opacity so the block
+   * name reads as a primary heading, not a secondary label. Keep bold +
+   * uppercase so the neo-brutalist identity is preserved. */
+  font-size: var(--fs-md);
   font-weight: var(--fw-bold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  opacity: 0.6;
+  opacity: 1;
 }
 
 .card-figure {

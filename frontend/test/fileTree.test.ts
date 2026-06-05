@@ -6,7 +6,7 @@
 // File nodes carry the #117-style label + the dim raw basename + the stable
 // index used to drive the BT.File subset.
 import { describe, it, expect } from 'bun:test'
-import { buildFileTree, type InspectFile } from '../src/components/fileTree'
+import { buildFileTree, allIndices, type InspectFile } from '../src/components/fileTree'
 
 const files: InspectFile[] = [
   { index: 0, path: 'Andor.S02.1080p.WEB-DL/Season 2/Andor.S02E01.1080p.mkv', size: 3_100_000_000 },
@@ -73,6 +73,38 @@ describe('buildFileTree', () => {
     const season = tree.nodes.find((n) => n.kind === 'folder' && n.name === 'Season 2')
     if (season?.kind !== 'folder') throw new Error('expected folder')
     expect(season.fileIndices.sort()).toEqual([0, 1])
+  })
+})
+
+// --- allIndices: top-level master select-all (#251) ---
+
+describe('allIndices', () => {
+  it('returns every file index in a flat list (no sub-folders)', () => {
+    const flat: InspectFile[] = [
+      { index: 0, path: 'a.mkv', size: 1 },
+      { index: 1, path: 'b.mkv', size: 2 },
+    ]
+    expect(allIndices(flat).sort((a, b) => a - b)).toEqual([0, 1])
+  })
+
+  it('covers root-level AND nested files (folders and root mixed)', () => {
+    // files fixture: two files in sub-folders + one at root level (after crumb collapse)
+    expect(allIndices(files).sort((a, b) => a - b)).toEqual([0, 1, 2, 3])
+  })
+
+  it('is a superset of rootFileIndices — includes folder descendants too', () => {
+    const tree = buildFileTree(files)
+    const all = new Set(allIndices(files))
+    // Every rootFileIndex must be in allIndices
+    for (const i of tree.rootFileIndices) {
+      expect(all.has(i)).toBe(true)
+    }
+    // allIndices must have MORE than just root file indices (folders have children)
+    expect(allIndices(files).length).toBeGreaterThan(tree.rootFileIndices.length)
+  })
+
+  it('returns empty array for empty file list', () => {
+    expect(allIndices([])).toEqual([])
   })
 })
 

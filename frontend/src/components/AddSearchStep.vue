@@ -201,6 +201,7 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
 
 .search-row-field {
   flex: 1;
+  min-width: 0; /* prevent flex child from overflowing its container (#10) */
 }
 
 /* Layout only — the recipe lives in the shared <Button variant="ink">. */

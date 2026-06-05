@@ -65,15 +65,15 @@ function formatDate(airDate: string): string {
       <Skeleton class="sk-status-card" />
     </div>
 
-    <!-- Row 3: season rows -->
+    <!-- Row 3: description block -->
+    <Skeleton class="sk-description" />
+
+    <!-- Row 4: season rows -->
     <div class="sk-seasons">
       <Skeleton class="sk-season-row" />
       <Skeleton class="sk-season-row" />
       <Skeleton class="sk-season-row" />
     </div>
-
-    <!-- Row 4: description block -->
-    <Skeleton class="sk-description" />
   </div>
 
   <!-- ── Loaded state ─────────────────────────────────────────────────────── -->
@@ -158,7 +158,13 @@ function formatDate(airDate: string): string {
       </div>
     </div>
 
-    <!-- Block 3: «Сезоны» accordion (promoted) ──────────────────────────── -->
+    <!-- Block 3: «Описание» — inline section (no dropdown) ──────────────── -->
+    <section v-if="show.description" class="description-section">
+      <h2 class="section-title">Описание</h2>
+      <p class="show-description">{{ show.description }}</p>
+    </section>
+
+    <!-- Block 4: «Сезоны» accordion ─────────────────────────────────────── -->
     <section v-if="show.seasons.length > 0" class="seasons-section">
       <h2 class="section-title">Сезоны</h2>
       <SeasonAccordion :seasons="show.seasons" />
@@ -176,12 +182,6 @@ function formatDate(airDate: string): string {
         </svg>
       </template>
     </EmptyState>
-
-    <!-- Block 4: «Описание» (demoted, collapsed secondary) ──────────────── -->
-    <details v-if="show.description" class="description-details">
-      <summary class="description-summary">Описание</summary>
-      <p class="show-description">{{ show.description }}</p>
-    </details>
   </div>
 </template>
 
@@ -189,7 +189,7 @@ function formatDate(airDate: string): string {
 .show-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   padding: var(--space-4);
 }
 
@@ -200,13 +200,14 @@ function formatDate(airDate: string): string {
   align-items: flex-start;
 }
 
-/* Thumbnail: small, demoted from large poster */
+/* Hero poster: 2:3 ratio, block treatment */
 .show-thumb {
-  width: 60px;
-  height: 90px;
+  width: 128px;
+  height: 192px;
   object-fit: cover;
   border-radius: var(--radius);
   border: var(--border);
+  box-shadow: var(--shadow-md);
   flex-shrink: 0;
 }
 
@@ -233,7 +234,7 @@ function formatDate(airDate: string): string {
 
 .show-title {
   margin: 0;
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   line-height: 1.2;
 }
@@ -314,51 +315,24 @@ function formatDate(airDate: string): string {
   gap: var(--space-2);
 }
 
-/* ── Block 4: description (collapsed) ───────────────────────────────────── */
-.description-details {
-  border: var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--paper);
-}
-
-.description-summary {
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  user-select: none;
-  list-style: none;
+/* ── Block 3: description (inline section) ──────────────────────────────── */
+.description-section {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.description-summary::after {
-  content: '▾';
-  font-size: var(--fs-sm);
-  opacity: 0.5;
-}
-
-details[open] .description-summary::after {
-  content: '▴';
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .show-description {
   margin: 0;
-  padding: 0 var(--space-4) var(--space-4);
   font-size: var(--fs-sm);
   line-height: 1.55;
   opacity: 0.85;
-  border-top: var(--hairline);
 }
 
 /* ── Skeleton shapes ─────────────────────────────────────────────────────── */
 .sk-thumb {
-  width: 60px;
-  height: 90px;
+  width: 128px;
+  height: 192px;
   flex-shrink: 0;
 }
 

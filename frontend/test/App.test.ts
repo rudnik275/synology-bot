@@ -203,9 +203,9 @@ describe('App shell — deep-link retargeting', () => {
     await flushPromises()
 
     // The full-screen Add wizard sheet auto-opened on boot (it covers the hub).
-    expect(document.querySelector('.sheet') ?? wrapper.find('[role="dialog"]').element).toBeTruthy()
-    // The wizard's fullscreen sheet is present in the DOM.
-    expect(document.querySelector('[data-testid="stepper"]')).not.toBeNull()
+    // The wizard sheet is headerless since G1 (no title / ✕ / stepper chrome), so
+    // assert the dialog itself is present rather than the removed stepper.
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
   })
 })
 
@@ -246,11 +246,11 @@ describe('App shell — native Back coordination (single active handler)', () =>
     await wrapper.find('[data-testid="add-row"]').trigger('click')
     await flushPromises()
 
-    // Close the wizard via its close ✕.
-    const closeBtn = document.querySelector('.sheet-close') as HTMLButtonElement | null
-    expect(closeBtn).not.toBeNull()
-    closeBtn!.click()
+    // The wizard is headerless since G1 (no ✕) — it closes via native Back on the
+    // first step. While the sheet is open the wizard owns Back, so one press closes it.
+    back.press()
     await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
 
     // Now in the Downloads section with no child owning back → shell back is live.
     expect(back.visible).toBe(true)

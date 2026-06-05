@@ -135,11 +135,14 @@ const selectedSize = computed<number>(() => {
   return inspectFiles.value.reduce((sum, f) => (sel.has(f.index) ? sum + f.size : sum), 0)
 })
 
-/** Whether the source can be inspected for a per-file tree. Magnets (uri mode)
- *  have no local bytes to self-host → whole-torrent only. */
+/** Whether the source can be inspected for a per-file tree.
+ *  Magnets (uri mode, `magnet:` scheme) have no local bytes on the server → whole-torrent only.
+ *  Non-magnet uri sources (Toloka download.php links) DO have bytes held server-side (#219/#220)
+ *  → the instant-tree inspect path applies, same as search/file. */
 const canInspect = computed<boolean>(() => {
   if (mode.value === 'search') return selectedResult.value !== null
   if (mode.value === 'file') return selectedFile.value !== null
+  if (mode.value === 'uri') return handoffUri.value.trim() !== '' && !handoffUri.value.trim().startsWith('magnet:')
   return false
 })
 
@@ -238,8 +241,10 @@ watch(open, (isOpen) => emit('owns-back', isOpen))
 // component only decides WHAT to inspect (the current source) and WHEN (entering
 // Confirm); the composable owns the stale-run guard + fast-tap chain.
 
-/** The source for an inspect, derived from the current add mode. Magnets/URIs
- *  (uri mode) have no local bytes to self-host → null (whole-torrent only). */
+/** The source for an inspect, derived from the current add mode.
+ *  Magnets (uri mode, `magnet:` scheme) have no local bytes → null (whole-torrent only).
+ *  Non-magnet uri sources (Toloka download.php links) pass the URL via the search-kind
+ *  shape so the server can locate the held bytes by URI and return the instant tree (#220). */
 function currentInspectSource(): InspectSource {
   if (!canInspect.value) return null
   if (mode.value === 'file' && selectedFile.value) {
@@ -247,6 +252,12 @@ function currentInspectSource(): InspectSource {
   }
   if (mode.value === 'search' && selectedResult.value) {
     return { kind: 'search', url: selectedResult.value.downloadUrl, title: selectedResult.value.title, destination: destination.value }
+  }
+  if (mode.value === 'uri') {
+    const uri = handoffUri.value.trim()
+    // Non-magnet uri: server holds the bytes under this URI → use search-kind
+    // so api.inspect() is called with the URL and the server returns the instant tree.
+    return { kind: 'search', url: uri, title: '', destination: destination.value }
   }
   return null
 }

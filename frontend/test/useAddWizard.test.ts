@@ -217,3 +217,43 @@ describe('useAddWizard — bot handoff (deep link)', () => {
     expect(w.step.value).toBe(2)
   })
 })
+
+// #201 — stale «не найдено» banner: goNext/goBack must clear errorMsg so a past
+// error does not bleed into the next step visit.
+describe('useAddWizard — errorMsg cleared on step navigation (#201)', () => {
+  it('goNext() clears errorMsg before advancing', () => {
+    const w = useAddWizard(makeDeps())
+    w.selectedResult.value = RESULT
+    w.destination.value = '/v'
+    w.goNext() // 1 → 2
+
+    // Simulate an error that was set on a prior submit.
+    w.errorMsg.value = 'Не найдено'
+    w.goNext() // 2 → 3 — errorMsg must be cleared
+    expect(w.errorMsg.value).toBeNull()
+  })
+
+  it('goBack() clears errorMsg before stepping back', () => {
+    const w = useAddWizard(makeDeps())
+    w.selectedResult.value = RESULT
+    w.destination.value = '/v'
+    w.goNext(); w.goNext() // → step 3
+
+    // Simulate an error set on the confirm step.
+    w.errorMsg.value = 'Не найдено'
+    w.goBack() // 3 → 2 — errorMsg must be cleared
+    expect(w.errorMsg.value).toBeNull()
+  })
+
+  it('a set errorMsg does not survive a goNext + goBack round-trip', () => {
+    const w = useAddWizard(makeDeps())
+    w.selectedResult.value = RESULT
+    w.destination.value = '/v'
+    w.goNext() // → step 2
+    w.errorMsg.value = 'stale error'
+    w.goNext() // → step 3: cleared by goNext
+    w.errorMsg.value = 'another error'
+    w.goBack() // → step 2: cleared by goBack
+    expect(w.errorMsg.value).toBeNull()
+  })
+})

@@ -9,6 +9,7 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import LoadingText from './ui/LoadingText.vue'
+import Skeleton from './ui/Skeleton.vue'
 import type { FolderView } from '../types'
 
 defineProps<{
@@ -32,6 +33,14 @@ const view = ref<'quick' | 'tree'>('quick')
 
 // Subfolders of the default share, fetched once — the cold-start seed.
 const defaultChildren = ref<string[]>([])
+
+// True while we're fetching the default-share children on mount.
+// We hold the quick-list render until this resolves so there is no 2→2 pop-in.
+const quickLoading = ref(true)
+
+// Number of skeleton tiles to show while quickLoading; prefer recents count
+// (already known) or fall back to the cap so the placeholder looks reasonable.
+const SKELETON_COUNT = 4
 
 // Quick list = recents first, then default-share subfolders, deduped + capped.
 // Recents float to the top as they're used; the default-share children keep it
@@ -75,6 +84,9 @@ onMounted(async () => {
     defaultChildren.value = children.map((f) => f.path)
   } catch {
     defaultChildren.value = []
+  } finally {
+    // Release the skeleton once we have the full merged list.
+    quickLoading.value = false
   }
   // If there is genuinely nothing to quick-pick (default share empty/unreachable
   // and no recents), drop straight into the tree so the step is never blank.
@@ -128,7 +140,15 @@ function shortName(path: string): string {
     <div v-if="view === 'quick'" class="quick-view">
       <span class="quick-label">Куда сохранить</span>
 
-      <ul class="quick-list" role="list" data-testid="folder-tiles">
+      <!-- Skeleton placeholders while the full quick-list is still loading.
+           Shown instead of the partial list (recents-only) to avoid a 2→2 pop-in. -->
+      <ul v-if="quickLoading" class="quick-list" role="list" aria-busy="true" aria-label="Загрузка папок">
+        <li v-for="n in SKELETON_COUNT" :key="n">
+          <Skeleton class="folder-tile-skeleton" />
+        </li>
+      </ul>
+
+      <ul v-else class="quick-list" role="list" data-testid="folder-tiles">
         <li v-for="path in quickFolders" :key="path">
           <button
             type="button"
@@ -323,6 +343,12 @@ function shortName(path: string): string {
 }
 .tile-indicator--selected {
   background: var(--ink);
+}
+
+/* Skeleton placeholder matches the tile height so the list height is stable. */
+.folder-tile-skeleton {
+  height: 60px;
+  border-radius: var(--radius);
 }
 
 /* Quiet link to open the tree */

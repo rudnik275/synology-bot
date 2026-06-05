@@ -1,6 +1,71 @@
 import { ref } from 'vue'
 import { api } from '../api'
-import type { ShowDetailView } from '../types'
+import type { ShowDetailView, ShowSeasonView, SubscriptionView } from '../types'
+
+// ---------------------------------------------------------------------------
+// Pure derivation helpers (exported for unit testing — issue #211)
+// ---------------------------------------------------------------------------
+
+/** Result shape shared by both derivation helpers. */
+export interface EpisodeRef {
+  season: number
+  episode: number
+  airDate: string
+}
+
+/**
+ * Derive the last-aired episode.
+ *
+ * Priority:
+ * 1. `latestAiredEpisode` from the subscription (authoritative server field).
+ * 2. Fallback: last episode across all seasons where `aired === true`.
+ * 3. null if neither is available.
+ */
+export function deriveLastAired(
+  seasons: ShowSeasonView[],
+  latestAiredEpisode: SubscriptionView['latestAiredEpisode'],
+): EpisodeRef | null {
+  if (latestAiredEpisode !== null && latestAiredEpisode !== undefined) {
+    return {
+      season: latestAiredEpisode.season,
+      episode: latestAiredEpisode.episode,
+      airDate: latestAiredEpisode.airDate,
+    }
+  }
+
+  // Fallback: walk seasons in order, collect aired episodes, return last.
+  let last: EpisodeRef | null = null
+  for (const s of seasons) {
+    for (const ep of s.episodes) {
+      if (ep.aired && ep.airDate !== null) {
+        last = { season: s.season, episode: ep.episode, airDate: ep.airDate }
+      }
+    }
+  }
+  return last
+}
+
+/**
+ * Derive the next (upcoming) episode.
+ *
+ * Returns the earliest episode where `aired === false && airDate != null`,
+ * comparing by ISO date string (lexicographic ≡ chronological for ISO-8601).
+ * Returns null if no such episode exists.
+ */
+export function deriveNextEpisode(seasons: ShowSeasonView[]): EpisodeRef | null {
+  let next: EpisodeRef | null = null
+  for (const s of seasons) {
+    for (const ep of s.episodes) {
+      if (!ep.aired && ep.airDate !== null) {
+        const candidate: EpisodeRef = { season: s.season, episode: ep.episode, airDate: ep.airDate }
+        if (next === null || ep.airDate < next.airDate) {
+          next = candidate
+        }
+      }
+    }
+  }
+  return next
+}
 
 /**
  * Composable for fetching the detail view of a Show (ADR 0009).

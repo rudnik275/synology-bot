@@ -12,7 +12,7 @@ import ProgressBar from '../components/ui/ProgressBar.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import Donut from '../components/ui/Donut.vue'
-import LoadingText from '../components/ui/LoadingText.vue'
+import Skeleton from '../components/ui/Skeleton.vue'
 import type { DonutSegment } from '../components/ui/donut'
 import {
   useHealth,
@@ -106,9 +106,44 @@ const ramDonut = computed(() => {
 </script>
 
 <template>
-  <!-- Loading state -->
-  <div v-if="loading && !data" class="nas-tab nas-loading" aria-busy="true">
-    <Card><LoadingText /></Card>
+  <!-- Loading skeleton: mirrors storage hero + compute bento shape (#208) -->
+  <div v-if="loading && !data" data-testid="nas-skeleton" class="nas-tab nas-skeleton" aria-busy="true" aria-label="Загрузка NAS">
+    <!-- Hero skeleton — mirrors the storage hero card -->
+    <div data-testid="nas-skeleton-hero" class="sk-hero">
+      <div class="sk-hero-top">
+        <div class="sk-hero-left">
+          <Skeleton class="sk-hero-kind" />
+          <Skeleton class="sk-hero-name" />
+        </div>
+        <Skeleton class="sk-hero-badge" />
+      </div>
+      <Skeleton class="sk-hero-pct" />
+      <Skeleton class="sk-hero-bytes" />
+      <Skeleton class="sk-hero-bar" />
+    </div>
+    <!-- Bento skeleton — mirrors the CPU+RAM compute bento -->
+    <div data-testid="nas-skeleton-bento" class="sk-bento">
+      <div class="sk-metric-cell">
+        <Skeleton class="sk-metric-label" />
+        <Skeleton class="sk-metric-value" />
+        <Skeleton class="sk-metric-sub" />
+      </div>
+      <div class="sk-metric-cell sk-metric-cell--right">
+        <Skeleton class="sk-metric-label" />
+        <Skeleton class="sk-metric-value" />
+        <Skeleton class="sk-metric-sub" />
+      </div>
+    </div>
+    <!-- Disk rows skeleton -->
+    <div class="sk-disks">
+      <div v-for="i in 2" :key="i" class="sk-disk-row">
+        <Skeleton class="sk-disk-dot" />
+        <div class="sk-disk-info">
+          <Skeleton class="sk-disk-model" />
+          <Skeleton class="sk-disk-meta" />
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Network / auth error (no data at all) -->
@@ -249,8 +284,148 @@ const ramDonut = computed(() => {
   gap: var(--space-2);
   padding: var(--space-4);
 }
-.nas-loading {
-  opacity: 0.6;
+
+/* ── NAS loading skeleton (#208) ── */
+.nas-skeleton {
+  gap: var(--space-3);
+}
+
+/* Hero skeleton — mirrors the .hero card shape */
+.sk-hero {
+  background: var(--paper);
+  border: var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-1);
+}
+
+.sk-hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.sk-hero-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sk-hero-kind {
+  height: 11px;
+  width: 90px;
+}
+
+.sk-hero-name {
+  height: 18px;
+  width: 64px;
+}
+
+.sk-hero-badge {
+  height: 22px;
+  width: 80px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+.sk-hero-pct {
+  height: 36px;
+  width: 72px;
+}
+
+.sk-hero-bytes {
+  height: 12px;
+  width: 60%;
+}
+
+.sk-hero-bar {
+  height: 18px;
+  width: 100%;
+  border-radius: 6px;
+}
+
+/* Bento skeleton — mirrors CPU+RAM flat panel grid */
+.sk-bento {
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+}
+
+.sk-metric-cell {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sk-metric-cell--right {
+  border-left: var(--hairline);
+}
+
+.sk-metric-label {
+  height: 10px;
+  width: 30px;
+}
+
+.sk-metric-value {
+  height: 28px;
+  width: 52px;
+}
+
+.sk-metric-sub {
+  height: 10px;
+  width: 75%;
+}
+
+/* Disk row skeletons */
+.sk-disks {
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.sk-disk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.sk-disk-row + .sk-disk-row {
+  border-top: var(--hairline);
+}
+
+.sk-disk-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sk-disk-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sk-disk-model {
+  height: 14px;
+  width: 55%;
+}
+
+.sk-disk-meta {
+  height: 11px;
+  width: 40%;
 }
 
 /* ── Section heads + labels ── */

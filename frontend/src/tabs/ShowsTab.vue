@@ -21,7 +21,6 @@ import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SearchField from '../components/ui/SearchField.vue'
-import LoadingText from '../components/ui/LoadingText.vue'
 import Skeleton from '../components/ui/Skeleton.vue'
 
 const { subscriptions, loading: subsLoading, error: subsError, add, remove, refreshMetadata } = useSubscriptions()
@@ -158,7 +157,20 @@ async function handleUnsubscribe(): Promise<void> {
 
       <!-- Search results mode -->
       <template v-if="isSearchMode">
-        <LoadingText v-if="searchLoading" label="Поиск…" class="loading-hint" />
+        <!-- Skeleton rows while search is loading (#208) -->
+        <div v-if="searchLoading" data-testid="search-skeleton" class="show-list show-skeleton" aria-busy="true" aria-label="Поиск">
+          <div v-for="i in 3" :key="i" data-testid="search-skeleton-row" class="sk-show-row">
+            <Card>
+              <div class="show-row">
+                <Skeleton data-testid="subs-skeleton-thumb" class="show-thumb show-thumb-skeleton" />
+                <div class="show-info">
+                  <Skeleton data-testid="subs-skeleton-title" class="sk-show-title" />
+                  <Skeleton class="sk-show-subtitle" />
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
         <EmptyState
           v-else-if="!searchLoading && (searchResults?.length ?? 0) === 0"
           title="Ничего не найдено"
@@ -217,7 +229,20 @@ async function handleUnsubscribe(): Promise<void> {
 
       <!-- Subscriptions mode (default: empty query) -->
       <template v-else>
-        <LoadingText v-if="subsLoading" class="loading-hint" />
+        <!-- Skeleton rows while subscriptions are loading (#208) -->
+        <div v-if="subsLoading" data-testid="subs-skeleton" class="show-list show-skeleton" aria-busy="true" aria-label="Загрузка подписок">
+          <div v-for="i in 3" :key="i" data-testid="subs-skeleton-row" class="sk-show-row">
+            <Card>
+              <div class="show-row">
+                <Skeleton data-testid="subs-skeleton-thumb" class="show-thumb show-thumb-skeleton" />
+                <div class="show-info">
+                  <Skeleton data-testid="subs-skeleton-title" class="sk-show-title" />
+                  <Skeleton class="sk-show-subtitle" />
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
 
         <EmptyState
           v-else-if="subscriptions.length === 0"
@@ -308,11 +333,24 @@ async function handleUnsubscribe(): Promise<void> {
 }
 
 
-.loading-hint {
-  text-align: center;
-  opacity: 0.6;
-  font-size: var(--fs-sm);
-  padding: var(--space-4) 0;
+/* Skeleton show-item rows (#208) — mirrors .show-row geometry */
+.show-skeleton {
+  pointer-events: none;
+}
+
+.sk-show-row {
+  /* inherits from .show-list flex column gap */
+}
+
+.sk-show-title {
+  height: 15px;
+  width: 65%;
+}
+
+.sk-show-subtitle {
+  height: 12px;
+  width: 42%;
+  margin-top: 4px;
 }
 
 .fetch-error {

@@ -111,11 +111,11 @@ async function handleUnsubscribe(): Promise<void> {
     <!-- Show detail sub-view: covers the list -->
     <template v-if="hasDetail">
       <ScreenHeader title="Шоу" />
-      <LoadingText v-if="detailLoading" class="loading-hint" />
-      <div v-else-if="detailError" class="fetch-error">{{ detailError }}</div>
+      <div v-if="detailError" class="fetch-error">{{ detailError }}</div>
       <ShowDetail
-        v-else-if="showDetail"
+        v-else
         :show="showDetail"
+        :loading="detailLoading"
         :subscribing="subscribing"
         @subscribe="handleSubscribe"
         @unsubscribe="handleUnsubscribe"

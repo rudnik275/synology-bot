@@ -13,7 +13,7 @@ import LoadingText from './ui/LoadingText.vue'
 import StickerBadge from './ui/StickerBadge.vue'
 import FileTree from './FileTree.vue'
 import { formatBytes } from '../format'
-import type { FileTree as FileTreeModel } from './fileTree'
+import type { FileTree as FileTreeModel, InspectFile } from './fileTree'
 import type { InspectState } from '../composables/useInspectCommit'
 import type { InspectFileView } from '../types'
 
@@ -74,6 +74,7 @@ const emit = defineEmits<{ goBack: [] }>()
         <FileTree
           v-else-if="inspectState === 'ready' && fileTree"
           :tree="fileTree"
+          :files="(inspectFiles as InspectFile[])"
           v-model:selected="selectedIndices"
         />
 

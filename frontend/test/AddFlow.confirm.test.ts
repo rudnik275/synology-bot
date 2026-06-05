@@ -365,3 +365,106 @@ describe('AddFlow confirm — no root-group when all files are in sub-folders (#
     wrapper.unmount()
   })
 })
+
+// Master select-all: top-level checkbox that covers the ENTIRE tree (root files
+// AND all folder descendants) — extends #217's root-files-only checkbox (#251).
+// Uses a mixed tree: one shared root folder collapses into a crumb; inside are
+// two sub-folders (each with episodes) and one loose root-level file.
+describe('AddFlow confirm — master select-all over whole tree (#251)', () => {
+  beforeEach(() => {
+    // After shared-root crumb collapse:
+    //   Season 2/ → indices 0, 1
+    //   Extras/   → index 2
+    //   poster.jpg → index 3  (root-level)
+    // rootFileIndices = [3]; allIndices = [0,1,2,3]
+    inspectFiles = [
+      { index: 0, name: 'Andor.S02/Season 2/Andor.S02E01.mkv', size: 3_100_000_000 },
+      { index: 1, name: 'Andor.S02/Season 2/Andor.S02E02.mkv', size: 2_900_000_000 },
+      { index: 2, name: 'Andor.S02/Extras/featurette.mkv', size: 1_500_000_000 },
+      { index: 3, name: 'Andor.S02/poster.jpg', size: 1_200_000 },
+    ]
+  })
+
+  it('renders the master select-all checkbox at the top of the tree', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    expect(document.querySelector('[data-testid="tree-check-all"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('master checkbox is checked when all files (root + folder children) are selected by default', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    const allCk = document.querySelector<HTMLButtonElement>('[data-testid="tree-check-all"]')!
+    expect(allCk.getAttribute('aria-checked')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('clicking master checkbox deselects ALL files (root-level and nested)', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    document.querySelector<HTMLElement>('[data-testid="tree-check-all"]')!.click()
+    await flushPromises()
+
+    // All individual file checkboxes should now be unchecked.
+    for (const i of [0, 1, 2, 3]) {
+      const ck = document.querySelector<HTMLButtonElement>(`[data-testid="tree-check-${i}"]`)
+      if (ck) expect(ck.getAttribute('aria-checked')).toBe('false')
+    }
+    wrapper.unmount()
+  })
+
+  it('clicking master checkbox twice re-selects ALL files including folder descendants', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    const masterCk = document.querySelector<HTMLElement>('[data-testid="tree-check-all"]')!
+    masterCk.click()
+    await flushPromises()
+    masterCk.click()
+    await flushPromises()
+
+    // «Добавить» should commit all 4 indices.
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    const commit = fetchCalls.find((c) => c.url === '/api/tasks/commit')
+    expect(commit).toBeTruthy()
+    const selected = [...JSON.parse(commit!.init?.body as string).selected].sort((a: number, b: number) => a - b)
+    expect(selected).toEqual([0, 1, 2, 3])
+    wrapper.unmount()
+  })
+
+  it('master checkbox is indeterminate when only some files are selected', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    // Untick one nested file via its folder (collapse Season 2 all, then add back ep0).
+    // Simpler: untick individual file index 0.
+    // Note: nested files need their folder expanded first — in INSPECT_FILES they're inside
+    // Season 2 folder which IS expanded by default (collapsed=false).
+    document.querySelector<HTMLElement>('[data-testid="tree-check-0"]')!.click()
+    await flushPromises()
+
+    const masterCk = document.querySelector<HTMLButtonElement>('[data-testid="tree-check-all"]')!
+    expect(masterCk.getAttribute('aria-checked')).toBe('mixed')
+    wrapper.unmount()
+  })
+
+  it('master checkbox is always present even when there are no root-level files', async () => {
+    // Override to a pure-folders torrent (no root-level files).
+    inspectFiles = [
+      { index: 0, name: 'Show/S01/ep1.mkv', size: 1_000_000 },
+      { index: 1, name: 'Show/S01/ep2.mkv', size: 1_000_000 },
+    ]
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    // Master all-checkbox must exist even though rootFileIndices=[] (no root-level files).
+    expect(document.querySelector('[data-testid="tree-check-all"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+})

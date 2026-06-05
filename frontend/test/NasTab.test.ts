@@ -448,3 +448,61 @@ describe('NasTab — redesigned presentation', () => {
     expect(rows[1]!.classes()).toContain('edge-red')
   })
 })
+
+// --- #208: NasTab initial loading skeleton ---
+
+describe('NasTab — initial loading skeleton (#208)', () => {
+  it('shows a loading skeleton while data is null and loading', async () => {
+    // Reset singleton data to null
+    const { useHealth } = await import('../src/composables/useHealth')
+    useHealth().data.value = null
+
+    // Fetch never resolves — keeps loading===true
+    globalThis.fetch = (() => new Promise(() => {})) as typeof fetch
+
+    const wrapper = mount(NasTab)
+    await wrapper.vm.$nextTick()
+
+    // Must render the skeleton container, not the old LoadingText card
+    const container = wrapper.find('[data-testid="nas-skeleton"]')
+    expect(container.exists()).toBe(true)
+
+    // Must NOT render the old LoadingText
+    expect(wrapper.find('.nas-loading').exists()).toBe(false)
+
+    // Skeleton must include a hero-shaped block
+    expect(wrapper.find('[data-testid="nas-skeleton-hero"]').exists()).toBe(true)
+
+    // Skeleton must include at least one load card (CPU+RAM bento shape)
+    expect(wrapper.find('[data-testid="nas-skeleton-bento"]').exists()).toBe(true)
+  })
+
+  it('hides NAS skeleton once data arrives', async () => {
+    const { useHealth } = await import('../src/composables/useHealth')
+    useHealth().data.value = null
+
+    globalThis.fetch = (() => Promise.resolve(jsonResponse(FULL_HEALTH))) as typeof fetch
+    await useHealth().refetch()
+
+    const wrapper = mount(NasTab)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="nas-skeleton"]').exists()).toBe(false)
+    expect(wrapper.find('.hero').exists()).toBe(true)
+  })
+
+  it('does NOT show LoadingText inside Card on initial load (replaced by skeleton)', async () => {
+    const { useHealth } = await import('../src/composables/useHealth')
+    useHealth().data.value = null
+
+    globalThis.fetch = (() => new Promise(() => {})) as typeof fetch
+
+    const wrapper = mount(NasTab)
+    await wrapper.vm.$nextTick()
+
+    // The old pattern was <Card><LoadingText /></Card> — it must be gone
+    // Check that no "Загрузка" text appears (LoadingText renders that)
+    // and that .nas-loading (old wrapper) is not present
+    expect(wrapper.find('.nas-loading').exists()).toBe(false)
+  })
+})

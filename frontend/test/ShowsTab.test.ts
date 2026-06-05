@@ -353,3 +353,126 @@ describe('ShowsTab — per-image poster skeleton (#209)', () => {
     expect(skeleton.exists()).toBe(false)
   })
 })
+
+// --- #208: list-level loading skeletons ---
+
+describe('ShowsTab — subs loading skeleton (#208)', () => {
+  it('shows skeleton rows while subscriptions are loading (fetch never resolves)', async () => {
+    globalThis.fetch = (() => new Promise(() => {})) as typeof fetch
+    const wrapper = mount(ShowsTab)
+    await wrapper.vm.$nextTick()
+
+    // Must show a skeleton container while subsLoading===true and no data
+    const container = wrapper.find('[data-testid="subs-skeleton"]')
+    expect(container.exists()).toBe(true)
+
+    // Must contain at least 2 skeleton show-item rows
+    const rows = wrapper.findAll('[data-testid="subs-skeleton-row"]')
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+
+    // Each row must have a thumb skeleton and a title line skeleton
+    const first = rows[0]!
+    expect(first.find('[data-testid="subs-skeleton-thumb"]').exists()).toBe(true)
+    expect(first.find('[data-testid="subs-skeleton-title"]').exists()).toBe(true)
+  })
+
+  it('hides subs skeleton once subscriptions data arrives', async () => {
+    makeFetch()
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="subs-skeleton"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Breaking Bad')
+  })
+
+  it('does NOT show LoadingText while subsLoading (replaced by skeleton)', async () => {
+    globalThis.fetch = (() => new Promise(() => {})) as typeof fetch
+    const wrapper = mount(ShowsTab)
+    await wrapper.vm.$nextTick()
+
+    // The old LoadingText must be gone — skeleton replaces it
+    expect(wrapper.text()).not.toContain('Загрузка')
+    expect(wrapper.find('.loading-hint').exists()).toBe(false)
+  })
+})
+
+describe('ShowsTab — search loading skeleton (#208)', () => {
+  it('shows skeleton rows while search is loading', async () => {
+    // Allow subs to load normally, but freeze search results
+    let resolveSearch!: (v: Response) => void
+    const searchPromise = new Promise<Response>((res) => { resolveSearch = res })
+
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.startsWith('/api/shows/search')) {
+        return searchPromise
+      }
+      return Promise.resolve(jsonResponse({ subscriptions: SUBSCRIPTIONS }))
+    }) as typeof fetch
+
+    // Bypass debounce
+    const realSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: () => void) => { fn(); return 0 }) as typeof setTimeout
+
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Trigger search mode
+    const input = wrapper.find('[data-testid="search-input"]')
+    await input.setValue('breaking')
+    await wrapper.vm.$nextTick()
+
+    globalThis.setTimeout = realSetTimeout
+
+    // search skeleton must appear
+    const container = wrapper.find('[data-testid="search-skeleton"]')
+    expect(container.exists()).toBe(true)
+
+    const rows = wrapper.findAll('[data-testid="search-skeleton-row"]')
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+
+    resolveSearch(jsonResponse({ results: SEARCH_RESULTS }))
+  })
+
+  it('hides search skeleton once results arrive', async () => {
+    const realSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: () => void) => { fn(); return 0 }) as typeof setTimeout
+
+    makeFetch()
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    const input = wrapper.find('[data-testid="search-input"]')
+    await input.setValue('breaking')
+    await flushPromises()
+
+    globalThis.setTimeout = realSetTimeout
+
+    expect(wrapper.find('[data-testid="search-skeleton"]').exists()).toBe(false)
+  })
+
+  it('does NOT show LoadingText while searchLoading (replaced by skeleton)', async () => {
+    let resolveSearch!: (v: Response) => void
+    const searchPromise = new Promise<Response>((res) => { resolveSearch = res })
+
+    globalThis.fetch = ((url: string) => {
+      if (typeof url === 'string' && url.startsWith('/api/shows/search')) return searchPromise
+      return Promise.resolve(jsonResponse({ subscriptions: SUBSCRIPTIONS }))
+    }) as typeof fetch
+
+    const realSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: () => void) => { fn(); return 0 }) as typeof setTimeout
+
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    const input = wrapper.find('[data-testid="search-input"]')
+    await input.setValue('breaking')
+    await wrapper.vm.$nextTick()
+
+    globalThis.setTimeout = realSetTimeout
+
+    expect(wrapper.find('.loading-hint').exists()).toBe(false)
+
+    resolveSearch(jsonResponse({ results: SEARCH_RESULTS }))
+  })
+})

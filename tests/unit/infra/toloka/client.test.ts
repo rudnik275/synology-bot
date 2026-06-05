@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
-import { TolokaClient } from '../../../../src/infra/toloka/client.ts'
+import { TolokaClient, isTolokaTopicUrl } from '../../../../src/infra/toloka/client.ts'
 import { PersistentStore } from '../../../../src/infra/persistence/store.ts'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -356,5 +356,81 @@ describe('TolokaClient', () => {
   it('getDownloadUrl() returns correct URL for given topic ID', () => {
     const client = new TolokaClient(CONFIG, store)
     expect(client.getDownloadUrl('1234')).toBe(`${BASE_URL}/download.php?id=1234`)
+  })
+
+  // -------------------------------------------------------------------------
+  // downloadTorrent — topic URL resolution
+  // -------------------------------------------------------------------------
+
+  it('downloadTorrent() fetches the topic page first, then the resolved download.php URL', async () => {
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'topic-sess' }))
+    const topicHtml = readFixture('topic-page.html')
+    const torrentBytes = new TextEncoder().encode('d6:pieces1:xe')
+    const calls: string[] = []
+
+    fetchMock.mockImplementation((url: string) => {
+      calls.push(String(url))
+      if (String(url).includes('/t696523')) {
+        // Topic page — return HTML (fetchWithAuth path uses redirect:manual)
+        return Promise.resolve(makeHtmlResponse(topicHtml))
+      }
+      // download.php fetch — return valid torrent bytes (redirect:follow path)
+      return Promise.resolve(makeBytesResponse(torrentBytes))
+    })
+
+    const client = new TolokaClient(CONFIG, store)
+    const result = await client.downloadTorrent(`${BASE_URL}/t696523`)
+
+    // Must return the actual torrent bytes, not the HTML
+    expect(result).toBeInstanceOf(Uint8Array)
+    expect(Array.from(result)).toEqual(Array.from(torrentBytes))
+
+    // First call must be the topic page; second must be download.php
+    expect(calls[0]).toContain('/t696523')
+    expect(calls[1]).toContain('download.php?id=711353')
+  })
+
+  it('downloadTorrent() throws a clear error when topic page has no download.php link', async () => {
+    store.setKv('toloka_cookie', JSON.stringify({ PHPSESSID: 'sess' }))
+    const emptyTopicHtml = '<html><body><p>No torrent on this page</p></body></html>'
+
+    fetchMock.mockImplementation(() => Promise.resolve(makeHtmlResponse(emptyTopicHtml)))
+
+    const client = new TolokaClient(CONFIG, store)
+    await expect(client.downloadTorrent(`${BASE_URL}/t123456`)).rejects.toThrow(/no download link/i)
+  })
+})
+
+// -------------------------------------------------------------------------
+// isTolokaTopicUrl (standalone export)
+// -------------------------------------------------------------------------
+
+describe('isTolokaTopicUrl', () => {
+  it('returns true for /t<digits> short URL', () => {
+    expect(isTolokaTopicUrl('https://toloka.to/t696523')).toBe(true)
+  })
+
+  it('returns true for viewtopic.php?t=<digits> URL', () => {
+    expect(isTolokaTopicUrl('https://toloka.to/viewtopic.php?t=696523')).toBe(true)
+  })
+
+  it('returns false for download.php?id= URL', () => {
+    expect(isTolokaTopicUrl('https://toloka.to/download.php?id=711353')).toBe(false)
+  })
+
+  it('returns false for tracker.php URL', () => {
+    expect(isTolokaTopicUrl('https://toloka.to/tracker.php?nm=ubuntu')).toBe(false)
+  })
+
+  it('returns false for a magnet URI', () => {
+    expect(isTolokaTopicUrl('magnet:?xt=urn:btih:abc123')).toBe(false)
+  })
+
+  it('returns false for a non-Toloka URL', () => {
+    expect(isTolokaTopicUrl('https://example.com/t12345')).toBe(false)
+  })
+
+  it('returns false for a bare /t path without digits', () => {
+    expect(isTolokaTopicUrl('https://toloka.to/topics')).toBe(false)
   })
 })

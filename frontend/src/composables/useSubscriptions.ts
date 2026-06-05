@@ -42,11 +42,15 @@ export function useSubscriptions() {
    * all subscriptions from live myshows, then refetch so the list self-fills.
    * Best-effort — the cached list stays usable if it fails. Called on Shows-tab
    * open so pre-existing subs don't sit empty until the daily digest runs.
+   *
+   * Uses { background: true } so loading never toggles to true: the list stays
+   * mounted and the TransitionGroup is not unmounted/remounted, preventing the
+   * appear-animation scroll-reset bug (#17).
    */
   async function refreshMetadata(): Promise<void> {
     try {
       await api.refreshSubscriptions()
-      await refetch()
+      await subsApi.refetch({ background: true })
     } catch {
       // best-effort backfill; keep the cached list as-is on failure
     }

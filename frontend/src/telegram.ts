@@ -39,15 +39,27 @@ export const initData = tg?.initData ?? ''
 export const inTelegram = Boolean(tg)
 
 /**
- * Deep-link start param (ADR 0006) → which tab to open on boot. Prefer
- * Telegram's parsed `start_param`; fall back to the URL query (`tgWebAppStartParam`
- * or `startapp`) so it stays testable and dev-friendly outside Telegram.
+ * Deep-link start param (ADR 0006). Read ONLY from the launch URL
+ * (`tgWebAppStartParam`/`startapp`, query or hash), NOT from
+ * `initDataUnsafe.start_param`: iOS/iPadOS Telegram replays the last deep-link's
+ * start_param on later menu-button opens, which booted the app into NAS after a
+ * NAS alert instead of the hub (#255). The bot embeds the param in every
+ * deep-link URL (miniapp-link.ts), so the URL is the replay-free source — and it
+ * keeps dev/testing working outside Telegram.
  */
-export const startParam =
-  tg?.initDataUnsafe?.start_param ??
-  new URLSearchParams(location.search).get('tgWebAppStartParam') ??
-  new URLSearchParams(location.search).get('startapp') ??
-  ''
+export function resolveStartParam(search: string, hash: string): string {
+  const q = new URLSearchParams(search)
+  const h = new URLSearchParams(hash.replace(/^#/, ''))
+  return (
+    q.get('tgWebAppStartParam') ??
+    q.get('startapp') ??
+    h.get('tgWebAppStartParam') ??
+    h.get('startapp') ??
+    ''
+  )
+}
+
+export const startParam = resolveStartParam(location.search, location.hash)
 
 // Mirrors STASH_PARAM_PREFIX in src/infra/notify/miniapp-link.ts: the bot
 // deep-links a forwarded .torrent as `tor-<token>` (#99).

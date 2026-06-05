@@ -1,8 +1,37 @@
 import type { PersistentStore } from '../persistence/store.ts'
 import type { TolokaResult, TolokaClientConfig } from './types.ts'
-import { parseSearchPage, isLoginPage, isAuthenticated } from './parser.ts'
+import { parseSearchPage, parseTopicPage, isLoginPage, isAuthenticated } from './parser.ts'
 
 const COOKIE_KEY = 'toloka_cookie'
+
+/**
+ * Returns true if `url` is a Toloka forum-topic URL — i.e. it requires an HTML
+ * page fetch and a download-link scrape before we can download the .torrent.
+ *
+ * Matches:
+ *   https://toloka.to/t696523          (/t<digits> shortlink)
+ *   https://toloka.to/viewtopic.php?t=696523
+ *
+ * Does NOT match (must fall through to the normal fetchTorrentBytes path):
+ *   download.php?id=   — already a direct torrent link
+ *   tracker.php        — search results page
+ *   magnet:            — handled separately upstream
+ */
+export function isTolokaTopicUrl(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  // Must be on toloka.to (or any mirror with the same host pattern)
+  if (!parsed.hostname.includes('toloka')) return false
+  // /t<digits> shortlink
+  if (/^\/t\d+$/.test(parsed.pathname)) return true
+  // viewtopic.php?t=<digits>
+  if (parsed.pathname === '/viewtopic.php' && /^\d+$/.test(parsed.searchParams.get('t') ?? '')) return true
+  return false
+}
 
 /** Index of an ASCII needle within a byte array, or -1. */
 function indexOfBytes(haystack: Uint8Array, needle: string): number {
@@ -144,7 +173,23 @@ export class TolokaClient {
       return cached.bytes
     }
 
-    let bytes = await this.fetchTorrentBytes(downloadUrl)
+    // --- Topic-URL resolution (#219) ---
+    // A forum-topic URL (/t<id> or viewtopic.php?t=) returns an HTML page, not
+    // a .torrent. Fetch the page with the authed session, scrape the first
+    // `a[href^="download.php"]`, and use that resolved URL for the byte fetch.
+    // topic-id ≠ download-id, so getDownloadUrl(topicId) is wrong here.
+    let resolvedUrl = downloadUrl
+    if (isTolokaTopicUrl(downloadUrl)) {
+      const pageRes = await this.fetchWithAuth(downloadUrl)
+      const pageHtml = await pageRes.text()
+      const resolved = parseTopicPage(pageHtml, this.config.baseUrl)
+      if (!resolved) {
+        throw new Error('Toloka topic page has no download link — could not resolve topic URL to a .torrent')
+      }
+      resolvedUrl = resolved
+    }
+
+    let bytes = await this.fetchTorrentBytes(resolvedUrl)
 
     // A stale session makes download.php return an HTML login page (HTTP 200),
     // NOT a .torrent — `res.ok` passes and DSM is fed garbage bytes, which fails
@@ -155,7 +200,7 @@ export class TolokaClient {
     // returning a login page as a torrent.
     if (!looksLikeTorrent(bytes)) {
       await this.login()
-      bytes = await this.fetchTorrentBytes(downloadUrl)
+      bytes = await this.fetchTorrentBytes(resolvedUrl)
       if (!looksLikeTorrent(bytes)) {
         throw new Error('Toloka session expired: download returned a non-torrent response (login page?) even after re-login')
       }

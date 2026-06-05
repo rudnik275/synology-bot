@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseSearchPage, isLoginPage } from '../../../../src/infra/toloka/parser.ts'
+import { parseSearchPage, isLoginPage, parseTopicPage } from '../../../../src/infra/toloka/parser.ts'
 
 const FIXTURES_DIR = join(import.meta.dir, '../../../fixtures/toloka')
 const BASE_URL = 'https://toloka.to'
@@ -98,6 +98,38 @@ describe('TolokaResultParser', () => {
   it('returns empty array for completely invalid HTML', () => {
     const results = parseSearchPage('<html><body>no table here</body></html>', BASE_URL)
     expect(results).toEqual([])
+  })
+
+  // --- parseTopicPage ---
+  describe('parseTopicPage', () => {
+    it('extracts absolute download.php URL from topic-page fixture', () => {
+      const html = readFixture('topic-page.html')
+      const url = parseTopicPage(html, BASE_URL)
+      expect(url).toBe(`${BASE_URL}/download.php?id=711353`)
+    })
+
+    it('returns null when the page has no download.php anchor', () => {
+      const html = '<html><body><p>No torrent here</p></body></html>'
+      const url = parseTopicPage(html, BASE_URL)
+      expect(url).toBeNull()
+    })
+
+    it('returns the FIRST download.php anchor when multiple are present', () => {
+      const html = `
+        <html><body>
+          <a href="download.php?id=111">First</a>
+          <a href="download.php?id=222">Second</a>
+        </body></html>
+      `
+      const url = parseTopicPage(html, BASE_URL)
+      expect(url).toBe(`${BASE_URL}/download.php?id=111`)
+    })
+
+    it('resolves the href against baseUrl (no double-slash)', () => {
+      const html = '<html><body><a href="download.php?id=999">dl</a></body></html>'
+      const url = parseTopicPage(html, 'https://toloka.to')
+      expect(url).toBe('https://toloka.to/download.php?id=999')
+    })
   })
 
   // --- isLoginPage ---

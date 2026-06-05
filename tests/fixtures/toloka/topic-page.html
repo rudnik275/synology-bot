@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head><title>toloka.to :: SecretsofTheBees</title></head>
+<body>
+<!-- logged-in marker: Toloka renders the logout link only when authenticated -->
+<a href="/login.php?logout=true&amp;sid=testsid" rel="nofollow">Вихід [ testuser ]</a>
+
+<!-- Minimal topic page structure — mirrors real Toloka forum topic layout -->
+<!-- The download button row appears in the post controls table -->
+<table class="tablebg" width="100%">
+  <tr>
+    <td class="row1">
+      <div class="topic-title"><b>SecretsofTheBees</b></div>
+      <div class="post-content">Some post description here.</div>
+    </td>
+  </tr>
+  <tr>
+    <td class="row2">
+      <!-- Download torrent link — this is the anchor the parser must find -->
+      <a class="genmed" href="download.php?id=711353">[ Завантажити .torrent ]</a>
+    </td>
+  </tr>
+  <tr>
+    <td class="row1">
+      <!-- A second (duplicate) download link — parser must return only the FIRST -->
+      <a class="genmed" href="download.php?id=711353">[ DL again ]</a>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

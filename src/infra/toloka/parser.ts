@@ -59,6 +59,24 @@ export function parseSearchPage(html: string, baseUrl: string): TolokaResult[] {
 }
 
 /**
+ * Parses a Toloka forum-topic page and returns the absolute URL of the first
+ * `a[href^="download.php"]` anchor, or `null` if none is found.
+ *
+ * Topic pages embed the .torrent download link in a `download.php?id=` anchor
+ * somewhere in the post body / controls row. The selector reuses the same
+ * `a[href^="download.php"]` pattern proven in `parseSearchPage` (search-result
+ * rows always contain this link). Resolves the relative href against `baseUrl`
+ * exactly as `parseSearchPage` does.
+ */
+export function parseTopicPage(html: string, baseUrl: string): string | null {
+  const $ = cheerio.load(html)
+  const anchor = $('a[href^="download.php"]').first()
+  const href = anchor.attr('href')
+  if (!href) return null
+  return `${baseUrl.replace(/\/$/, '')}/${href}`
+}
+
+/**
  * Returns true if the HTML page contains a Toloka login form (auth required).
  */
 export function isLoginPage(html: string): boolean {

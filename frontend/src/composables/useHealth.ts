@@ -7,8 +7,8 @@
  * shared polling timer, but all consumers share the same `data`/`loading`/
  * `error` refs — one fetch in flight, one cache, no drift.
  *
- * Wired by issue #70. Consumed by App.vue (chipStatus/chipMetric → HealthChip)
- * and NasTab.vue (full health view).
+ * Wired by issue #70. Consumed by NasTab.vue (full health view; chipStatus/chipMetric
+ * also available for the future hub NAS row — ADR 0015).
  */
 import { computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useApi } from './useApi'

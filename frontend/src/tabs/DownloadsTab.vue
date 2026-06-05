@@ -29,12 +29,6 @@ import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/ui/tones'
 import type { TaskView } from '../types'
 
-// Callback to open the Add wizard — provided by App.vue via #118.
-// Optional so DownloadsTab can still be mounted in tests without wiring.
-const props = withDefaults(defineProps<{ onAddClick?: () => void }>(), {
-  onAddClick: undefined,
-})
-
 const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
 
 // Optimistic placeholders (added by AddFlow on «Добавить») render as their own
@@ -189,40 +183,11 @@ function qualityChips(task: TaskView): string[] {
       </template>
     </EmptyState>
 
-    <!-- Empty state: expose the add action via the same inline row (#118) -->
-    <EmptyState v-else-if="!loading && tasks.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать.">
-      <template #icon>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
-        </svg>
-      </template>
-      <template #action>
-        <button
-          type="button"
-          class="add-row nb-pressable"
-          data-testid="add-row"
-          @click="props.onAddClick?.()"
-        >
-          <span class="add-row-chip" aria-hidden="true">+</span>
-          <span class="add-row-label">Добавить загрузку</span>
-        </button>
-      </template>
-    </EmptyState>
+    <!-- Empty state: the global FAB (in App.vue shell) is the Add affordance. -->
+    <EmptyState v-else-if="!loading && tasks.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать." />
 
-    <!-- Task list: inline add row as the first item (#118) -->
+    <!-- Task list: the global FAB (in App.vue shell) is the Add affordance (#224). -->
     <TransitionGroup v-else tag="div" name="task-list" class="task-list" appear>
-      <!-- Inline «Добавить загрузку» row — always the first item, scrolls with the list -->
-      <button
-        key="__add-row__"
-        type="button"
-        class="add-row nb-pressable"
-        data-testid="add-row"
-        @click="props.onAddClick?.()"
-      >
-        <span class="add-row-chip" aria-hidden="true">+</span>
-        <span class="add-row-label">Добавить загрузку</span>
-      </button>
-
       <!-- Optimistic placeholders (#instant-add): a loader card per just-added
            download, shown the moment the Add sheet closes and retired when the
            real task lands on a poll. Empty in steady state — leaves the real-task
@@ -648,54 +613,6 @@ function qualityChips(task: TaskView): string[] {
   width: 45%;
 }
 
-/*
- * ── Inline «Добавить загрузку» add row (#118) ────────────────────────────────
- *
- * Neo-Brutalism: thick dashed ink border, yellow «+» chip, mechanical press.
- * Full-width, min-height 56px (>= 44px touch target with visual breathing room).
- * Scrolls with the list — not fixed/floating.
- * Appears as the first item in both the task list AND the empty state action slot.
- */
-.add-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  min-height: 56px;
-  padding: var(--space-3) var(--space-4);
-  background: var(--paper);
-  border: 3px dashed var(--ink);
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-family: var(--font);
-  color: var(--ink);
-  text-align: left;
-  /* Mechanical press (neo-brutalism): sinks into an offset shadow */
-  --press: 3px;
-}
-
-/* Yellow «+» chip — the sole accent colour per ADR 0006 addendum. Round chip
-   with a thin border: the heavy rounded-square + thick border read as chunky
-   next to the row's dashed frame, so this is a crisp circle on a hairline. */
-.add-row-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: var(--yellow);
-  border: var(--border);
-  border-radius: 50%;
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.add-row-label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
+/* (add-row CSS removed in S3 #224 — the global FAB in App.vue is now the sole
+   Add affordance on Downloads; no inline row here.) */
 </style>

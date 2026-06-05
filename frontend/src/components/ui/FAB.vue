@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// Floating action button — the entry point to the Add flow (mounted by #63).
-// Fixed bottom-right, clear of the floating pill nav + safe area. Mechanical press.
+// Floating action button — global Add entry point (ADR 0015, S3 #224).
+// Fixed bottom-right, clear of the device safe area. No tab bar anymore (ADR 0015).
+// Mechanical press.
 defineProps<{
   label?: string
 }>()
@@ -9,7 +10,7 @@ defineEmits<{ click: [] }>()
 </script>
 
 <template>
-  <button type="button" class="fab nb-pressable" :aria-label="label ?? 'Добавить'" @click="$emit('click')">
+  <button type="button" class="fab nb-pressable" data-testid="global-fab" :aria-label="label ?? 'Добавить'" @click="$emit('click')">
     <slot>
       <!-- default plus glyph -->
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
@@ -23,7 +24,8 @@ defineEmits<{ click: [] }>()
 .fab {
   position: fixed;
   right: var(--space-4);
-  bottom: calc(var(--tabbar-h) + var(--space-5) + var(--safe-bottom));
+  /* No tab bar anymore (ADR 0015) — clear only the device safe area + breathing room. */
+  bottom: calc(var(--safe-bottom) + var(--space-4));
   z-index: var(--z-fab);
   display: inline-flex;
   align-items: center;

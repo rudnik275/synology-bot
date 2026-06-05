@@ -23,6 +23,12 @@ import EmptyState from '../components/ui/EmptyState.vue'
 import SearchField from '../components/ui/SearchField.vue'
 import Skeleton from '../components/ui/Skeleton.vue'
 
+// `owns-back` tells the App shell when THIS section owns the native Telegram
+// BackButton (the detail sub-view is open). While owned, the shell suppresses
+// its own section→hub handler so a single Back press pops detail→list FIRST and
+// never double-fires section→hub (ADR 0015 nav coordination, S1 #222).
+const emit = defineEmits<{ 'owns-back': [boolean] }>()
+
 const { subscriptions, loading: subsLoading, error: subsError, add, remove, refreshMetadata } = useSubscriptions()
 const { results: searchResults, loading: searchLoading, error: searchError, debouncedSearch } = useShowSearch()
 const { data: showDetail, loading: detailLoading, error: detailError, load: loadDetail, clear: clearDetail } = useShowDetail()
@@ -65,6 +71,10 @@ watch(query, (q) => {
 
 const isSearchMode = computed(() => query.value.trim().length >= 2)
 const hasDetail = computed(() => selectedShowId.value !== null)
+
+// Mirror detail-open state to the shell so it knows when this section owns the
+// native BackButton (see the `owns-back` emit declaration above).
+watch(hasDetail, (owns) => emit('owns-back', owns))
 
 const error = computed(() => detailError.value ?? searchError.value ?? subsError.value)
 

@@ -1,45 +1,99 @@
 <script setup lang="ts">
-// Neo-Brutalism app shell (ADR 0006): a swappable tab body and the 3-tab
-// bottom bar. Default tab = Downloads.
-// The Add-flow sheet overlay is mounted alongside DownloadsTab; the inline
-// «Добавить загрузку» row (#118) in DownloadsTab calls addFlow.openSheet().
-import { ref, useTemplateRef } from 'vue'
-import TabBar from './components/ui/TabBar.vue'
-import type { TabKey } from './components/ui/tabs'
+// Hub-and-spoke app shell (ADR 0015, S1 #222). A Home hub is the ROOT; the old
+// bottom tab bar is gone. From the hub the user opens one of three full-screen
+// spoke sections (Downloads / NAS / Shows); the native Telegram BackButton pops
+// the section back to the hub.
+//
+// ── Native Back coordination (the load-bearing part) ──────────────────────────
+// The native BackButton fires EVERY registered onClick handler on a press, so we
+// must guarantee exactly ONE active handler at a time. Two surfaces already own
+// the BackButton from inside a section: the Add wizard (while its sheet is open)
+// and ShowsTab (while its detail sub-view is open). Each reports ownership to the
+// shell via an `owns-back` event. The shell registers its OWN section→hub
+// handler only when (a) we're in a section (not the hub root) AND (b) no child
+// currently owns back. So one press always pops exactly one level: wizard step /
+// show detail → section → hub, never two at once.
+//
+// The Add wizard is mounted at the SHELL level (not gated behind the Downloads
+// section) so it is reachable from the hub and any section, and the `tor-<token>`
+// deep-link auto-open still fires on boot (AddFlow self-opens onMounted).
+import { ref, computed, watch, useTemplateRef } from 'vue'
+import HomeHub from './components/HomeHub.vue'
 import DownloadsTab from './tabs/DownloadsTab.vue'
 import NasTab from './tabs/NasTab.vue'
 import ShowsTab from './tabs/ShowsTab.vue'
 import AddFlow from './components/AddFlow.vue'
 import { startParam } from './telegram'
-import { resolveStartTab } from './startTab'
+import { resolveStartView } from './startTab'
+import type { SectionKey } from './sections'
+import { useTgBackButton } from './composables/useTgBackButton'
 
-const activeTab = ref<TabKey>(resolveStartTab(startParam))
+// Root view: the hub, or a pushed full-screen section. Deep-links retarget here
+// (downloads/nas/shows → that section directly; anything else → hub).
+const view = ref(resolveStartView(startParam))
 
-const TAB_VIEWS = {
+const SECTION_VIEWS = {
   downloads: DownloadsTab,
   nas: NasTab,
   shows: ShowsTab,
 } as const
+
+const isHub = computed(() => view.value === 'hub')
+
+// A child surface (Add wizard sheet / Shows detail) owns the native BackButton.
+// While owned, the shell does NOT bind its section→hub handler (single-handler
+// invariant — see the file header).
+const childOwnsBack = ref(false)
+function onChildOwnsBack(owns: boolean): void {
+  childOwnsBack.value = owns
+}
 
 const addFlowRef = useTemplateRef<InstanceType<typeof AddFlow>>('addFlow')
 
 function openAddWizard(): void {
   addFlowRef.value?.openSheet()
 }
+
+function navigateTo(section: SectionKey): void {
+  view.value = section
+}
+
+function goToHub(): void {
+  view.value = 'hub'
+}
+
+// The shell's section→hub Back handler. Active only in a section AND when no
+// child surface owns the native button.
+const shellBackActive = computed(() => !isHub.value && !childOwnsBack.value)
+const { show: showShellBack, hide: hideShellBack } = useTgBackButton(goToHub)
+watch(shellBackActive, (active) => {
+  if (active) showShellBack()
+  else hideShellBack()
+}, { immediate: true })
 </script>
 
 <template>
   <div class="shell">
     <main class="content">
-      <Transition name="tab" mode="out-in">
-        <!-- Pass openAddWizard as prop only to DownloadsTab; other tabs ignore it -->
-        <DownloadsTab v-if="activeTab === 'downloads'" :key="activeTab" :on-add-click="openAddWizard" />
-        <component :is="TAB_VIEWS[activeTab]" v-else :key="activeTab" />
+      <Transition name="view" mode="out-in">
+        <!-- Hub root: plain section rows; tapping one pushes that section. -->
+        <HomeHub v-if="isHub" key="hub" @navigate="navigateTo" />
+
+        <!-- Downloads section: gets the inline «Добавить» entry (calls the
+             shell-mounted AddFlow). -->
+        <DownloadsTab v-else-if="view === 'downloads'" key="downloads" :on-add-click="openAddWizard" />
+
+        <!-- Shows reports detail-open via owns-back so the shell yields native Back. -->
+        <ShowsTab v-else-if="view === 'shows'" key="shows" @owns-back="onChildOwnsBack" />
+
+        <component :is="SECTION_VIEWS[view as SectionKey]" v-else :key="view" />
       </Transition>
     </main>
 
-    <AddFlow v-if="activeTab === 'downloads'" ref="addFlow" />
-    <TabBar v-model="activeTab" />
+    <!-- Mounted at the shell so the wizard is reachable from the hub and any
+         section, and the tor-<token> auto-open fires on boot regardless of view.
+         While open it owns native Back; owns-back keeps the shell off the button. -->
+    <AddFlow ref="addFlow" @owns-back="onChildOwnsBack" />
   </div>
 </template>
 
@@ -49,22 +103,21 @@ function openAddWizard(): void {
 }
 
 .content {
-  /* Top: safe-area inset only (no extra chip-row clearance needed). */
+  /* Top: safe-area inset only. */
   padding-top: env(safe-area-inset-top, 0px);
-  /* Reserve clearance for the FLOATING pill nav: it sits off the bottom edge
-   * (safe-bottom + space-3) and is ~62px tall. Extra space-4 so the last row's
-   * offset shadow doesn't crowd / stick to the nav. */
-  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + var(--space-4) + var(--space-4));
+  /* No bottom tab bar anymore (ADR 0015) — just clear the device safe-area plus
+   * breathing room so the last card's offset shadow isn't crowded. */
+  padding-bottom: calc(var(--safe-bottom) + var(--space-4));
   min-height: 100dvh;
 }
 
-/* Crossfade between tabs — content replacement in the same container. */
-.tab-enter-active,
-.tab-leave-active {
+/* Crossfade between hub and section — content replacement in the same container. */
+.view-enter-active,
+.view-leave-active {
   transition: opacity var(--dur-fast) var(--ease-out);
 }
-.tab-enter-from,
-.tab-leave-to {
+.view-enter-from,
+.view-leave-to {
   opacity: 0;
 }
 </style>

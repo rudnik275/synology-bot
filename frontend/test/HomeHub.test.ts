@@ -72,6 +72,11 @@ const HEALTH_DATA = {
   errors: [],
 }
 
+// Use a recent airDate so the episode falls within the 3-day "new" window.
+// deriveShowsSummary uses new Date() (real clock) in production; fixtures
+// must stay within the window to remain meaningful.
+const RECENT_AIR_DATE = new Date(Date.now() - 86_400_000).toISOString() // 1 day ago
+
 const SUBSCRIPTIONS_DATA = {
   subscriptions: [
     {
@@ -80,7 +85,7 @@ const SUBSCRIPTIONS_DATA = {
       title: 'Breaking Bad',
       lastNotifiedEpisode: { season: 5, episode: 15 },
       poster: null,
-      latestAiredEpisode: { season: 5, episode: 16, airDate: '2013-09-29T00:00:00Z' },
+      latestAiredEpisode: { season: 5, episode: 16, airDate: RECENT_AIR_DATE },
     },
     {
       id: 'sub-2',

@@ -116,28 +116,38 @@ function fmtEp(season: number, episode: number): string {
 }
 
 /**
- * A subscription has a "new" episode when latestAiredEpisode is strictly
- * ahead of lastNotifiedEpisode (or lastNotifiedEpisode is null but
- * latestAiredEpisode exists).
+ * A subscription has a "new" episode (for hub display) when its
+ * latestAiredEpisode.airDate falls within the last 3 days relative to `now`
+ * (inclusive lower bound, exclusive of future dates).
  *
- * "Ahead" = later season, OR same season with a later episode number.
+ * NOTE: This is hub display-only logic. Bot notification "new" is determined
+ * separately in src/domain/digest.ts and must NOT be changed here.
+ *
+ * @param sub  - The subscription to check.
+ * @param now  - The reference timestamp (injected for deterministic tests).
  */
-function isNewEpisode(sub: SubscriptionView): boolean {
+function isNewEpisode(sub: SubscriptionView, now: Date): boolean {
   const latest = sub.latestAiredEpisode
   if (!latest) return false
 
-  const notified = sub.lastNotifiedEpisode
-  if (!notified) return true // latestAired exists but we have never notified → new
+  const airTime = new Date(latest.airDate).getTime()
+  const nowTime = now.getTime()
+  const cutoff = nowTime - 3 * 86_400_000
 
-  if (latest.season > notified.season) return true
-  if (latest.season === notified.season && latest.episode > notified.episode) return true
-  return false
+  return airTime >= cutoff && airTime <= nowTime
 }
 
 const MAX_CHIPS = 3
 
-export function deriveShowsSummary(subscriptions: SubscriptionView[]): ShowsSummary {
-  const newSubs = subscriptions.filter(isNewEpisode)
+/**
+ * Derives the shows hub row summary from the given subscriptions.
+ *
+ * @param subscriptions - All active subscriptions.
+ * @param now           - Reference timestamp; defaults to `new Date()` so
+ *                        HomeHub.vue needs no change at its call site.
+ */
+export function deriveShowsSummary(subscriptions: SubscriptionView[], now: Date = new Date()): ShowsSummary {
+  const newSubs = subscriptions.filter((sub) => isNewEpisode(sub, now))
   const newCount = newSubs.length
 
   const newEpisodes: ShowEpisodeChip[] = newSubs.slice(0, MAX_CHIPS).map((sub) => ({

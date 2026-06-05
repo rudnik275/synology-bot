@@ -162,81 +162,105 @@ describe('deriveNasSummary', () => {
 
 // ── SubscriptionView fixtures ────────────────────────────────────────────────
 
+// Fixed "now" for all deriveShowsSummary tests: 2024-06-05T12:00:00Z
+const NOW = new Date('2024-06-05T12:00:00Z')
+
+/** Returns an ISO string representing `daysAgo` days before NOW. */
+function daysAgo(days: number): string {
+  return new Date(NOW.getTime() - days * 86_400_000).toISOString()
+}
+
+/** Returns an ISO string representing `daysAhead` days after NOW. */
+function daysAhead(days: number): string {
+  return new Date(NOW.getTime() + days * 86_400_000).toISOString()
+}
+
 const makeSub = (overrides: Partial<SubscriptionView> = {}): SubscriptionView => ({
   id: 'sub-1',
   showId: 42,
   title: 'Breaking Bad',
   lastNotifiedEpisode: { season: 5, episode: 15 },
   poster: null,
-  latestAiredEpisode: { season: 5, episode: 16, airDate: '2013-09-29T00:00:00Z' },
+  // Default airDate: 1 day ago (within 3-day window)
+  latestAiredEpisode: { season: 5, episode: 16, airDate: daysAgo(1) },
   ...overrides,
 })
 
 describe('deriveShowsSummary', () => {
   it('returns zero newCount for empty subscriptions', () => {
-    const result = deriveShowsSummary([])
+    const result = deriveShowsSummary([], NOW)
     expect(result.newCount).toBe(0)
     expect(result.newEpisodes).toEqual([])
   })
 
-  it('counts subscription as new if latestAiredEpisode is ahead of lastNotifiedEpisode', () => {
-    // S5E16 > S5E15 → new
-    const result = deriveShowsSummary([makeSub()])
+  it('counts subscription as new if latestAiredEpisode aired 1 day ago (within 3-day window)', () => {
+    const sub = makeSub({ latestAiredEpisode: { season: 5, episode: 16, airDate: daysAgo(1) } })
+    const result = deriveShowsSummary([sub], NOW)
     expect(result.newCount).toBe(1)
   })
 
-  it('counts subscription as new if latestAiredEpisode exists and lastNotifiedEpisode is null', () => {
-    const sub = makeSub({ lastNotifiedEpisode: null })
-    const result = deriveShowsSummary([sub])
+  it('counts subscription as new if latestAiredEpisode aired exactly 3 days ago (boundary inclusive)', () => {
+    const sub = makeSub({ latestAiredEpisode: { season: 5, episode: 16, airDate: daysAgo(3) } })
+    const result = deriveShowsSummary([sub], NOW)
     expect(result.newCount).toBe(1)
+  })
+
+  it('does NOT count subscription as new if latestAiredEpisode aired 4 days ago', () => {
+    const sub = makeSub({ latestAiredEpisode: { season: 5, episode: 16, airDate: daysAgo(4) } })
+    const result = deriveShowsSummary([sub], NOW)
+    expect(result.newCount).toBe(0)
+  })
+
+  it('does NOT count subscription as new if latestAiredEpisode is in the future', () => {
+    const sub = makeSub({ latestAiredEpisode: { season: 5, episode: 17, airDate: daysAhead(1) } })
+    const result = deriveShowsSummary([sub], NOW)
+    expect(result.newCount).toBe(0)
   })
 
   it('does NOT count subscription as new if latestAiredEpisode is null', () => {
     const sub = makeSub({ latestAiredEpisode: null })
-    const result = deriveShowsSummary([sub])
-    expect(result.newCount).toBe(0)
-  })
-
-  it('does NOT count subscription as new if latestAiredEpisode == lastNotifiedEpisode', () => {
-    const sub = makeSub({ lastNotifiedEpisode: { season: 5, episode: 16 }, latestAiredEpisode: { season: 5, episode: 16, airDate: '2013-09-29T00:00:00Z' } })
-    const result = deriveShowsSummary([sub])
-    expect(result.newCount).toBe(0)
-  })
-
-  it('counts by season too: later season with earlier episode IS new', () => {
-    // S6E1 > S5E16 → new
-    const sub = makeSub({ lastNotifiedEpisode: { season: 5, episode: 16 }, latestAiredEpisode: { season: 6, episode: 1, airDate: '2014-01-01T00:00:00Z' } })
-    const result = deriveShowsSummary([sub])
-    expect(result.newCount).toBe(1)
-  })
-
-  it('does NOT count if latestAiredEpisode is OLDER season than lastNotifiedEpisode', () => {
-    const sub = makeSub({ lastNotifiedEpisode: { season: 6, episode: 1 }, latestAiredEpisode: { season: 5, episode: 16, airDate: '2013-09-29T00:00:00Z' } })
-    const result = deriveShowsSummary([sub])
+    const result = deriveShowsSummary([sub], NOW)
     expect(result.newCount).toBe(0)
   })
 
   it('returns episode chips for new subscriptions: showTitle + SxxEyy', () => {
-    const sub = makeSub({ title: 'Breaking Bad', latestAiredEpisode: { season: 5, episode: 16, airDate: '2013-09-29T00:00:00Z' } })
-    const result = deriveShowsSummary([sub])
+    const sub = makeSub({ title: 'Breaking Bad', latestAiredEpisode: { season: 5, episode: 16, airDate: daysAgo(1) } })
+    const result = deriveShowsSummary([sub], NOW)
     expect(result.newEpisodes[0]).toEqual({ label: 'Breaking Bad · S05E16', id: 'sub-1' })
   })
 
   it('limits newEpisodes to 3 chips maximum', () => {
     const subs: SubscriptionView[] = Array.from({ length: 5 }, (_, i) =>
-      makeSub({ id: `sub-${i}`, showId: i, title: `Show ${i}`, lastNotifiedEpisode: null, latestAiredEpisode: { season: 1, episode: i + 1, airDate: '2024-01-01T00:00:00Z' } })
+      makeSub({ id: `sub-${i}`, showId: i, title: `Show ${i}`, lastNotifiedEpisode: null, latestAiredEpisode: { season: 1, episode: i + 1, airDate: daysAgo(1) } })
     )
-    const result = deriveShowsSummary(subs)
+    const result = deriveShowsSummary(subs, NOW)
     expect(result.newEpisodes.length).toBe(3)
   })
 
-  it('handles multiple subscriptions: counts all new, not just first', () => {
+  it('newCount reflects only episodes within the 3-day window, not chips cap', () => {
+    const subs: SubscriptionView[] = Array.from({ length: 5 }, (_, i) =>
+      makeSub({ id: `sub-${i}`, showId: i, title: `Show ${i}`, lastNotifiedEpisode: null, latestAiredEpisode: { season: 1, episode: i + 1, airDate: daysAgo(1) } })
+    )
+    const result = deriveShowsSummary(subs, NOW)
+    expect(result.newCount).toBe(5)
+  })
+
+  it('handles mix: some within 3-day window, some outside', () => {
     const subs: SubscriptionView[] = [
-      makeSub({ id: 'sub-1', showId: 1, lastNotifiedEpisode: null, latestAiredEpisode: { season: 1, episode: 1, airDate: '2024-01-01T00:00:00Z' } }),
-      makeSub({ id: 'sub-2', showId: 2, lastNotifiedEpisode: null, latestAiredEpisode: { season: 2, episode: 1, airDate: '2024-01-02T00:00:00Z' } }),
-      makeSub({ id: 'sub-3', showId: 3, lastNotifiedEpisode: { season: 1, episode: 1 }, latestAiredEpisode: { season: 1, episode: 1, airDate: '2024-01-01T00:00:00Z' } }),
+      makeSub({ id: 'sub-1', showId: 1, latestAiredEpisode: { season: 1, episode: 1, airDate: daysAgo(1) } }),  // new
+      makeSub({ id: 'sub-2', showId: 2, latestAiredEpisode: { season: 2, episode: 1, airDate: daysAgo(2) } }),  // new
+      makeSub({ id: 'sub-3', showId: 3, latestAiredEpisode: { season: 3, episode: 1, airDate: daysAgo(4) } }),  // old
+      makeSub({ id: 'sub-4', showId: 4, latestAiredEpisode: { season: 4, episode: 1, airDate: daysAhead(1) } }), // future
+      makeSub({ id: 'sub-5', showId: 5, latestAiredEpisode: null }),                                              // null
     ]
-    const result = deriveShowsSummary(subs)
+    const result = deriveShowsSummary(subs, NOW)
     expect(result.newCount).toBe(2)
+  })
+
+  it('uses new Date() as default when now param is omitted (smoke test)', () => {
+    // Just verifies it doesn't throw and returns a valid shape
+    const result = deriveShowsSummary([])
+    expect(result.newCount).toBe(0)
+    expect(result.newEpisodes).toEqual([])
   })
 })

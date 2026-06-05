@@ -75,6 +75,12 @@ export interface FileTree {
   /** The collapsed single-root folder name, shown as a crumb (or null). */
   rootCrumb: string | null
   nodes: TreeNode[]
+  /**
+   * Indices of files sitting directly at the effective root level (not inside
+   * any sub-folder). Non-empty only when root-level loose files exist; drives
+   * the select-all / deselect-all master checkbox in FileTree.vue (#217).
+   */
+  rootFileIndices: number[]
 }
 
 interface MutFolder {
@@ -134,7 +140,9 @@ export function buildFileTree(files: InspectFile[]): FileTree {
     effective = only
   }
 
-  return { rootCrumb, nodes: folderToNodes(effective) }
+  const nodes = folderToNodes(effective)
+  const rootFileIndices = nodes.filter((n) => n.kind === 'file').map((n) => (n as FileNode).index)
+  return { rootCrumb, nodes, rootFileIndices }
 }
 
 /** Every file index in the tree — the default "all selected" set. */

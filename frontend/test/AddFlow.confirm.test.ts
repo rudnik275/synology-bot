@@ -267,3 +267,101 @@ describe('AddFlow confirm — whole-torrent fallback (#123)', () => {
     wrapper.unmount()
   })
 })
+
+// Root-level files: files that sit directly at the torrent root (not in any
+// sub-folder) get a master select-all / deselect-all checkbox in the header
+// row so the user can toggle them all at once, mirroring folder behavior (#217).
+// These fixtures have NO shared single root folder → rootCrumb is null and
+// the files are directly at root level → rootFileIndices is non-empty.
+describe('AddFlow confirm — root-group select-all (#217)', () => {
+  beforeEach(() => {
+    // Files at root level (no shared folder) — buildFileTree will set rootCrumb=null
+    // and rootFileIndices=[0,1,2].
+    inspectFiles = [
+      { index: 0, name: 'movie.mkv', size: 4_000_000_000 },
+      { index: 1, name: 'movie.srt', size: 100_000 },
+      { index: 2, name: 'nfo.txt', size: 5_000 },
+    ]
+  })
+
+  it('renders a root-group master checkbox when files exist at root level', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    expect(document.querySelector('[data-testid="tree-check-root"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('root-group checkbox is checked when all root files are selected (default)', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    const rootCk = document.querySelector<HTMLButtonElement>('[data-testid="tree-check-root"]')!
+    expect(rootCk.getAttribute('aria-checked')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('clicking root-group checkbox deselects all root files', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    document.querySelector<HTMLElement>('[data-testid="tree-check-root"]')!.click()
+    await flushPromises()
+
+    // All individual checkboxes should now be unchecked.
+    for (const i of [0, 1, 2]) {
+      const ck = document.querySelector<HTMLButtonElement>(`[data-testid="tree-check-${i}"]`)!
+      expect(ck.getAttribute('aria-checked')).toBe('false')
+    }
+    wrapper.unmount()
+  })
+
+  it('clicking root-group checkbox twice re-selects all root files', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    const rootCk = document.querySelector<HTMLElement>('[data-testid="tree-check-root"]')!
+    rootCk.click()
+    await flushPromises()
+    rootCk.click()
+    await flushPromises()
+
+    for (const i of [0, 1, 2]) {
+      const ck = document.querySelector<HTMLButtonElement>(`[data-testid="tree-check-${i}"]`)!
+      expect(ck.getAttribute('aria-checked')).toBe('true')
+    }
+    wrapper.unmount()
+  })
+
+  it('root-group checkbox is indeterminate when only some root files are selected', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    // Untick one file — should make root-group indeterminate.
+    document.querySelector<HTMLElement>('[data-testid="tree-check-0"]')!.click()
+    await flushPromises()
+
+    const rootCk = document.querySelector<HTMLButtonElement>('[data-testid="tree-check-root"]')!
+    expect(rootCk.getAttribute('aria-checked')).toBe('mixed')
+    wrapper.unmount()
+  })
+})
+
+describe('AddFlow confirm — no root-group when all files are in sub-folders (#217)', () => {
+  beforeEach(() => {
+    // Two-level nesting: Show/S01/ep*.mkv → after crumb collapse of 'Show',
+    // effective root has one sub-folder 'S01' and no loose files → rootFileIndices=[].
+    inspectFiles = [
+      { index: 0, name: 'Show/S01/ep1.mkv', size: 1_000_000 },
+      { index: 1, name: 'Show/S01/ep2.mkv', size: 1_000_000 },
+    ]
+  })
+
+  it('does NOT render a root-group checkbox when no files sit at the effective root level', async () => {
+    const wrapper = await openWizard()
+    await toConfirm()
+
+    expect(document.querySelector('[data-testid="tree-check-root"]')).toBeNull()
+    wrapper.unmount()
+  })
+})

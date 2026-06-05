@@ -87,7 +87,6 @@ const {
   selectedResult,
   firstStep,
   lastStep,
-  drawnSteps,
   canAdvance,
   goNext,
   goBack,
@@ -163,25 +162,6 @@ const filteredHistory = computed<string[]>(() => {
   return searchHistory.value.filter((item) => item.toLowerCase().includes(q))
 })
 
-// ─── Stepper UI (derived from the wizard's drawn-step model) ──────────────────
-
-/** Russian labels for each step by step number. */
-const STEP_LABELS: Record<number, string> = {
-  1: 'Поиск',
-  2: 'Папка',
-  3: 'Готово',
-}
-
-/** Stepper items for the UI: 1-indexed display position, label, state. */
-const stepperItems = computed(() =>
-  drawnSteps.value.map((stepNum, index) => ({
-    stepNum,
-    displayNum: index + 1,
-    label: STEP_LABELS[stepNum],
-    state: stepNum < step.value ? 'done' : stepNum === step.value ? 'current' : 'future',
-  }))
-)
-
 /** Select a search result and immediately advance to the Folder step (#121). */
 function selectAndAdvance(result: SearchResultView): void {
   // Dismiss the on-screen keyboard before leaving the search step — tapping a
@@ -191,22 +171,53 @@ function selectAndAdvance(result: SearchResultView): void {
   goNext()
 }
 
-/** Sheet close (X / dismiss): release any uncommitted inspect, then reset. */
+/** Sheet close (dismiss / Back on the first step): release any uncommitted
+ *  inspect, then reset. */
 function onClose(): void {
   cancelInspectIfOpen()
   resetForm()
 }
 
-// --- Telegram BackButton wiring (#5) ---
-// "Назад" between wizard steps is the native Telegram BackButton (the same
-// affordance the Show-detail page uses, ADR 0009), not an in-sheet button. It
-// shows whenever there is a previous step to return to; on the first drawn step
-// the sheet's close (X) is the way out. Driven by a watcher so we never sprinkle
-// show/hide calls across the navigation handlers. The SDK wiring + unmount
-// cleanup live in useTgBackButton (#177; shared with ShowsTab).
-const { show: showTgBackButton, hide: hideTgBackButton } = useTgBackButton(goBack)
-watch([open, step], ([isOpen, cur]) => {
-  if (isOpen && cur > firstStep.value) showTgBackButton()
+// ─── FolderPicker nav handle (G1 #216) ───────────────────────────────────────
+// The picker exposes its internal folder-nav state so the unified Back handler
+// can pop ONE folder-browser level (tree crumb / tree-root → quick list) BEFORE
+// it falls back to the wizard step. Typed structurally to avoid importing the
+// component's instance type (named .vue type imports trip vue-tsc, TS2614).
+interface FolderPickerNav {
+  canStepBack: () => boolean
+  stepBack: () => void
+}
+const folderPicker = ref<FolderPickerNav | null>(null)
+
+// --- Telegram BackButton wiring (#5, unified pop-one-level model G1 #212/#216) ---
+// "Назад" is the native Telegram BackButton (the same affordance the Show-detail
+// page uses, ADR 0009), not an in-sheet button. With the in-sheet header + ✕ gone
+// (#212), Back is the ONLY way out, so it now stays visible on the first step too.
+//
+// Each press pops exactly ONE logical level:
+//   step2 in tree mode → one folder-browser level (crumb up / tree-root → quick)
+//   step > firstStep   → one wizard step back (goBack handles step-3 inspect cleanup)
+//   first step         → close the sheet (return to Downloads)
+// The SDK wiring + unmount cleanup live in useTgBackButton (#177; shared w/ ShowsTab).
+function onBack(): void {
+  // 1) Folder browser drill-down owns the first level on the Folder step (#216).
+  if (step.value === 2 && folderPicker.value?.canStepBack()) {
+    folderPicker.value.stepBack()
+    return
+  }
+  // 2) One wizard step back, while there is one to return to.
+  if (step.value > firstStep.value) {
+    goBack()
+    return
+  }
+  // 3) At the first drawn step → close the sheet (no in-sheet ✕ anymore).
+  open.value = false
+  onClose()
+}
+
+const { show: showTgBackButton, hide: hideTgBackButton } = useTgBackButton(onBack)
+watch(open, (isOpen) => {
+  if (isOpen) showTgBackButton()
   else hideTgBackButton()
 })
 
@@ -407,8 +418,9 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
 </script>
 
 <template>
-  <!-- Fullscreen Add Wizard (opened by inline row in DownloadsTab, #118) -->
-  <Sheet v-model:open="open" title="Добавить" variant="fullscreen" @close="onClose">
+  <!-- Fullscreen Add Wizard (opened by inline row in DownloadsTab, #118).
+       #212: headerless — no in-sheet title/✕; close via native Back on step 1. -->
+  <Sheet v-model:open="open" variant="fullscreen" headerless @close="onClose">
     <!-- Step content — wrapped in Transition unless reduced motion -->
     <div class="wizard-body">
       <component :is="'div'" :class="['wizard-step', { 'wizard-step--animated': !prefersReducedMotion }]">
@@ -437,7 +449,7 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
              heading and shows the selected folder inline, so the step-label and
              the "Selected: …" preview were redundant and are gone. -->
         <div v-else-if="step === 2" class="step-folder">
-          <FolderPicker v-model="destination" />
+          <FolderPicker ref="folderPicker" v-model="destination" />
         </div>
 
         <!-- ── Step 3: Confirm — pudgy card (title + chips + folder) ── -->
@@ -459,36 +471,9 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
       </component>
     </div>
 
-    <!-- Sticky footer with Back / Next / Add -->
+    <!-- Sticky footer with the single forward CTA. The stepper was removed (#215);
+         "Назад" is the native Telegram BackButton (not an in-sheet control). -->
     <div class="wizard-footer">
-      <!-- Step indicator — numbered stepper (Variant B, #119) — own full-width row
-           ABOVE the actions so its circles+labels never collide with the buttons. -->
-      <div class="stepper" aria-hidden="true" data-testid="stepper">
-        <template v-for="(item, index) in stepperItems" :key="item.stepNum">
-          <div class="stepper-node">
-            <div
-              class="stepper-circle"
-              :class="{
-                'stepper-circle--done': item.state === 'done',
-                'stepper-circle--current': item.state === 'current',
-              }"
-            >
-              <span v-if="item.state === 'done'" class="stepper-check">✓</span>
-              <span v-else>{{ item.displayNum }}</span>
-            </div>
-            <span
-              class="stepper-label"
-              :class="{ 'stepper-label--current': item.state === 'current' }"
-            >{{ item.label }}</span>
-          </div>
-          <div
-            v-if="index < stepperItems.length - 1"
-            class="stepper-line"
-            :class="{ 'stepper-line--future': item.state === 'future' }"
-          ></div>
-        </template>
-      </div>
-
       <!-- Actions row: a single primary CTA (#5). "Назад" is the native Telegram
            BackButton, not an in-sheet button, so there is no back/next pair to
            balance. Step 1 (Search) has no forward button — tapping a result
@@ -567,81 +552,6 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
 /* Single full-width primary CTA (#5) — no back/next pair to balance anymore. */
 .footer-btn--full {
   width: 100%;
-}
-
-/* ── Numbered stepper (#119, Variant B) ── */
-.stepper {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  width: 100%;
-  min-width: 0;
-}
-
-.stepper-node {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.stepper-circle {
-  width: 28px;
-  height: 28px;
-  border: var(--border-strong);
-  border-radius: 50%;
-  background: var(--paper);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-sm);
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
-
-.stepper-circle--done {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.stepper-circle--current {
-  background: var(--yellow);
-}
-
-.stepper-check {
-  font-size: var(--fs-md);
-  line-height: 1;
-}
-
-.stepper-label {
-  font-size: 10px;
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.45;
-  white-space: nowrap;
-}
-
-.stepper-label--current {
-  opacity: 1;
-}
-
-.stepper-line {
-  flex: 1;
-  height: 4px;
-  background: var(--ink);
-  border-radius: 2px;
-  /* Vertically centre on the 28px circle (14px − 2px half-line). */
-  margin-top: 12px;
-  min-width: 12px;
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-
-.stepper-line--future {
-  opacity: 0.22;
 }
 
 /* ── Step 2: Folder ── */

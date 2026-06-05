@@ -131,6 +131,30 @@ async function jumpTo(index: number): Promise<void> {
 function shortName(path: string): string {
   return path.split('/').filter(Boolean).pop() ?? path
 }
+
+// ── Pop-one-level Back (G1 #216) ──
+// The parent (AddFlow) consults these on a native Back press so Back pops ONE
+// folder-nav level before it touches the wizard step. canStepBack() is true
+// whenever we're in the tree view; stepBack() pops a single breadcrumb level,
+// and at the tree root drops back to the quick list.
+function canStepBack(): boolean {
+  return view.value === 'tree'
+}
+
+function stepBack(): void {
+  if (view.value !== 'tree') return
+  if (stack.value.length > 0) {
+    // Pop ONE crumb. jumpTo(i) truncates the stack to i+1 entries, so
+    // jumpTo(length - 2) keeps length-1 crumbs (drops the deepest one);
+    // length - 2 === -1 at depth 1 → back to the tree root.
+    void jumpTo(stack.value.length - 2)
+  } else {
+    // Already at the tree root → return to the quick list.
+    backToQuick()
+  }
+}
+
+defineExpose({ canStepBack, stepBack })
 </script>
 
 <template>
@@ -184,15 +208,17 @@ function shortName(path: string): string {
     <!-- ── SECONDARY: tree drill-down with a tappable breadcrumb ── -->
     <div v-else class="tree-view">
       <nav class="crumbs" aria-label="Путь">
-        <!-- «Папки» returns to the quick list; the home crumb + folder crumbs are
-             tappable to jump up a level (replaces the old "Up" button). -->
+        <!-- Returns to the quick list; the home crumb + folder crumbs are tappable
+             to jump up a level (replaces the old "Up" button). #200: icon-only
+             (the folder-list word was dropped) — the quick-list tiles read as folders. -->
         <button
           type="button"
           class="crumb crumb--quick"
           data-testid="back-to-tiles-btn"
+          aria-label="К списку папок"
           @click="backToQuick"
         >
-          Папки
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="crumb-quick-icon"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
         <span class="crumb-sep" aria-hidden="true">·</span>
         <button
@@ -413,9 +439,17 @@ function shortName(path: string): string {
   cursor: pointer;
 }
 
+/* #200: icon-only back-to-tiles control (the folder-list word was dropped). */
 .crumb--quick {
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crumb-quick-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .crumb-home {

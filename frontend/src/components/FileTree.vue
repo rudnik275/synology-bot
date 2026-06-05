@@ -84,6 +84,9 @@ function toggleRootGroup(): void {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* #214: fill the Files block so .tree-body is the single scroll region —
+     the confirm-step header/chips/files-header/destination stay pinned. */
+  flex: 1;
 }
 
 /* The collapsed single-root folder, shown as a quiet crumb above the tree. */

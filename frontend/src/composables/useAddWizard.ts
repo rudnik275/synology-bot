@@ -63,7 +63,8 @@ export interface UseAddWizard {
   firstStep: ComputedRef<1 | 2>
   /** The last drawn step (always 3 = Confirm for both paths). */
   lastStep: ComputedRef<number>
-  /** Steps shown in the stepper — handoff hides Search (only Folder · Confirm). */
+  /** The drawn steps — handoff hides Search (only Folder · Confirm). Drives
+   *  firstStep; the stepper UI that consumed it was removed in G1 (#215). */
   drawnSteps: ComputedRef<number[]>
   /** Whether the current step has a valid value so Next can advance. */
   canAdvance: ComputedRef<boolean>

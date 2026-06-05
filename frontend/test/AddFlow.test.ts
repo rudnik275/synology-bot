@@ -141,9 +141,46 @@ describe('AddFlow (search-only)', () => {
     wrapper.unmount()
   })
 
-  it('step 1 (Search): no Back button on the first step', async () => {
+  it('step 1 (Search): the native Back button is shown so it can close the sheet (G1)', async () => {
+    // G1 (#212): Back now stays visible on the first step too — pressing it on
+    // step 1 closes the sheet (return to Downloads), since the in-sheet ✕ is gone.
+    let shown = false
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() { shown = true },
+          hide() { shown = false },
+          onClick() {},
+          offClick() {},
+        },
+      },
+    }
     const wrapper = await openWizard()
-    expect(document.querySelector('[data-testid="wizard-back"]')).toBeNull()
+    expect(shown).toBe(true)
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
+    wrapper.unmount()
+  })
+
+  it('step 1 (Search): native Back closes the sheet (#212 — no ✕ anymore)', async () => {
+    let backHandler: (() => void) | null = null
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() {},
+          hide() {},
+          onClick(cb: () => void) { backHandler = cb },
+          offClick() {},
+        },
+      },
+    }
+    const wrapper = await openWizard()
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    // On the first step, Back closes the whole sheet.
+    expect(backHandler).not.toBeNull()
+    backHandler!()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
     wrapper.unmount()
   })
 
@@ -349,19 +386,35 @@ describe('AddFlow (search-only)', () => {
   })
 
   it('reopening the wizard resets to the Search step', async () => {
+    // #212: the in-sheet ✕ is gone; close by pressing native Back down to step 1.
+    let backHandler: (() => void) | null = null
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() {},
+          hide() {},
+          onClick(cb: () => void) { backHandler = cb },
+          offClick() {},
+        },
+      },
+    }
     const wrapper = await openWizard()
     // searchAndSelect() taps a result — auto-advances to Folder (#121).
     await searchAndSelect()
     // Now on Folder — quick list shown (#2), folder-tile present.
     expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
 
-    const closeBtn = document.querySelector('.sheet-close') as HTMLButtonElement
-    closeBtn?.click()
+    // Back: Folder (step 2, quick list) → Search (step 1) → close sheet.
+    backHandler!() // → step 1
     await flushPromises()
+    backHandler!() // → close
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
 
     // Re-open via exposed openSheet() (inline row in DownloadsTab calls this, #118)
     ;(wrapper.vm as unknown as { openSheet: () => void }).openSheet()
     await flushPromises()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
 
     // Back at Search, nothing selected.
     expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
@@ -427,50 +480,139 @@ describe('AddFlow (search-only)', () => {
 
   it('closing + reopening the wizard does NOT wipe search history', async () => {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(['Succession']))
+    // #212: close via native Back on the first step (no in-sheet ✕ anymore).
+    let backHandler: (() => void) | null = null
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() {},
+          hide() {},
+          onClick(cb: () => void) { backHandler = cb },
+          offClick() {},
+        },
+      },
+    }
     const wrapper = await openWizard()
 
-    const closeBtn = document.querySelector('.sheet-close') as HTMLButtonElement
-    closeBtn?.click()
+    backHandler!() // step 1 → close
     await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
 
     const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
     expect(stored).toContain('Succession')
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
     wrapper.unmount()
   })
 
-  // ─── Stepper frame (#119) ──────────────────────────────────────────────────
-  it('stepper renders 3 circles on the search path (Поиск · Папка · Готово)', async () => {
+  // ─── Stepper removed (#215) ─────────────────────────────────────────────────
+  it('does NOT render the step indicator anymore (#215: stepper removed)', async () => {
     const wrapper = await openWizard()
-    const stepper = document.querySelector('[data-testid="stepper"]')!
-    expect(stepper).not.toBeNull()
-    const circles = stepper.querySelectorAll('.stepper-circle')
-    expect(circles.length).toBe(3)
-    const labels = Array.from(stepper.querySelectorAll('.stepper-label')).map((el) => el.textContent?.trim())
-    expect(labels).toEqual(['Поиск', 'Папка', 'Готово'])
+    expect(document.querySelector('[data-testid="stepper"]')).toBeNull()
+    expect(document.querySelector('.stepper-circle')).toBeNull()
     wrapper.unmount()
   })
 
-  it('stepper marks step 1 as current and steps 2–3 as future on open', async () => {
+  // ─── In-sheet header removed (#212) ─────────────────────────────────────────
+  it('does NOT render the in-sheet header (title «Добавить» + ✕ close) (#212)', async () => {
     const wrapper = await openWizard()
-    const stepper = document.querySelector('[data-testid="stepper"]')!
-    const circles = stepper.querySelectorAll('.stepper-circle')
-    expect(circles[0]?.classList.contains('stepper-circle--current')).toBe(true)
-    expect(circles[1]?.classList.contains('stepper-circle--current')).toBe(false)
-    expect(circles[2]?.classList.contains('stepper-circle--current')).toBe(false)
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.querySelector('.sheet-head')).toBeNull()
+    expect(dialog.querySelector('.sheet-close')).toBeNull()
+    expect(dialog.querySelector('.sheet-title')).toBeNull()
     wrapper.unmount()
   })
 
-  it('stepper marks step 1 as done and step 2 as current after tapping a result (#121)', async () => {
-    const wrapper = await openWizard()
-    // searchAndSelect() taps a result — auto-advances to Folder (#121).
-    // No wizard-next click needed; the tap is the advance.
-    await searchAndSelect()
+  // ─── Unified pop-one-level native Back (#212 + #216) ────────────────────────
+  // A single back-stack pops exactly ONE logical level per Back press:
+  //   step3 → step2 · step2 tree → one crumb up → quick → step1 · step1 → close.
+  function installFakeBackButton(): { fire: () => void } {
+    let backHandler: (() => void) | null = null
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() {},
+          hide() {},
+          onClick(cb: () => void) { backHandler = cb },
+          offClick() {},
+        },
+      },
+    }
+    return { fire: () => backHandler?.() }
+  }
 
-    const stepper = document.querySelector('[data-testid="stepper"]')!
-    const circles = stepper.querySelectorAll('.stepper-circle')
-    expect(circles[0]?.classList.contains('stepper-circle--done')).toBe(true)
-    expect(circles[1]?.classList.contains('stepper-circle--current')).toBe(true)
-    expect(circles[2]?.classList.contains('stepper-circle--current')).toBe(false)
+  it('Back from Confirm (step 3) returns to Folder (step 2), not further', async () => {
+    const back = installFakeBackButton()
+    const wrapper = await openWizard()
+    await searchAndSelect()        // → step 2 (Folder, quick list)
+    await pickFolderInTree()
+    document.querySelector<HTMLButtonElement>('[data-testid="wizard-next"]')!.click()
+    await flushPromises()
+    await flushPromises()          // → step 3 (Confirm)
+    expect(document.querySelector('[data-testid="confirm-card"]')).not.toBeNull()
+
+    back.fire()
+    await flushPromises()
+    // Back on Folder (step 2): quick list / tile visible, NOT search, NOT closed.
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="confirm-card"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
+    wrapper.unmount()
+  })
+
+  it('Back from Folder quick list (step 2) returns to Search (step 1)', async () => {
+    const back = installFakeBackButton()
+    const wrapper = await openWizard()
+    await searchAndSelect()        // → step 2 (quick list)
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
+
+    back.fire()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="wizard-next"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
+    wrapper.unmount()
+  })
+
+  it('Back from the folder TREE (browse all folders) returns to the quick list, NOT step 1 (#216)', async () => {
+    const back = installFakeBackButton()
+    const wrapper = await openWizard()
+    await searchAndSelect()        // → step 2 (quick list)
+    // Open the drill-down tree («Браузить все папки»).
+    document.querySelector<HTMLButtonElement>('[data-testid="open-tree-btn"]')!.click()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+
+    // Back pops the tree view back to the quick list — NOT all the way to step 1.
+    back.fire()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="folder-item"]')).toBeNull()
+    // Still on the Folder step (not back on Search).
+    expect(document.querySelector('[data-testid="search-query"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
+    wrapper.unmount()
+  })
+
+  it('Back from a tree sub-crumb pops ONE breadcrumb level (#216)', async () => {
+    const back = installFakeBackButton()
+    const wrapper = await openWizard()
+    await searchAndSelect()        // → step 2 (quick list)
+    document.querySelector<HTMLButtonElement>('[data-testid="open-tree-btn"]')!.click()
+    await flushPromises()
+    // Drill into a folder — now there is a crumb in the breadcrumb.
+    document.querySelector<HTMLButtonElement>('[data-testid="folder-item"]')!.click()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="crumb"]')).not.toBeNull()
+
+    // Back pops the crumb → back to tree root (still tree, no crumbs).
+    back.fire()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="folder-item"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="crumb"]')).toBeNull()
+    // Still in the tree (quick list not shown yet — that's the NEXT Back).
+    expect(document.querySelector('[data-testid="folder-tiles"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
     wrapper.unmount()
   })
 

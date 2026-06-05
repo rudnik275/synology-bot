@@ -476,3 +476,97 @@ describe('ShowsTab — search loading skeleton (#208)', () => {
     resolveSearch(jsonResponse({ results: SEARCH_RESULTS }))
   })
 })
+
+// --- #218: subscribe/unsubscribe updates in place (no full-page flicker) ---
+
+describe('ShowsTab — subscribe/unsubscribe in-place update (#218)', () => {
+  it('handleSubscribe: detailLoading never becomes true during subscribe, isSubscribed becomes true', async () => {
+    const detailNotSubscribed: ShowDetailView = { ...SHOW_DETAIL, isSubscribed: false }
+    // Track whether /api/shows/:id is called during subscribe
+    let showDetailFetchCount = 0
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url === '/api/subscriptions' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(jsonResponse({ subscriptions: SUBSCRIPTIONS }))
+      }
+      if (typeof url === 'string' && url.match(/^\/api\/shows\/\d+$/)) {
+        showDetailFetchCount++
+        return Promise.resolve(jsonResponse(detailNotSubscribed))
+      }
+      if (url === '/api/subscriptions' && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ subscription: { id: 'sub-new', showId: 42, title: 'Breaking Bad', lastNotifiedEpisode: null, poster: null, latestAiredEpisode: null } }, 201))
+      }
+      return Promise.resolve(jsonResponse({ ok: true }))
+    }) as typeof fetch
+
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Open detail — this triggers one /api/shows/42 fetch
+    const subRow = wrapper.find('[data-testid="subscription-row-sub-1"]')
+    await subRow.trigger('click')
+    await flushPromises()
+
+    const fetchCountAfterOpen = showDetailFetchCount // should be 1
+
+    // Verify subscribe button is present
+    const subscribeBtn = wrapper.find('[data-testid="subscribe-btn"]')
+    expect(subscribeBtn.exists()).toBe(true)
+
+    // Track loading states during subscribe
+    const loadingStates: boolean[] = []
+    const vm = wrapper.vm as unknown as { detailLoading: boolean }
+    // Spy: we'll sample detailLoading by checking the DOM — a skeleton implies loading=true and data=null
+    // Instead, verify no extra /api/shows/:id calls happen (which would cause the skeleton)
+    await subscribeBtn.trigger('click')
+    await flushPromises()
+
+    // After subscribe, no additional /api/shows/:id fetch should have occurred
+    expect(showDetailFetchCount).toBe(fetchCountAfterOpen)
+
+    // isSubscribed should be updated in place — the Unsubscribe button should now be visible
+    expect(wrapper.find('[data-testid="unsubscribe-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="subscribe-btn"]').exists()).toBe(false)
+  })
+
+  it('handleUnsubscribe: detailLoading never becomes true during unsubscribe, isSubscribed becomes false', async () => {
+    // SHOW_DETAIL has isSubscribed: true
+    let showDetailFetchCount = 0
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url === '/api/subscriptions' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(jsonResponse({ subscriptions: SUBSCRIPTIONS }))
+      }
+      if (typeof url === 'string' && url.match(/^\/api\/shows\/\d+$/)) {
+        showDetailFetchCount++
+        return Promise.resolve(jsonResponse(SHOW_DETAIL))
+      }
+      if (typeof url === 'string' && url.startsWith('/api/subscriptions/') && init?.method === 'DELETE') {
+        return Promise.resolve(jsonResponse({ ok: true }))
+      }
+      return Promise.resolve(jsonResponse({ ok: true }))
+    }) as typeof fetch
+
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Open detail — triggers one /api/shows/42 fetch
+    const subRow = wrapper.find('[data-testid="subscription-row-sub-1"]')
+    await subRow.trigger('click')
+    await flushPromises()
+
+    const fetchCountAfterOpen = showDetailFetchCount // should be 1
+
+    // Verify unsubscribe button is present (isSubscribed: true)
+    const unsubscribeBtn = wrapper.find('[data-testid="unsubscribe-btn"]')
+    expect(unsubscribeBtn.exists()).toBe(true)
+
+    await unsubscribeBtn.trigger('click')
+    await flushPromises()
+
+    // After unsubscribe, no additional /api/shows/:id fetch should have occurred
+    expect(showDetailFetchCount).toBe(fetchCountAfterOpen)
+
+    // isSubscribed should be updated in place — the Subscribe button should now be visible
+    expect(wrapper.find('[data-testid="subscribe-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="unsubscribe-btn"]').exists()).toBe(false)
+  })
+})

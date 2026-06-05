@@ -97,10 +97,10 @@ async function handleSubscribe(): Promise<void> {
   subscribing.value = true
   try {
     await add(showDetail.value.id)
-    // Reload detail to get updated isSubscribed state
-    await loadDetail(showDetail.value.id)
+    // Patch isSubscribed in place — ADR-0012: no full reload after mutation
+    if (showDetail.value) showDetail.value = { ...showDetail.value, isSubscribed: true }
   } catch {
-    // swallow — refetch keeps list consistent
+    // swallow
   } finally {
     subscribing.value = false
   }
@@ -111,10 +111,10 @@ async function handleUnsubscribe(): Promise<void> {
   subscribing.value = true
   try {
     await remove(String(showDetail.value.id))
-    // Reload detail to get updated isSubscribed state
-    await loadDetail(showDetail.value.id)
+    // Patch isSubscribed in place — ADR-0012: no full reload after mutation
+    if (showDetail.value) showDetail.value = { ...showDetail.value, isSubscribed: false }
   } catch {
-    // swallow — refetch keeps list consistent
+    // swallow
   } finally {
     subscribing.value = false
   }

@@ -11,6 +11,9 @@ const props = defineProps<{
   title?: string
   /** 'sheet' (default, partial-height) | 'fullscreen' (fills viewport). */
   variant?: 'sheet' | 'fullscreen'
+  /** Suppress the in-sheet header (title + ✕ close). The Add wizard (#212) drops
+   *  the header and closes via native Back; other usages keep it. */
+  headerless?: boolean
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean]; close: [] }>()
@@ -46,7 +49,7 @@ onUnmounted(() => {
     <Transition name="sheet">
       <div v-if="open" class="scrim" :class="{ 'scrim--fullscreen': variant === 'fullscreen' }" @click.self="variant !== 'fullscreen' ? close() : undefined">
         <div class="sheet" :class="{ 'sheet--fullscreen': variant === 'fullscreen' }" role="dialog" aria-modal="true" :aria-label="title">
-          <header class="sheet-head">
+          <header v-if="!headerless" class="sheet-head">
             <h2 v-if="title" class="sheet-title">{{ title }}</h2>
             <button type="button" class="sheet-close" aria-label="Закрыть" @click="close">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
@@ -145,11 +148,11 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-/* Fullscreen (the Add wizard) pins the header + footer and scrolls ONLY the
-   inner content block, so the stepper + Назад/Далее/Добавить stay on screen
-   while the results list / folder tree / file list scrolls. The content owns
-   its own overflow (e.g. AddFlow's .wizard-body); the partial 'sheet' variant
-   keeps scrolling its whole body as before. */
+/* Fullscreen (the Add wizard) pins the footer and scrolls ONLY the inner
+   content block, so the Далее/Добавить CTA stays on screen while the results
+   list / folder tree / file list scrolls. The content owns its own overflow
+   (e.g. AddFlow's .wizard-body); the partial 'sheet' variant keeps scrolling
+   its whole body as before. */
 .sheet--fullscreen .sheet-body {
   display: flex;
   flex-direction: column;

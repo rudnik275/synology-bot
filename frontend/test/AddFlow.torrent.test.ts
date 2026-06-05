@@ -117,17 +117,41 @@ describe('AddFlow bot handoff — .torrent bytes (#99)', () => {
     wrapper.unmount()
   })
 
-  // ─── Stepper frame on handoff path (#119) ─────────────────────────────────
-  it('stepper renders 2 circles on the handoff path (Папка · Готово)', async () => {
+  // ─── Stepper removed on handoff path (#215) ───────────────────────────────
+  it('does NOT render the step indicator on the handoff path (#215)', async () => {
     const wrapper = mount(AddFlow, { props: { torrentToken: 'TOK123' } })
     await flushPromises()
+    expect(document.querySelector('[data-testid="stepper"]')).toBeNull()
+    expect(document.querySelector('.stepper-circle')).toBeNull()
+    wrapper.unmount()
+  })
 
-    const stepper = document.querySelector('[data-testid="stepper"]')!
-    expect(stepper).not.toBeNull()
-    const circles = stepper.querySelectorAll('.stepper-circle')
-    expect(circles.length).toBe(2)
-    const labels = Array.from(stepper.querySelectorAll('.stepper-label')).map((el) => el.textContent?.trim())
-    expect(labels).toEqual(['Папка', 'Готово'])
+  // ─── Unified Back on the handoff path (#212 + #216) ───────────────────────
+  // firstStep is Folder (step 2) — Back from the quick list closes the sheet.
+  it('handoff: Back from the Folder quick list closes the sheet (firstStep is 2)', async () => {
+    let backHandler: (() => void) | null = null
+    ;(window as unknown as { Telegram?: unknown }).Telegram = {
+      WebApp: {
+        BackButton: {
+          show() {},
+          hide() {},
+          onClick(cb: () => void) { backHandler = cb },
+          offClick() {},
+        },
+      },
+    }
+    const wrapper = mount(AddFlow, { props: { torrentToken: 'TOK123' } })
+    await flushPromises()
+    // On the Folder step (the first drawn step on the handoff path).
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="folder-tile"]')).not.toBeNull()
+
+    // Back from the quick list (firstStep=2) closes the whole sheet.
+    expect(backHandler).not.toBeNull()
+    backHandler!()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    ;(window as unknown as { Telegram?: unknown }).Telegram = undefined
     wrapper.unmount()
   })
 

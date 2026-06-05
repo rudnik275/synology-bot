@@ -151,8 +151,14 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
 
 <style scoped>
 /* ── Step 1: Search input ── */
+/* #213: the search row is pinned at the top; only the results list scrolls.
+   The step is a flex column filling the wizard body so the inner results area
+   can own its own scroll region. */
 .step-input {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .field {
@@ -173,11 +179,24 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* Fill the step so the results region below can scroll independently (#213).
+     The .field margin-bottom is dropped here — the column owns the spacing. */
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
 }
 
+/* #213: pin the search row at the top of the step. The history dropdown is
+   absolutely positioned relative to the SearchField, so it overlays the
+   scrolling results below rather than pushing them. */
 .search-row {
   display: flex;
   gap: var(--space-2);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--cream);
+  padding-bottom: var(--space-2);
 }
 
 .search-row-field {
@@ -273,13 +292,18 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
 
 /* ── Grouped results card (Variant B, #121) ── */
 
-/* Outer container: single border, single shadow — the "one grouped card" */
+/* Outer container: single border, single shadow — the "one grouped card".
+   #213: this is the single scroll region of step 1 — the pinned search row
+   stays put while the results list scrolls under it. overflow-y:auto forces
+   overflow-x, so a thin side padding keeps the row shadows from being clipped. */
 .search-results {
   border: var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
+  overflow: hidden auto;
   background: var(--paper);
   box-shadow: var(--shadow-sm);
+  flex: 1;
+  min-height: 0;
 }
 
 /* Each row is a full-width button with a hairline divider beneath it */

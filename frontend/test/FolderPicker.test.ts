@@ -121,9 +121,13 @@ describe('FolderPicker — browse tree (#2)', () => {
     expect(wrapper.text()).toContain('media')
   })
 
-  it('«Папки» returns to the quick list', async () => {
+  it('the back-to-tiles control returns to the quick list (#200: icon, no «Папки» text)', async () => {
     const wrapper = await openTree()
-    await wrapper.find('[data-testid="back-to-tiles-btn"]').trigger('click')
+    const backToTiles = wrapper.find('[data-testid="back-to-tiles-btn"]')
+    expect(backToTiles.exists()).toBe(true)
+    // #200: the «Папки» word is gone — the control is now an icon-only button.
+    expect(backToTiles.text()).not.toContain('Папки')
+    await backToTiles.trigger('click')
     expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
   })
 
@@ -157,6 +161,62 @@ describe('FolderPicker — browse tree (#2)', () => {
   it('has no "Up" button (replaced by the breadcrumb)', async () => {
     const wrapper = await openTree()
     expect(wrapper.find('[data-testid="up-btn"]').exists()).toBe(false)
+  })
+})
+
+describe('FolderPicker — exposed pop-one-level nav (G1 #216)', () => {
+  // The parent (AddFlow) consults canStepBack()/stepBack() on a native Back press
+  // so Back pops ONE folder-nav level before falling back to the wizard step.
+  type Exposed = { canStepBack: () => boolean; stepBack: () => void }
+
+  async function openTreeExposed() {
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    await wrapper.find('[data-testid="open-tree-btn"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('canStepBack() is false on the quick list, true in the tree view', async () => {
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    const vm = wrapper.vm as unknown as Exposed
+    expect(vm.canStepBack()).toBe(false)
+    await wrapper.find('[data-testid="open-tree-btn"]').trigger('click')
+    await flushPromises()
+    expect(vm.canStepBack()).toBe(true)
+  })
+
+  it('stepBack() at the tree root returns to the quick list', async () => {
+    const wrapper = await openTreeExposed()
+    const vm = wrapper.vm as unknown as Exposed
+    expect(vm.canStepBack()).toBe(true)
+    vm.stepBack()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
+    expect(vm.canStepBack()).toBe(false)
+  })
+
+  it('stepBack() pops ONE breadcrumb level, then drops to quick list at the root', async () => {
+    const wrapper = await openTreeExposed()
+    const vm = wrapper.vm as unknown as Exposed
+    // Drill into a folder → there is now one crumb.
+    await wrapper.findAll('[data-testid="folder-item"]')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="crumb"]').exists()).toBe(true)
+
+    // First stepBack: pop the crumb → tree root (still tree, no crumb).
+    vm.stepBack()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="folder-item"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="crumb"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(false)
+
+    // Second stepBack: tree root → quick list.
+    expect(vm.canStepBack()).toBe(true)
+    vm.stepBack()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
   })
 })
 

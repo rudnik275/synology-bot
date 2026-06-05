@@ -35,7 +35,7 @@ _Avoid:_ User, admin, allowed user
 
 ## Mini App IA
 
-Three bottom tabs — **Downloads / NAS / Shows** (default: Downloads). Every screen shows an ambient **health-chip** in the header (green/amber/red dot + one metric) that taps through to the NAS tab.
+**Hub-and-spoke** (ADR 0015). A **Home hub** is the root screen: three section rows — **Downloads / NAS / Shows** — each showing a live summary (active count + speed / disk health / new-episode count); tapping a row opens that section full-screen. The native Telegram **Back** button returns one level (section → hub) and is shown on every screen except the hub root. The disk-health summary lives on the hub's **NAS row** (the old ambient header health-chip is removed — ADR 0006 IA revised). A global **Add FAB** sits on the hub and the Downloads section. Deep-links bypass the hub straight to context (push «Открыть» → section; `.torrent`/magnet handoff → Add wizard).
 
 **Add flow** — adding a download (ADR 0008, 0014). In the Mini App it is **search-only**: FAB → wizard → Toloka search → folder-picker → confirm. `.torrent` files, magnet links, and Toloka/`.torrent` links are not pasted in-app; they are sent to the **bot chat**, which **classifies the source** (Toloka link, magnet, or direct `.torrent` URL — anything else is rejected with an error), stashes it, and deep-links the Mini App into the wizard at the folder step (Folder → Confirm). The bot is otherwise push-only; this stash-and-handoff is its sole intake role and it never creates tasks itself. The confirm step **auto-inspects** every non-magnet source — Toloka links included — and renders a **file tree for per-file selection** (#123, ADR 0012, 0014): the owner ticks individual files before adding; the whole-torrent path remains the default **for magnets** (which cannot be inspected before download). Tapping «Добавить» is **optimistic** — a placeholder card appears immediately in the Downloads list, and the real task is reconciled in place in the background on the next poll (#155, ADR 0012). Mutations update in place; the app never shows a full-page loading state after a user action (ADR 0012).
 
@@ -56,12 +56,13 @@ State is managed through **composables** (`useApi`, `useHealth`, `useTasks`, `us
 | [0003](./docs/adr/0003-in-flight-only-domain-boundary.md) | Domain boundary — in-flight downloads only |
 | [0004](./docs/adr/0004-topics-and-centralized-notifier.md) | Centralized OwnerNotifier (topics superseded by 0005) |
 | [0005](./docs/adr/0005-mini-app-for-pull-thin-bot-for-push.md) | Mini App for management (pull), thin bot for notifications (push) |
-| [0006](./docs/adr/0006-mini-app-design-system-neo-brutalism.md) | Mini App design system — Neo-Brutalism, jobs-first IA |
+| [0006](./docs/adr/0006-mini-app-design-system-neo-brutalism.md) | Mini App design system — Neo-Brutalism (IA revised by 0015) |
 | [0008](./docs/adr/0008-add-intake-search-only-app-bot-handoff.md) | Add intake — Mini App search-only; bot hands off .torrent + magnet/URL (URL-acceptance revised by 0014) |
 | [0009](./docs/adr/0009-shows-tab-search-first-detail-page.md) | Shows tab — search-first, Show detail page, detail-only subscribe, in-app today dropped |
 | [0011](./docs/adr/0011-ui-history-server-side-not-cloudstorage.md) | Mini App UI history (recent searches/folders) stored server-side, not Telegram CloudStorage |
 | [0012](./docs/adr/0012-per-file-selective-download-optimistic-insert.md) | Per-file selective download (DS2 create_list→list→download) + optimistic insert |
 | [0014](./docs/adr/0014-toloka-aware-add-intake.md) | Toloka-aware add intake — resolve topic links, per-file selection for links, typed source errors |
+| [0015](./docs/adr/0015-hub-and-spoke-navigation.md) | Hub-and-spoke navigation — Home hub replaces bottom tabs; native Back; health-chip absorbed |
 
 ## Domain boundary
 

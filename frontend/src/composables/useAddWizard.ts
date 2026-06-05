@@ -108,6 +108,9 @@ export function useAddWizard(deps: WizardDeps): UseAddWizard {
 
   function goNext(): void {
     if (!canAdvance.value) return
+    // #201: clear any stale error before entering the next step — a past failure
+    // must not bleed through to the next Confirm visit.
+    errorMsg.value = null
     if (step.value < 3) step.value = (step.value + 1) as 1 | 2 | 3
   }
 
@@ -120,6 +123,8 @@ export function useAddWizard(deps: WizardDeps): UseAddWizard {
       deps.cancelInspectIfOpen()
       deps.resetInspect()
     }
+    // #201: clear any stale error before returning to a previous step.
+    errorMsg.value = null
     if (step.value > floor) step.value = (step.value - 1) as 1 | 2 | 3
   }
 

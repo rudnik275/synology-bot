@@ -218,8 +218,8 @@ describe('App shell — native Back coordination (single active handler)', () =>
     const wrapper = mount(App)
     await flushPromises()
 
-    // Open the Add wizard via the global FAB (the Downloads FAB is in App.vue shell).
-    await wrapper.find('[data-testid="global-fab"]').trigger('click')
+    // Open the Add wizard via the inline add-row (FAB removed in #249).
+    await wrapper.find('[data-testid="add-row"]').trigger('click')
     await flushPromises()
 
     // Advance to the Folder step so the wizard owns the native Back (step > first).
@@ -243,7 +243,8 @@ describe('App shell — native Back coordination (single active handler)', () =>
     const wrapper = mount(App)
     await flushPromises()
 
-    await wrapper.find('[data-testid="global-fab"]').trigger('click')
+    // Open the Add wizard via the inline add-row (FAB removed in #249).
+    await wrapper.find('[data-testid="add-row"]').trigger('click')
     await flushPromises()
 
     // The wizard is headerless since G1 (no ✕) — it closes via native Back on the
@@ -312,8 +313,8 @@ describe('App shell — native Back coordination (single active handler)', () =>
   })
 })
 
-describe('App shell — global Add FAB visibility (ADR 0015, S3 #224)', () => {
-  it('FAB is present on the hub root', async () => {
+describe('App shell — FAB removed (#249)', () => {
+  it('no global-fab on the hub root', async () => {
     stubFetch()
     installBackButton()
     mockTelegram('')
@@ -321,10 +322,10 @@ describe('App shell — global Add FAB visibility (ADR 0015, S3 #224)', () => {
     const wrapper = mount(App)
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(false)
   })
 
-  it('FAB is present on the Downloads section', async () => {
+  it('no global-fab on the Downloads section', async () => {
     stubFetch()
     installBackButton()
     mockTelegram('downloads')
@@ -332,10 +333,10 @@ describe('App shell — global Add FAB visibility (ADR 0015, S3 #224)', () => {
     const wrapper = mount(App)
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(false)
   })
 
-  it('FAB is hidden on the NAS section', async () => {
+  it('no global-fab on the NAS section', async () => {
     stubFetch()
     installBackButton()
     mockTelegram('nas')
@@ -346,7 +347,7 @@ describe('App shell — global Add FAB visibility (ADR 0015, S3 #224)', () => {
     expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(false)
   })
 
-  it('FAB is hidden on the Shows section', async () => {
+  it('no global-fab on the Shows section', async () => {
     stubFetch()
     installBackButton()
     mockTelegram('shows')
@@ -356,8 +357,51 @@ describe('App shell — global Add FAB visibility (ADR 0015, S3 #224)', () => {
 
     expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(false)
   })
+})
 
-  it('FAB disappears when navigating from Downloads to hub, then reappears on hub', async () => {
+describe('App shell — inline add row opens wizard (#249)', () => {
+  it('tapping the inline add-row in Downloads opens the Add wizard', async () => {
+    stubFetch()
+    installBackButton()
+    mockTelegram('downloads')
+    const App = await loadApp()
+    const wrapper = mount(App)
+    await flushPromises()
+
+    // The inline add-row (not the FAB) is the Add affordance in Downloads.
+    const addRow = wrapper.find('[data-testid="add-row"]')
+    expect(addRow.exists()).toBe(true)
+
+    await addRow.trigger('click')
+    await flushPromises()
+
+    // The Add wizard sheet should be open.
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('after successful add, App navigates to Downloads section', async () => {
+    stubFetch()
+    installBackButton()
+    // Boot on the hub so we can verify navigation TO Downloads.
+    mockTelegram('')
+    const App = await loadApp()
+    const wrapper = mount(App)
+    await flushPromises()
+
+    // Simulate AddFlow emitting 'added' (as it does after create()).
+    const addFlowVm = wrapper.findComponent({ name: 'AddFlow' })
+    expect(addFlowVm.exists()).toBe(true)
+    addFlowVm.vm.$emit('added')
+    await flushPromises()
+
+    // App should now be on the Downloads section.
+    expect(wrapper.find('[data-testid="hub-row-downloads"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Загрузки')
+  })
+})
+
+describe('App shell — native Back coordination (with inline add row)', () => {
+  it('while the Add wizard sheet is open from inline add-row, Back press is handled by wizard NOT shell', async () => {
     stubFetch()
     const back = installBackButton()
     mockTelegram('downloads')
@@ -365,33 +409,40 @@ describe('App shell — global Add FAB visibility (ADR 0015, S3 #224)', () => {
     const wrapper = mount(App)
     await flushPromises()
 
-    // FAB visible in Downloads.
-    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(true)
+    // Open the Add wizard via the inline add-row (not the removed FAB).
+    await wrapper.find('[data-testid="add-row"]').trigger('click')
+    await flushPromises()
 
-    // Navigate back to hub via native Back.
+    // A Back press pops a step inside the wizard, not the section→hub.
     back.press()
     await flushPromises()
 
-    // FAB still visible on hub.
-    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(true)
+    // Still in the Downloads section (not the hub).
+    expect(wrapper.find('[data-testid="hub-row-downloads"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Загрузки')
   })
 
-  it('FAB disappears when navigating hub → NAS', async () => {
+  it('the wizard releases native Back to the shell when it closes', async () => {
     stubFetch()
-    installBackButton()
-    mockTelegram('')
+    const back = installBackButton()
+    mockTelegram('downloads')
     const App = await loadApp()
     const wrapper = mount(App)
     await flushPromises()
 
-    // FAB visible on hub.
-    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(true)
-
-    // Navigate into NAS.
-    await wrapper.find('[data-testid="hub-row-nas"]').trigger('click')
+    await wrapper.find('[data-testid="add-row"]').trigger('click')
     await flushPromises()
 
-    // FAB hidden on NAS.
-    expect(wrapper.find('[data-testid="global-fab"]').exists()).toBe(false)
+    // Close wizard via native Back (headerless, Back closes on step 1).
+    back.press()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+
+    // Shell back is live again.
+    expect(back.visible).toBe(true)
+    back.press()
+    await flushPromises()
+    // One press pops section → hub.
+    expect(wrapper.find('[data-testid="hub-row-downloads"]').exists()).toBe(true)
   })
 })

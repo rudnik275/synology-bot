@@ -43,7 +43,9 @@ const props = withDefaults(defineProps<{ torrentToken?: string }>(), {
 // via the native BackButton, or the sheet's close ✕ on the first step); the
 // shell must NOT also pop its section→hub level on the same press (ADR 0015 nav
 // coordination, S1 #222).
-const emit = defineEmits<{ 'owns-back': [boolean] }>()
+// 'added' fires when a download is successfully queued (#249). The App shell
+// listens to navigate to Downloads so the user always lands on the right screen.
+const emit = defineEmits<{ 'owns-back': [boolean]; 'added': [] }>()
 
 const { prefersReducedMotion } = usePrefersReducedMotion()
 const { lastFolder, recordRecent } = useFolderShortcuts()
@@ -410,6 +412,7 @@ function create(): void {
   // showing in the list — then fire the add in the BACKGROUND without awaiting, so
   // the sheet never blocks on DSM (#161). A failed add rolls back the placeholder.
   open.value = false
+  emit('added') // notify the shell to navigate to Downloads (#249)
   resetForm()
   void doAdd().catch((e) => {
     optimistic.remove(optimisticId)

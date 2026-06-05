@@ -118,9 +118,40 @@ describe('DownloadsTab', () => {
     expect(progressbar.attributes('aria-valuenow')).toBe(String(downloadingTask.pct))
   })
 
-  // ── Primary action — exactly one per status group ─────────────────────────
+  // ── Inline add-row (#249) ────────────────────────────────────────────────────
 
-  it('shows «Пауза» as primary action for downloading task', async () => {
+  it('shows the inline add-row as first item in the task list', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab, { props: { onAddClick: () => {} } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="add-row"]').exists()).toBe(true)
+  })
+
+  it('shows the inline add-row in the empty-state action slot', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [] }))) as typeof fetch
+    const wrapper = mount(DownloadsTab, { props: { onAddClick: () => {} } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="add-row"]').exists()).toBe(true)
+  })
+
+  it('clicking the add-row calls onAddClick', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
+    let called = false
+    const wrapper = mount(DownloadsTab, { props: { onAddClick: () => { called = true } } })
+    await flushPromises()
+
+    await wrapper.find('[data-testid="add-row"]').trigger('click')
+    expect(called).toBe(true)
+  })
+
+  // ── Primary action — exactly one per status group (icon-only, #249) ──────────
+
+  it('shows an icon-only primary action button for downloading task (no text label)', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
@@ -128,10 +159,13 @@ describe('DownloadsTab', () => {
 
     const btn = wrapper.find('[data-testid="btn-primary-task-1"]')
     expect(btn.exists()).toBe(true)
-    expect(btn.text()).toBe('Пауза')
+    // Icon-only: no text content (just an SVG)
+    expect(btn.text()).toBe('')
+    // Should have an aria-label so it's accessible
+    expect(btn.attributes('aria-label')).toBeTruthy()
   })
 
-  it('shows «Продолжить» as primary action for paused task', async () => {
+  it('shows an icon-only primary action button for paused task (no text label)', async () => {
     globalThis.fetch = (() =>
       Promise.resolve(jsonResponse({ tasks: [pausedTask] }))) as typeof fetch
     const wrapper = mount(DownloadsTab)
@@ -139,7 +173,10 @@ describe('DownloadsTab', () => {
 
     const btn = wrapper.find('[data-testid="btn-primary-task-2"]')
     expect(btn.exists()).toBe(true)
-    expect(btn.text()).toBe('Продолжить')
+    // Icon-only: no text content (just an SVG)
+    expect(btn.text()).toBe('')
+    // Should have an aria-label so it's accessible
+    expect(btn.attributes('aria-label')).toBeTruthy()
   })
 
   it('shows NO primary action for finished task (only delete)', async () => {

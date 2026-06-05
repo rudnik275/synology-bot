@@ -35,6 +35,16 @@ for (const k of NATIVE_NET_GLOBALS) {
   ;(globalThis as Record<string, unknown>)[k] = native[k]
 }
 
+// Auto-unmount every mounted wrapper after each test. Imported lazily (after
+// GlobalRegistrator.register) — a static import would pull vue's runtime-dom in
+// before `document` exists. Without this, a component a test never unmounts stays
+// mounted in Vue's reactivity graph; resetting a shared module-singleton ref
+// (afterEach below) then re-renders that DOM-detached zombie and throws happy-dom
+// `insertBefore`-null, which cascades on the CI (Linux) file order. Registered
+// first so unmount runs before the singleton resets.
+const { enableAutoUnmount } = await import('@vue/test-utils')
+enableAutoUnmount(afterEach)
+
 let idSeq = 0
 
 plugin({
@@ -86,4 +96,8 @@ afterEach(async () => {
   // `doc.createTextNode`. By afterEach time the DOM is registered.
   const { resetOptimisticTasks } = await import('./src/composables/useOptimisticTasks')
   resetOptimisticTasks()
+  // useHealth is also a module-singleton; clear its data so it cannot leak between
+  // files. Safe here — auto-unmount ran first, so no mounted consumer re-renders.
+  const { resetHealth } = await import('./src/composables/useHealth')
+  resetHealth()
 })

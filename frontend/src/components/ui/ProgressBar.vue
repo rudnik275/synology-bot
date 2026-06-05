@@ -43,7 +43,6 @@ const pct = computed(() => Math.max(0, Math.min(100, Math.round(props.value))))
 }
 .fill {
   height: 100%;
-  border-right: var(--border-thin) solid var(--ink);
   transition: width var(--dur-enter) var(--ease-out);
 }
 .fill.tone-default {

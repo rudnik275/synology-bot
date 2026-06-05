@@ -21,6 +21,18 @@ const POLL_MS = 15000
 // is handled below so it works correctly from a component context.
 const api = useApi<HealthView>('/health', { immediate: false })
 
+/**
+ * Test-only: clear the shared singleton's data so the next component that mounts
+ * useHealth refetches its own stubbed data (onMounted refetches only when data is
+ * null). The global afterEach calls this — AFTER auto-unmount — so health data
+ * cannot leak between test files (the macOS-green / Linux-red NAS-row flake).
+ */
+export function resetHealth(): void {
+  api.data.value = null
+  api.error.value = null
+  api.loading.value = false
+}
+
 /** POSIX basename — last non-empty path segment. */
 function basename(path: string): string {
   const parts = path.split('/').filter(Boolean)

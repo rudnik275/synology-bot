@@ -551,6 +551,11 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
 
 .wizard-step {
   flex: 1;
+  /* #247: complete the flex min-height chain so step-1's results list owns its
+     own scroll (.search-results flex:1/min-height:0) instead of the whole
+     .wizard-body scrolling. Without this the step can't shrink below content
+     height, pushing the overflow up to .wizard-body. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

@@ -291,18 +291,17 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   background: var(--yellow);
 }
 
-/* ── Grouped results card (Variant B, #121) ── */
+/* ── Results list (Variant B, #121; box border dropped #11) ── */
 
-/* Outer container: single border, single shadow — the "one grouped card".
-   #213: this is the single scroll region of step 1 — the pinned search row
-   stays put while the results list scrolls under it. overflow-y:auto forces
-   overflow-x, so a thin side padding keeps the row shadows from being clipped. */
+/* Outer container: borderless scrolling list (the box border read as an
+   artifact — #11). #213: this is the single scroll region of step 1 — the
+   pinned search row stays put while the results list scrolls under it. */
 .search-results {
-  border: var(--border);
+  /* #11: no outer bordered-box chrome — the bottom border read as a leftover
+     artifact. A clean scrolling list; the row hairline dividers carry structure. */
   border-radius: var(--radius);
   overflow: hidden auto;
   background: var(--paper);
-  box-shadow: var(--shadow-sm);
   flex: 1;
   min-height: 0;
 }

@@ -95,8 +95,11 @@ const gradient = computed(
   border-radius: 50%;
   background: var(--paper);
   border: var(--border);
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   text-align: center;
   line-height: 1;
   padding: 0 var(--space-1);
@@ -113,7 +116,6 @@ const gradient = computed(
   opacity: 0.5;
 }
 .hole .cap {
-  margin-top: 3px;
   font-size: 10px;
   opacity: 0.5;
   text-transform: uppercase;

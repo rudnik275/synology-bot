@@ -4,6 +4,8 @@
 
 Accepted (2026-05-31). Refines ADR 0005 (the "search/add — Toloka, magnet, `.torrent`" clause) and the `.torrent` handoff design note ([`docs/design/torrent-file-handoff.md`](../design/torrent-file-handoff.md), #99). Triaged from #120.
 
+> **Revised (2026-06-05):** the "bot accepts **any** `http(s)://` URL" intake clause is narrowed by [ADR 0014](0014-toloka-aware-add-intake.md) — intake is now Toloka-aware (topic links resolved server-side, per-file selection for links) and accepts only Toloka links, magnets, and direct `.torrent` URLs; anything else is rejected with a typed error.
+
 ## Context
 
 The unified Add flow (ADR 0006 IA) offered three in-app source modes behind a chooser step: Toloka **search**, **magnet/URL** paste, and **.torrent upload** → folder picker → confirm. Design review (2026-05-30) found the chooser step and the magnet/upload inputs to be clutter the owner rarely touches:

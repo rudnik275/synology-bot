@@ -430,7 +430,7 @@ const ramDonut = computed(() => {
 
 /* ── Section heads + labels ── */
 .section-head {
-  margin: var(--space-3) 0 var(--space-1);
+  margin: 40px 0 var(--space-2);
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   text-transform: uppercase;

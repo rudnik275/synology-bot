@@ -1,0 +1,182 @@
+/**
+ * Unit tests for useOptimisticTasks reconcile-by-identity logic (#202).
+ *
+ * The global afterEach in test-setup.ts calls resetOptimisticTasks() so
+ * module-singleton state never leaks between tests.
+ *
+ * All tests follow the same pattern:
+ *   1. baseline reconcile (initializes seenRealIds without retiring anything)
+ *   2. add() one or more placeholders
+ *   3. reconcile() with newly-appeared real tasks
+ *   4. assert pendingTasks() length / content
+ */
+import { describe, it, expect, beforeEach } from 'bun:test'
+import { useOptimisticTasks, resetOptimisticTasks } from '../src/composables/useOptimisticTasks'
+import type { TaskView } from '../src/types'
+
+/** Minimal TaskView factory for real (polled) tasks. */
+function realTask(overrides: Partial<TaskView> & { id: string; title: string }): TaskView {
+  return {
+    status: 'downloading',
+    sizeBytes: 0,
+    downloadedBytes: 0,
+    speedBytesPerSec: 0,
+    pct: 0,
+    destination: null,
+    ...overrides,
+  }
+}
+
+beforeEach(() => {
+  // Explicit reset before each test — belt-and-suspenders alongside the global afterEach.
+  resetOptimisticTasks()
+})
+
+describe('useOptimisticTasks — reconcile by identity', () => {
+  it('title match retires the placeholder', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    // Establish baseline (no retirement on first call)
+    reconcile([])
+
+    add({ title: 'Dune 2024', destination: '/video' })
+    expect(pendingTasks()).toHaveLength(1)
+
+    reconcile([realTask({ id: 'r1', title: 'Dune 2024', destination: '/video' })])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('normalized title match: dots-and-case differ but match', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    reconcile([])
+
+    // Placeholder title has dots and mixed case
+    add({ title: 'Dune.2024.2160p', destination: '/video' })
+    expect(pendingTasks()).toHaveLength(1)
+
+    // Real task title uses spaces and lowercase — should still match
+    reconcile([realTask({ id: 'r1', title: 'dune 2024 2160p', destination: '/video' })])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('destination match when title differs (infohash case)', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    reconcile([])
+
+    add({ title: 'Настоящий детектив S04', destination: '/video' })
+    expect(pendingTasks()).toHaveLength(1)
+
+    // Real task has an infohash-style title but same destination
+    reconcile([realTask({ id: 'r1', title: 'abc123def456abc123def456', destination: '/video' })])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('no match → placeholder NOT retired (external add)', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    reconcile([])
+
+    add({ title: 'Dune 2024', destination: '/video' })
+    expect(pendingTasks()).toHaveLength(1)
+
+    // External add — different title AND different destination
+    reconcile([realTask({ id: 'r1', title: 'Other Movie', destination: '/downloads' })])
+    expect(pendingTasks()).toHaveLength(1)
+  })
+
+  it('two quick adds to same dest reconcile FIFO (oldest first)', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    reconcile([])
+
+    add({ title: 'Movie A', destination: '/video' })
+    add({ title: 'Movie B', destination: '/video' })
+    expect(pendingTasks()).toHaveLength(2)
+
+    // Real task for A appears — A (oldest) should be retired, B stays
+    reconcile([realTask({ id: 'r1', title: 'Movie A', destination: '/video' })])
+    const remaining = pendingTasks()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].title).toBe('Movie B')
+
+    // Real task for B appears — B should be retired
+    reconcile([realTask({ id: 'r2', title: 'Movie B', destination: '/video' })])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('TTL backstop clears a straggler placeholder after OPTIMISTIC_TTL_MS', async () => {
+    // We need to mock Date.now to control time.
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    const realNow = Date.now
+    let fakeNow = realNow()
+
+    // Override Date.now for the composable
+    const origDateNow = Date.now
+    Date.now = () => fakeNow
+
+    try {
+      reconcile([])
+      add({ title: 'Orphan', destination: '/video' })
+      expect(pendingTasks()).toHaveLength(1)
+
+      // Advance time past 30 s TTL
+      fakeNow += 30_001
+
+      // Next reconcile call should evict the stale placeholder via TTL sweep
+      reconcile([])
+      expect(pendingTasks()).toHaveLength(0)
+    } finally {
+      Date.now = origDateNow
+    }
+  })
+
+  it('baseline: first reconcile with pre-existing tasks does NOT retire placeholders', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    // Add a placeholder BEFORE the first reconcile (unusual but valid)
+    add({ title: 'Movie Pre', destination: '/video' })
+    expect(pendingTasks()).toHaveLength(1)
+
+    // First reconcile — establishes baseline; should NOT retire the placeholder
+    reconcile([realTask({ id: 'existing1', title: 'Movie Pre', destination: '/video' })])
+    expect(pendingTasks()).toHaveLength(1)
+
+    // Second reconcile with a genuinely new task that matches
+    reconcile([
+      realTask({ id: 'existing1', title: 'Movie Pre', destination: '/video' }),
+      realTask({ id: 'new1', title: 'Movie Pre', destination: '/video' }),
+    ])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('null/empty destination never matches as a dest key', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    reconcile([])
+
+    // Placeholder with null destination
+    add({ title: 'Movie Null Dest', destination: null })
+    expect(pendingTasks()).toHaveLength(1)
+
+    // Real task also has null destination — only title should match
+    reconcile([realTask({ id: 'r1', title: 'Totally Different', destination: null })])
+    // destination is null on both, so dest match must be skipped; title doesn't match
+    expect(pendingTasks()).toHaveLength(1)
+  })
+
+  it('destination match is normalized: leading/trailing slashes and case ignored', () => {
+    const { add, reconcile, pendingTasks } = useOptimisticTasks()
+
+    reconcile([])
+
+    add({ title: 'Some Show', destination: '/Video/' })
+    expect(pendingTasks()).toHaveLength(1)
+
+    // Real task has same path, different slash style and case
+    reconcile([realTask({ id: 'r1', title: 'infohash-abc123', destination: 'video' })])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+})

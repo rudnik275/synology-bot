@@ -257,3 +257,99 @@ describe('ShowsTab — search field is always present', () => {
     expect(wrapper.find('[data-testid="search-input"]').exists()).toBe(true)
   })
 })
+
+// --- #209: per-image poster skeleton ---
+
+const SUBS_WITH_POSTER: SubscriptionView[] = [
+  {
+    id: 'sub-poster',
+    showId: 77,
+    title: 'Poster Show',
+    lastNotifiedEpisode: null,
+    poster: 'https://example.com/poster.jpg',
+    latestAiredEpisode: null,
+  },
+]
+
+const RESULTS_WITH_POSTER: ShowSearchResultView[] = [
+  { id: 7777, title: 'Poster Result', titleOriginal: null, poster: 'https://example.com/result.jpg', isSubscribed: false },
+]
+
+describe('ShowsTab — per-image poster skeleton (#209)', () => {
+  it('shows a skeleton while the subscription poster image is loading', async () => {
+    makeFetch({ subs: SUBS_WITH_POSTER })
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Before @load fires the skeleton should be visible
+    const skeleton = wrapper.find('[data-testid="poster-skeleton-sub-poster"]')
+    expect(skeleton.exists()).toBe(true)
+  })
+
+  it('hides the skeleton once the subscription poster image loads', async () => {
+    makeFetch({ subs: SUBS_WITH_POSTER })
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Trigger @load on the poster img
+    const img = wrapper.find('[data-testid="poster-img-sub-poster"]')
+    expect(img.exists()).toBe(true)
+    await img.trigger('load')
+
+    const skeleton = wrapper.find('[data-testid="poster-skeleton-sub-poster"]')
+    expect(skeleton.exists()).toBe(false)
+  })
+
+  it('hides the skeleton and shows the image when poster load errors', async () => {
+    makeFetch({ subs: SUBS_WITH_POSTER })
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Trigger @error on the poster img — skeleton should disappear
+    const img = wrapper.find('[data-testid="poster-img-sub-poster"]')
+    await img.trigger('error')
+
+    const skeleton = wrapper.find('[data-testid="poster-skeleton-sub-poster"]')
+    expect(skeleton.exists()).toBe(false)
+  })
+
+  it('shows a skeleton while a search result poster image is loading', async () => {
+    // Replace setTimeout with synchronous call to bypass the 300ms debounce
+    const realSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: () => void) => { fn(); return 0 }) as typeof setTimeout
+    makeFetch({ searchResults: RESULTS_WITH_POSTER })
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Enter search mode (query >= 2 chars triggers isSearchMode)
+    const input = wrapper.find('[data-testid="search-input"]')
+    await input.setValue('poster')
+    await flushPromises()
+
+    globalThis.setTimeout = realSetTimeout
+
+    const skeleton = wrapper.find('[data-testid="poster-skeleton-7777"]')
+    expect(skeleton.exists()).toBe(true)
+  })
+
+  it('hides skeleton once search result poster image loads', async () => {
+    const realSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: () => void) => { fn(); return 0 }) as typeof setTimeout
+    makeFetch({ searchResults: RESULTS_WITH_POSTER })
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    const input = wrapper.find('[data-testid="search-input"]')
+    await input.setValue('poster')
+    await flushPromises()
+
+    globalThis.setTimeout = realSetTimeout
+
+    const img = wrapper.find('[data-testid="poster-img-7777"]')
+    expect(img.exists()).toBe(true)
+    await img.trigger('load')
+
+    const skeleton = wrapper.find('[data-testid="poster-skeleton-7777"]')
+    expect(skeleton.exists()).toBe(false)
+  })
+})

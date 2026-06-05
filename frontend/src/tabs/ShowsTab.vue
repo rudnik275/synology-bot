@@ -22,6 +22,7 @@ import StickerBadge from '../components/ui/StickerBadge.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
 import SearchField from '../components/ui/SearchField.vue'
 import LoadingText from '../components/ui/LoadingText.vue'
+import Skeleton from '../components/ui/Skeleton.vue'
 
 const { subscriptions, loading: subsLoading, error: subsError, add, remove, refreshMetadata } = useSubscriptions()
 const { results: searchResults, loading: searchLoading, error: searchError, debouncedSearch } = useShowSearch()
@@ -30,6 +31,21 @@ const { data: showDetail, loading: detailLoading, error: detailError, load: load
 const query = ref('')
 const selectedShowId = ref<number | null>(null)
 const subscribing = ref(false)
+
+/**
+ * Tracks which poster images have finished loading (load or error).
+ * Key is a stable string identifier for each item (e.g. sub.id or result.id).
+ * Skeleton shows until the key is present in this set.
+ */
+const posterLoaded = ref(new Set<string>())
+
+function onPosterLoad(key: string): void {
+  posterLoaded.value = new Set(posterLoaded.value).add(key)
+}
+
+function onPosterError(key: string): void {
+  posterLoaded.value = new Set(posterLoaded.value).add(key)
+}
 
 // On open, kick a background backfill so pre-existing subs (no cached poster/
 // episode from before ADR 0009) self-fill within a couple seconds rather than
@@ -169,7 +185,22 @@ async function handleUnsubscribe(): Promise<void> {
           >
             <Card>
               <div class="show-row">
-                <img v-if="result.poster" :src="result.poster" class="show-thumb" :alt="result.title" />
+                <template v-if="result.poster">
+                  <Skeleton
+                    v-if="!posterLoaded.has(String(result.id))"
+                    :data-testid="`poster-skeleton-${result.id}`"
+                    class="show-thumb show-thumb-skeleton"
+                  />
+                  <img
+                    :data-testid="`poster-img-${result.id}`"
+                    :src="result.poster"
+                    class="show-thumb"
+                    :class="{ 'show-thumb--hidden': !posterLoaded.has(String(result.id)) }"
+                    :alt="result.title"
+                    @load="onPosterLoad(String(result.id))"
+                    @error="onPosterError(String(result.id))"
+                  />
+                </template>
                 <div v-else class="show-thumb-placeholder" aria-hidden="true" />
                 <div class="show-info">
                   <span class="show-title">{{ result.title }}</span>
@@ -215,7 +246,22 @@ async function handleUnsubscribe(): Promise<void> {
           >
             <Card>
               <div class="show-row">
-                <img v-if="sub.poster" :src="sub.poster" class="show-thumb" :alt="sub.title" />
+                <template v-if="sub.poster">
+                  <Skeleton
+                    v-if="!posterLoaded.has(sub.id)"
+                    :data-testid="`poster-skeleton-${sub.id}`"
+                    class="show-thumb show-thumb-skeleton"
+                  />
+                  <img
+                    :data-testid="`poster-img-${sub.id}`"
+                    :src="sub.poster"
+                    class="show-thumb"
+                    :class="{ 'show-thumb--hidden': !posterLoaded.has(sub.id) }"
+                    :alt="sub.title"
+                    @load="onPosterLoad(sub.id)"
+                    @error="onPosterError(sub.id)"
+                  />
+                </template>
                 <div v-else class="show-thumb-placeholder" aria-hidden="true" />
                 <div class="show-info">
                   <span class="show-title">{{ sub.title }}</span>
@@ -249,6 +295,16 @@ async function handleUnsubscribe(): Promise<void> {
   z-index: 10;
   background: var(--cream);
   padding: var(--space-1) 0 var(--space-2);
+}
+
+/*
+ * #210: Suppress the enlarged shadow-md on focus for the Shows search field.
+ * AddFlow's SearchField shows shadow-md to signal the history dropdown opening;
+ * here there's no dropdown, so the larger shadow reads as a phantom border.
+ * Keep the static shadow-sm (from SearchField base) — just don't enlarge it.
+ */
+.search-wrapper :deep(.search-field-input:focus) {
+  box-shadow: var(--shadow-sm);
 }
 
 
@@ -301,6 +357,20 @@ async function handleUnsubscribe(): Promise<void> {
   border-radius: 4px;
   border: var(--border);
   flex-shrink: 0;
+}
+
+/* Skeleton placeholder while the poster image is loading */
+.show-thumb-skeleton {
+  border: var(--border);
+}
+
+/* Hide the real <img> until it finishes loading; the skeleton sits underneath */
+.show-thumb--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .show-thumb-placeholder {

@@ -211,7 +211,7 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  right: 48px; /* leave room for Search button */
+  right: 0; /* spans the full SearchField width; the Search button is outside */
   background: var(--paper);
   border: var(--border-strong);
   border-radius: var(--radius);

@@ -132,6 +132,12 @@
 
 * {
   box-sizing: border-box;
+  /*
+   * iOS Safari fix: remove the default blue tap-highlight so our custom :active
+   * styles are not masked by the native overlay. This alone does not break any
+   * visual feedback — our .nb-pressable rules provide the Neo-Brutalist press.
+   */
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -195,7 +201,15 @@ body {
  * shadow set `--press` locally (e.g. 5px for --shadow-md, 4px for the FAB).
  * Disabled controls don't press.
  */
+/*
+ * iOS Safari requires cursor:pointer on non-native-interactive elements (divs,
+ * spans, etc.) for :active to fire on tap. Native <button> and <a> elements
+ * already qualify; anything else wearing .nb-pressable needs the declaration.
+ * Setting it on the class globally is safe — it matches existing per-component
+ * cursor:pointer rules and keeps the fix in one place (no component edits).
+ */
 .nb-pressable {
+  cursor: pointer;
   transition:
     transform var(--dur-press) var(--ease-mechanical),
     box-shadow var(--dur-press) var(--ease-mechanical);

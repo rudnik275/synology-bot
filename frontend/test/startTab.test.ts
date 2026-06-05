@@ -1,37 +1,23 @@
-import { describe, it, expect, mock } from 'bun:test'
-import { resolveStartTab } from '../src/startTab'
+// Deep-link → initial view resolution for the hub-and-spoke shell (ADR 0015).
+// A bare/unknown start param now lands on the HUB (not Downloads); a section
+// token boots directly into that section, bypassing the hub.
+import { describe, it, expect } from 'bun:test'
+import { resolveStartView } from '../src/startTab'
 
-describe('resolveStartTab', () => {
-  it('maps "downloads" to the downloads tab', () => {
-    expect(resolveStartTab('downloads')).toBe('downloads')
+describe('resolveStartView', () => {
+  it('maps "downloads" to the downloads section', () => {
+    expect(resolveStartView('downloads')).toBe('downloads')
   })
-  it('maps "nas" to the nas tab', () => {
-    expect(resolveStartTab('nas')).toBe('nas')
+  it('maps "nas" to the nas section', () => {
+    expect(resolveStartView('nas')).toBe('nas')
   })
-  it('maps "shows" to the shows tab', () => {
-    expect(resolveStartTab('shows')).toBe('shows')
+  it('maps "shows" to the shows section', () => {
+    expect(resolveStartView('shows')).toBe('shows')
   })
-  it('falls back to downloads for an unknown token', () => {
-    expect(resolveStartTab('wibble')).toBe('downloads')
+  it('falls back to the hub for an unknown token', () => {
+    expect(resolveStartView('wibble')).toBe('hub')
   })
-  it('falls back to downloads for an empty token', () => {
-    expect(resolveStartTab('')).toBe('downloads')
-  })
-})
-
-describe('App boot deep-link', () => {
-  it('opens the tab named by the start param on mount', async () => {
-    // Stub the resolved start param so the shell boots on the NAS tab. App.vue
-    // computes its initial tab from telegram.startParam via resolveStartTab.
-    mock.module('../src/telegram', () => ({
-      startParam: 'nas',
-      initData: '',
-      inTelegram: false,
-      initTelegram: () => {},
-    }))
-    const { mount } = await import('@vue/test-utils')
-    const App = (await import('../src/App.vue')).default
-    const wrapper = mount(App)
-    expect(wrapper.find('nav button[aria-current="page"]').text()).toBe('NAS')
+  it('falls back to the hub for an empty token (default cold open)', () => {
+    expect(resolveStartView('')).toBe('hub')
   })
 })

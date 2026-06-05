@@ -38,6 +38,13 @@ const props = withDefaults(defineProps<{ torrentToken?: string }>(), {
   torrentToken: () => deepLinkToken,
 })
 
+// `owns-back` tells the App shell when the wizard sheet owns the navigation
+// surface. While the sheet is open, ALL back semantics belong to it (step→step
+// via the native BackButton, or the sheet's close ✕ on the first step); the
+// shell must NOT also pop its section→hub level on the same press (ADR 0015 nav
+// coordination, S1 #222).
+const emit = defineEmits<{ 'owns-back': [boolean] }>()
+
 const { prefersReducedMotion } = usePrefersReducedMotion()
 const { lastFolder, recordRecent } = useFolderShortcuts()
 const { history: searchHistory, recordQuery, clearHistory: clearSearchHistory } = useSearchHistory()
@@ -220,6 +227,11 @@ watch(open, (isOpen) => {
   if (isOpen) showTgBackButton()
   else hideTgBackButton()
 })
+
+// Mirror sheet-open state to the shell (see the `owns-back` emit above). Emitted
+// for every open/close so the shell can re-enable its section→hub back the
+// instant the wizard closes.
+watch(open, (isOpen) => emit('owns-back', isOpen))
 
 // --- Inspect-on-Confirm (#123) ---
 // The inspect→commit state machine lives in useInspectCommit (#171). This

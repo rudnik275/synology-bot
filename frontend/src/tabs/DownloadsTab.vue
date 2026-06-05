@@ -336,7 +336,7 @@ function qualityChips(task: TaskView): string[] {
 <style scoped>
 .downloads-tab {
   padding: var(--space-4);
-  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+  /* No bottom tab bar anymore (ADR 0015): the shell owns the safe-area clearance. */
 }
 
 .task-list {

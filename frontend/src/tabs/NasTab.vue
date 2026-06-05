@@ -6,7 +6,7 @@
 // a CPU+RAM bento, then disks and top-processes. Severity (ok/warn/bad) is
 // mapped to the green/amber/red triad — yellow stays reserved for actions, so
 // a "warn" never reads as a button (#101 accent split).
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import Card from '../components/ui/Card.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
@@ -25,14 +25,6 @@ import type { Tone } from '../components/ui/tones'
 import { formatBytes, formatPct } from '../format'
 
 const { data, loading, error } = useHealth()
-
-// Heartbeat: every successful poll reassigns `data`, so we bump a counter and
-// key the live-dot off it — remounting replays its one-shot pulse animation.
-// This is the only visible cue that the 15 s polling loop is actually running.
-const pulse = ref(0)
-watch(data, () => {
-  pulse.value++
-})
 
 /** Severity → accent tone. The traffic-light triad; warn is amber, not yellow. */
 const TONE: Record<Severity, Tone> = { ok: 'green', warn: 'orange', bad: 'red' }
@@ -129,13 +121,7 @@ const ramDonut = computed(() => {
 
   <!-- Data present (possibly partial) -->
   <div v-else-if="data" class="nas-tab">
-    <div class="nas-head">
-      <ScreenHeader title="NAS" subtitle="Состояние" />
-      <!-- key off the poll counter so the dot remounts → replays its pulse -->
-      <span :key="pulse" class="live" aria-hidden="true">
-        <span class="live-dot"></span>онлайн
-      </span>
-    </div>
+    <ScreenHeader title="NAS" subtitle="Состояние" />
 
     <!-- ── Storage hero (busiest volume) ── -->
     <!-- "ok" reads as a plain paper card — only the badge carries the colour.
@@ -267,52 +253,9 @@ const ramDonut = computed(() => {
   opacity: 0.6;
 }
 
-/* ── Header + live heartbeat ── */
-.nas-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-.live {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  margin-top: 2px;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.45;
-}
-.live-dot {
-  --pulse-ink: rgba(9, 9, 11, 0.35); /* ink-alpha for pulse ring start — local one-off */
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ink);
-  /* one-shot pulse on (re)mount — replayed each poll via the :key bump */
-  animation: live-pulse var(--dur-enter) var(--ease-out);
-}
-@keyframes live-pulse {
-  0% {
-    transform: scale(0.4);
-    box-shadow: 0 0 0 0 var(--pulse-ink);
-  }
-  60% {
-    transform: scale(1.25);
-    box-shadow: 0 0 0 6px transparent;
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
 /* ── Section heads + labels ── */
 .section-head {
-  margin: var(--space-3) 0 var(--space-2);
+  margin: var(--space-3) 0 var(--space-1);
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   text-transform: uppercase;

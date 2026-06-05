@@ -75,3 +75,38 @@ describe('buildFileTree', () => {
     expect(season.fileIndices.sort()).toEqual([0, 1])
   })
 })
+
+// --- rootFileIndices: select-all for root-level files (#217) ---
+
+describe('buildFileTree — rootFileIndices', () => {
+  it('is empty when there are no root-level files (all files are in subfolders)', () => {
+    // files fixture has a shared root folder → crumb collapses it; after collapse,
+    // the effective root has two sub-folders and one loose file (poster.jpg).
+    // BUT that loose file (index 3) IS at the effective root level.
+    // Use a fixture where every item is inside a sub-folder to test the empty case.
+    const noRoot: InspectFile[] = [
+      { index: 0, path: 'Show/S01/ep1.mkv', size: 1 },
+      { index: 1, path: 'Show/S01/ep2.mkv', size: 2 },
+    ]
+    const tree = buildFileTree(noRoot)
+    // After crumb collapse of 'Show', effective root has one folder 'S01' and no loose files.
+    expect(tree.rootFileIndices).toEqual([])
+  })
+
+  it('lists indices of files that sit directly at the (effective) root level', () => {
+    // After crumb collapse: effective root has Season 2 folder, Extras folder, poster.jpg
+    const tree = buildFileTree(files)
+    // poster.jpg (index 3) is the only root-level file.
+    expect(tree.rootFileIndices).toEqual([3])
+  })
+
+  it('lists all indices when every file is at root level (no sub-folders, no single-root collapse)', () => {
+    const flat: InspectFile[] = [
+      { index: 0, path: 'a.mkv', size: 1 },
+      { index: 1, path: 'b.mkv', size: 2 },
+    ]
+    const tree = buildFileTree(flat)
+    expect(tree.rootCrumb).toBeNull()
+    expect(tree.rootFileIndices.sort()).toEqual([0, 1])
+  })
+})

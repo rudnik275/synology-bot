@@ -73,6 +73,13 @@ commit) or a `listId` (commit only). This makes the line-below "client-side
 parsing rejected" tradeoff moot — the parse happens **server-side** (no browser
 dependency) and a backend commit call was always required regardless.
 
+## Update (2026-06-05): in-place mutation convention + reconcile by identity
+
+Two clarifications from the G3 grill (#202, #218):
+
+- **No full-page reload on a mutation.** A user mutation (subscribe/unsubscribe, add) updates state **in place** — patch only the changed field — and never re-enters a full-page loading state. Loading skeletons are **first-load only**. (#218: `handleSubscribe` re-ran `loadDetail`, whose `detailLoading` swapped the whole `ShowDetail` for a loader → a visible flicker. Fix: await the API, then patch `isSubscribed` in place.)
+- **Reconcile by identity, not count.** This ADR (above) describes retiring placeholders by *filename match*; the shipped `useOptimisticTasks.reconcile` actually retires by *count* — each newly-seen real id retires the oldest placeholder. That mis-binds when two adds race or a finished task vanishes in the same poll tick. Reconcile should match a placeholder to its real task by **identity (infohash/title)**. (#202 is otherwise a path-coverage trace: the optimistic placeholder must fire on **all** add paths — in-app search, `.torrent` handoff, URI handoff — not only some.)
+
 ## Alternatives considered
 
 - **Block the UI until DSM registers the real task.** Rejected — the three-call sequence takes 1–3 seconds on a LAN NAS and longer over a tunnel; blocking with a spinner gives no progress signal and makes the add feel unreliable. A placeholder card is immediate and communicates intent.

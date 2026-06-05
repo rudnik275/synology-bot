@@ -193,7 +193,7 @@ async function handleUnsubscribe(): Promise<void> {
             </svg>
           </template>
         </EmptyState>
-        <TransitionGroup v-else tag="ul" name="show-list" class="show-list" appear>
+        <TransitionGroup v-else tag="ul" name="show-list" class="show-list">
           <li
             v-for="(result, index) in searchResults"
             :key="result.id"
@@ -267,7 +267,7 @@ async function handleUnsubscribe(): Promise<void> {
           </template>
         </EmptyState>
 
-        <TransitionGroup v-else tag="ul" name="show-list" class="show-list" appear>
+        <TransitionGroup v-else tag="ul" name="show-list" class="show-list">
           <li
             v-for="(sub, index) in subscriptions"
             :key="sub.id"
@@ -322,6 +322,9 @@ async function handleUnsubscribe(): Promise<void> {
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-4);
+  /* #18: contain the absolutely-positioned leave-animation items so they
+     cannot extend the page width and cause a horizontal scrollbar. */
+  overflow-x: clip;
 }
 
 .search-wrapper {
@@ -330,6 +333,11 @@ async function handleUnsubscribe(): Promise<void> {
   z-index: 10;
   background: var(--cream);
   padding: var(--space-1) 0 var(--space-2);
+  /* #19: compensate for the parent's horizontal padding so the sticky
+     background spans the full viewport width. Content scrolling under
+     the bar no longer peeks out at the sides. */
+  margin-inline: calc(-1 * var(--space-4));
+  padding-inline: var(--space-4);
 }
 
 /*
@@ -382,6 +390,10 @@ async function handleUnsubscribe(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  /* #18: position: relative contains the absolutely-positioned leave-animation
+     items (.show-list-leave-active) inside the list bounds, preventing them
+     from causing horizontal scroll by escaping the parent's overflow-x: clip. */
+  position: relative;
 }
 
 .show-item {

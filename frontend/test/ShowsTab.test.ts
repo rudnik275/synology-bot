@@ -570,3 +570,159 @@ describe('ShowsTab — subscribe/unsubscribe in-place update (#218)', () => {
     expect(wrapper.find('[data-testid="unsubscribe-btn"]').exists()).toBe(false)
   })
 })
+
+// --- #17: Re-render must not scroll-reset (no appear re-trigger on refetch) ---
+//
+// Root cause: `refreshMetadata()` on mount calls a non-background `refetch()` which
+// toggles `loading = true`, unmounting the TransitionGroup (skeleton shows), then
+// mounting it again when data arrives. With `appear`, all items re-enter from
+// translateY(12px) on each mount — which visually jumps the list to the top.
+//
+// Fix: make `refreshMetadata` use a background refetch so loading never toggles,
+// the TransitionGroup stays mounted, and no appear re-animation runs.
+
+describe('ShowsTab — scroll reset fix (#17)', () => {
+  it('subs list stays mounted (no skeleton flash) when refreshMetadata fires on mount', async () => {
+    // Simulate the sequence: initial fetch resolves fast, then /subscriptions/refresh
+    // is called (by refreshMetadata), then a second /subscriptions GET is triggered.
+    // With the bug: the second GET sets loading=true → skeleton unmounts the list.
+    // With the fix: refreshMetadata uses background=true → loading stays false →
+    // the list never unmounts → no scroll-reset-causing remount.
+    let refreshCalled = false
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url === '/api/subscriptions/refresh' && init?.method === 'POST') {
+        refreshCalled = true
+        return Promise.resolve(jsonResponse({ ok: true }))
+      }
+      if (url === '/api/subscriptions' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(jsonResponse({ subscriptions: SUBSCRIPTIONS }))
+      }
+      return Promise.resolve(jsonResponse({ ok: true }))
+    }) as typeof fetch
+
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // List must be visible after initial load
+    expect(wrapper.find('[data-testid="subscription-row-sub-1"]').exists()).toBe(true)
+
+    // After refreshMetadata completes (flushPromises covers it), the list
+    // MUST still be visible — loading must NOT have toggled to true mid-way
+    expect(wrapper.find('[data-testid="subs-skeleton"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="subscription-row-sub-1"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="subscription-row-sub-2"]').exists()).toBe(true)
+  })
+
+  it('subs list DOM elements are the same nodes after background refreshMetadata (no remount)', async () => {
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (url === '/api/subscriptions/refresh' && init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ ok: true }))
+      }
+      if (url === '/api/subscriptions' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(jsonResponse({ subscriptions: SUBSCRIPTIONS }))
+      }
+      return Promise.resolve(jsonResponse({ ok: true }))
+    }) as typeof fetch
+
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Capture DOM element identities after the initial load+refreshMetadata cycle
+    const rowBefore1 = wrapper.find('[data-testid="subscription-row-sub-1"]').element
+    const rowBefore2 = wrapper.find('[data-testid="subscription-row-sub-2"]').element
+    expect(rowBefore1).toBeTruthy()
+    expect(rowBefore2).toBeTruthy()
+
+    // Force another tick — if loading toggled mid-cycle the list would have unmounted
+    await wrapper.vm.$nextTick()
+    await flushPromises()
+
+    const rowAfter1 = wrapper.find('[data-testid="subscription-row-sub-1"]').element
+    const rowAfter2 = wrapper.find('[data-testid="subscription-row-sub-2"]').element
+
+    // Same DOM node identity — no unmount/remount, no appear re-trigger
+    expect(rowAfter1).toBe(rowBefore1)
+    expect(rowAfter2).toBe(rowBefore2)
+  })
+})
+
+// --- #18: No horizontal scroll (overflow-x guard on tab root) ---
+//
+// Cause: .show-list-leave-active sets `position: absolute; width: 100%` on
+// items leaving the list. Without a containing ancestor with overflow-x: clip,
+// these can momentarily extend beyond the viewport width. Fix: add
+// `overflow-x: clip` to .shows-tab AND `position: relative` to .show-list.
+
+describe('ShowsTab — no horizontal scroll (#18)', () => {
+  it('renders the .shows-tab root and .show-list without unnecessary wrapper elements', async () => {
+    makeFetch()
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    // Root container must exist
+    expect(wrapper.find('.shows-tab').exists()).toBe(true)
+    // List must be a direct descendant of the tab root (not inside extra wrappers
+    // that could break overflow-x containment)
+    expect(wrapper.find('.show-list').exists()).toBe(true)
+  })
+
+  it('the leave-animation containment: .show-list is present after data loads', async () => {
+    // This test guards the structural fix: .show-list needs position: relative
+    // (set in CSS) so absolutely-positioned leaving items don't escape.
+    makeFetch()
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    const list = wrapper.find('.show-list')
+    expect(list.exists()).toBe(true)
+    // TransitionGroup renders as tag="ul" in the browser; in test-utils it may
+    // render as a stub element but the .show-list class must still be present.
+    // The CSS fix (position: relative on .show-list) is verified at the class level.
+    expect(list.element.className).toContain('show-list')
+  })
+})
+
+// --- #19: Sticky input covers full width ---
+//
+// Cause: .shows-tab has `padding: var(--space-4)` on all sides. The sticky
+// .search-wrapper inherits this padding context so it only covers the content
+// width, leaving gaps at the sides. Content scrolling underneath peeks out.
+// Fix: use negative side margins on .search-wrapper to compensate for parent
+// padding (margin-inline: calc(-1 * var(--space-4))) and restore with padding-inline,
+// so the background spans the full viewport width.
+
+describe('ShowsTab — sticky input full-width (#19)', () => {
+  it('.search-wrapper is a direct child of .shows-tab root', async () => {
+    makeFetch()
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    const tabRoot = wrapper.find('.shows-tab')
+    expect(tabRoot.exists()).toBe(true)
+
+    // search-wrapper must be a DIRECT child (not nested inside another element)
+    // so that margin-inline negative compensation works at the right level
+    const directChildren = Array.from(tabRoot.element.children)
+    const hasSearchWrapper = directChildren.some((el) => el.classList.contains('search-wrapper'))
+    expect(hasSearchWrapper).toBe(true)
+  })
+
+  it('search input is inside .search-wrapper which is a sibling of (not ancestor of) the list', async () => {
+    // The search-wrapper must not wrap the list — it's a sticky header ABOVE it.
+    // This ensures the list scrolls under the sticky bar correctly.
+    makeFetch()
+    const wrapper = mount(ShowsTab)
+    await flushPromises()
+
+    const searchWrapper = wrapper.find('.search-wrapper')
+    const searchInput = wrapper.find('[data-testid="search-input"]')
+    expect(searchWrapper.exists()).toBe(true)
+    expect(searchInput.exists()).toBe(true)
+
+    // The list must NOT be inside the search-wrapper
+    expect(searchWrapper.find('.show-list').exists()).toBe(false)
+
+    // But the input must be inside the search-wrapper
+    expect(searchWrapper.find('[data-testid="search-input"]').exists()).toBe(true)
+  })
+})

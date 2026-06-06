@@ -14,6 +14,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import HomeHub from '../src/components/HomeHub.vue'
 import Card from '../src/components/ui/Card.vue'
+import RingGauge from '../src/components/ui/RingGauge.vue'
 
 const realFetch = globalThis.fetch
 afterEach(() => {
@@ -322,76 +323,83 @@ describe('Card — colored cap border-radius (#250 fix 1)', () => {
   })
 })
 
-// Fix #2: Hub horizontal scroll — overflow-x: clip backstop on .hub
-// We verify the .hub element has inline style or CSS class that enforces overflow containment.
-// Since the fix is applied via scoped CSS (not inline style), we check the class exists
-// and the rendered element is the hub root. The overflow-x:clip rule lives in the CSS.
-describe('HomeHub — no-horizontal-scroll backstop on .hub (#250 fix 2)', () => {
-  it('hub root element has class "hub" (overflow-x:clip backstop applied via CSS)', async () => {
+// ── Бенто layout structure ────────────────────────────────────────────────────
+// The redesign replaces the equal-height 3-stack with an asymmetric grid:
+// a wide Downloads hero (full-width) + a NAS ring tile + a Shows count tile.
+
+describe('HomeHub — Бенто layout structure', () => {
+  it('renders three tiles in a .bento grid under the .hub root', async () => {
     stubFetch()
     const wrapper = mount(HomeHub)
     await flushPromises()
-    // The .hub class must be present on the root — the CSS fix attaches overflow-x:clip to it.
+
     expect(wrapper.find('.hub').exists()).toBe(true)
+    expect(wrapper.find('.bento').exists()).toBe(true)
+    expect(wrapper.findAll('.tile').length).toBe(3)
+    // Downloads is the full-width hero tile.
+    expect(wrapper.find('.tile--downloads').exists()).toBe(true)
   })
 
-  it('hub root padding accounts for shadow bleed (16px = var(--space-4), clears 5px shadow)', async () => {
-    // Structural: .hub is the root element — padding is set via CSS token var(--space-4)=16px.
-    // This test documents the fix: padding ≥ shadow offset (5px) so shadow doesn't get clipped.
+  it('NAS and Shows tiles carry their .tile-label headings', async () => {
     stubFetch()
     const wrapper = mount(HomeHub)
     await flushPromises()
-    const hub = wrapper.find('.hub')
-    expect(hub.exists()).toBe(true)
-    // The hub-card class must be present on each card (hub-card carries the shadow).
-    const cards = wrapper.findAll('.hub-card')
-    expect(cards.length).toBe(3)
+
+    expect(wrapper.find('[data-testid="hub-row-nas"]').find('.tile-label').text()).toBe('NAS')
+    expect(wrapper.find('[data-testid="hub-row-shows"]').find('.tile-label').text()).toBe('Шоу')
+  })
+
+  it('Downloads hero label reads "загрузки активны"', async () => {
+    stubFetch()
+    const wrapper = mount(HomeHub)
+    await flushPromises()
+
+    const label = wrapper.find('[data-testid="hub-row-downloads"]').find('.dl-label')
+    expect(label.exists()).toBe(true)
+    expect(label.text().toLowerCase()).toContain('загрузки')
+  })
+
+  it('NAS tile renders a RingGauge of the busiest volume', async () => {
+    stubFetch()
+    const wrapper = mount(HomeHub)
+    await flushPromises()
+
+    const gauge = wrapper.find('[data-testid="hub-row-nas"]').findComponent(RingGauge)
+    expect(gauge.exists()).toBe(true)
+    expect(gauge.props('value')).toBe(68)
   })
 })
 
-// Fix #3: Hub block titles emphasis — card-label reads as primary heading
-// Assert the card-label element exists with the correct class and check that
-// the style in the component reflects the updated tokens (fs-md/fs-lg + opacity:1).
-describe('HomeHub — card-label reads as primary heading (#250 fix 3)', () => {
-  it('each hub row has a .card-label element', async () => {
-    stubFetch()
+describe('HomeHub — Downloads hero task list', () => {
+  it('lists up to 3 active tasks and summarises the rest as "+N ещё"', async () => {
+    stubFetch({
+      tasks: {
+        tasks: Array.from({ length: 5 }, (_, i) => ({
+          id: `t${i}`,
+          title: `Task ${i}`,
+          status: 'downloading',
+          sizeBytes: 1_000_000_000,
+          downloadedBytes: 500_000_000,
+          speedBytesPerSec: (5 - i) * 1_000_000,
+          pct: 50,
+          destination: '/downloads',
+        })),
+      },
+    })
     const wrapper = mount(HomeHub)
     await flushPromises()
 
-    const labels = wrapper.findAll('.card-label')
-    // Three cards, each with one label
-    expect(labels.length).toBe(3)
+    const row = wrapper.find('[data-testid="hub-row-downloads"]')
+    expect(row.findAll('.dl-row').length).toBe(3)
+    expect(row.text()).toContain('+2 ещё')
   })
 
-  it('downloads card-label text is ЗАГРУЗКИ (uppercase)', async () => {
-    stubFetch()
+  it('shows the empty state when there are no active tasks', async () => {
+    stubFetch({ tasks: { tasks: [] } })
     const wrapper = mount(HomeHub)
     await flushPromises()
 
-    const downloadsRow = wrapper.find('[data-testid="hub-row-downloads"]')
-    const label = downloadsRow.find('.card-label')
-    expect(label.exists()).toBe(true)
-    // text is uppercase via CSS text-transform; DOM text is the source string
-    expect(label.text()).toBe('Загрузки')
-  })
-
-  it('nas card-label text is NAS', async () => {
-    stubFetch()
-    const wrapper = mount(HomeHub)
-    await flushPromises()
-
-    const nasRow = wrapper.find('[data-testid="hub-row-nas"]')
-    const label = nasRow.find('.card-label')
-    expect(label.text()).toBe('NAS')
-  })
-
-  it('shows card-label text is ШОУ (Шоу)', async () => {
-    stubFetch()
-    const wrapper = mount(HomeHub)
-    await flushPromises()
-
-    const showsRow = wrapper.find('[data-testid="hub-row-shows"]')
-    const label = showsRow.find('.card-label')
-    expect(label.text()).toBe('Шоу')
+    const row = wrapper.find('[data-testid="hub-row-downloads"]')
+    expect(row.text()).toContain('Нет активных загрузок')
   })
 })

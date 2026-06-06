@@ -8,6 +8,7 @@ import EmptyState from '../src/components/ui/EmptyState.vue'
 import Sheet from '../src/components/ui/Sheet.vue'
 import Button from '../src/components/ui/Button.vue'
 import Donut from '../src/components/ui/Donut.vue'
+import RingGauge from '../src/components/ui/RingGauge.vue'
 
 describe('ProgressBar', () => {
   it('clamps the value into 0–100 and reports it via aria', () => {
@@ -114,5 +115,21 @@ describe('Donut', () => {
     expect(bg).toContain('0% 50%')
     expect(bg).toContain('50% 80%')
     expect(bg).toContain('80% 100%')
+  })
+})
+
+describe('RingGauge', () => {
+  it('renders the clamped value with a conic sweep at that percentage', () => {
+    const wrapper = mount(RingGauge, { props: { value: 142, tone: 'green' } })
+    expect(wrapper.find('.ring').text()).toContain('100')
+    const bg = wrapper.get('.ring').attributes('style') ?? ''
+    expect(bg).toContain('conic-gradient')
+    expect(bg).toContain('100%')
+  })
+
+  it('renders an em-dash and "Нет данных" label when value is null', () => {
+    const wrapper = mount(RingGauge, { props: { value: null } })
+    expect(wrapper.find('.ring').text()).toContain('—')
+    expect(wrapper.get('.ring').attributes('aria-label')).toBe('Нет данных')
   })
 })

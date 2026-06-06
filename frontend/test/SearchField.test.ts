@@ -10,7 +10,15 @@
 //   - NO baked-in focus/blur logic — consumers wire their own behavior via events
 import { describe, it, expect } from 'bun:test'
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import SearchField from '../src/components/ui/SearchField.vue'
+
+// SFC source for CSS-recipe assertions (happy-dom can't apply <style>).
+const sfcSource = readFileSync(
+  fileURLToPath(new URL('../src/components/ui/SearchField.vue', import.meta.url)),
+  'utf8',
+)
 
 describe('SearchField', () => {
   it('renders a native input element', () => {
@@ -83,5 +91,30 @@ describe('SearchField', () => {
     expect(wrapper.find('input').exists()).toBe(true)
     // The component root is not the input itself
     expect(wrapper.element.tagName).not.toBe('INPUT')
+  })
+
+  // ── bare mode (segmented-frame redesign) ──────────────────────────────────
+  // `bare` strips the input's own border/shadow/radius/bg so it can sit INSIDE
+  // an outer frame (the add-search segmented bar). Default false keeps the
+  // standalone recipe (ShowsTab's pinned field stays unchanged).
+  describe('bare mode', () => {
+    it('does NOT apply the bare class by default', () => {
+      const wrapper = mount(SearchField, { props: { modelValue: '' } })
+      expect(wrapper.find('input').classes()).not.toContain('search-field-input--bare')
+    })
+
+    it('applies the bare class to the input when bare is set', () => {
+      const wrapper = mount(SearchField, { props: { modelValue: '', bare: true } })
+      expect(wrapper.find('input').classes()).toContain('search-field-input--bare')
+    })
+
+    it('CSS: the bare input recipe drops its own border / background / shadow', () => {
+      const ruleMatch = sfcSource.match(/\.search-field-input--bare\s*\{([^}]*)\}/)
+      expect(ruleMatch).not.toBeNull()
+      const decls = ruleMatch![1].replace(/\s+/g, ' ').trim()
+      expect(decls).toContain('border: none')
+      expect(decls).toContain('background: transparent')
+      expect(decls).toContain('box-shadow: none')
+    })
   })
 })

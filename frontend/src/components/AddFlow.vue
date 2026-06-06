@@ -410,7 +410,18 @@ function create(): void {
   // the download appears the instant the sheet closes (the poll is every 3 s and
   // DSM takes a few seconds to register). useTasks retires it when the real task
   // arrives; rolled back in doAdd's .catch if the add fails.
-  const optimisticId = optimistic.add({ title, destination: dest })
+  // Carry the bits we already know so the pending card shows real info (size +
+  // quality chips) and skeletons only the rest. `selectedSize` is 0 for magnets /
+  // un-inspected sources; the result chips exist only in search mode.
+  const result = selectedResult.value
+  const optimisticId = optimistic.add({
+    title,
+    destination: dest,
+    sizeBytes: selectedSize.value,
+    year: result?.year,
+    quality: result?.quality,
+    languages: result?.languages,
+  })
   if (dest) recordRecent(dest)
 
   // The commit handle is consumed by doAdd — null it BEFORE resetForm so resetForm's

@@ -217,6 +217,15 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   min-width: 0; /* prevent flex child from overflowing its container (#10) */
 }
 
+/* SearchField sets inheritAttrs:false, so the `.search-row-field` class above
+   lands on the inner <input>, NOT the component root — which left the root sized
+   to content and the input never filled the row. Grow the ROOT so the input
+   expands to all available horizontal space (round-2). */
+.search-row :deep(.search-field-root) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* Layout only — the recipe lives in the shared <Button variant="ink">. */
 .search-btn {
   white-space: nowrap;

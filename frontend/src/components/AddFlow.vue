@@ -574,8 +574,8 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
   flex-direction: column;
   gap: var(--space-2);
   padding-top: var(--space-3);
-  border-top: var(--border);
-  margin-top: var(--space-3);
+  /* No top divider (round-2): the content above is already a bordered card, so the
+     separator line read as meaningless — and nothing scrolls under it on Confirm. */
   flex-shrink: 0;
   /* Bottom room so the actions' 5px offset shadow isn't clipped by the
      sheet-body's overflow:hidden; env() stacks the device safe-area on top. */

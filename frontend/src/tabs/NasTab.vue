@@ -256,7 +256,9 @@ const ramDonut = computed(() => {
       </Card>
 
       <p class="section-head">Топ RAM</p>
-      <Card v-if="ramDonut">
+      <!-- flat (border, no shadow) to match the other lower sections — the shadow
+           is reserved for the storage hero now (round-2: consistency, option b). -->
+      <Card v-if="ramDonut" variant="flat">
         <Donut
           :segments="ramDonut.segments"
           :center-value="ramDonut.centerValue"

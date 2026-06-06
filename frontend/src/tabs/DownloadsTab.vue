@@ -8,15 +8,14 @@
 //       downloading / waiting / finishing → «Пауза» (primary/yellow)
 //       paused                           → «Продолжить» (primary/yellow)
 //       finished / seeding / error       → no primary; just the delete action
-//   • Delete is a direct trash-icon button (no overflow ⋯ menu): one tap opens
-//     the confirmation dialog. The old ⋯ menu only ever held Delete, so the
-//     extra reveal step was pure indirection and has been removed.
+//   • Delete is a direct trash-icon button: one tap deletes straight away (no
+//     confirm popup) — the button shows a spinner + is disabled while in-flight,
+//     then the card leaves the list on the refetch.
 //   • Quality chips (year / resolution / codec / languages) from #117 under title.
 //   • Bigger % readout, quieter meta.
 //   • Elevation tiers (#101 D) preserved: active+error → raised, settled → flat.
 import { ref, computed, watch } from 'vue'
 import Card from '../components/ui/Card.vue'
-import Button from '../components/ui/Button.vue'
 import Chip from '../components/ui/Chip.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
@@ -47,36 +46,20 @@ const { pendingTasks, reconcile } = useOptimisticTasks()
 const pending = computed(() => pendingTasks())
 watch(tasks, (real) => reconcile(real))
 
-// ── Delete confirmation state ────────────────────────────────────────────────
-// Task pending delete confirmation (set by the trash-icon button, cleared on
-// cancel/confirm). The dialog is the only guard before the destructive action.
-const confirmDeleteId = ref<string | null>(null)
-
-// Task whose delete is in-flight (#269 task 10). While set, the confirm dialog
-// shows a «Удаляю…» loader with the buttons gone, and stays open until the API
-// resolves — the task then leaves the list on the refetch. Without this the
-// dialog closed instantly and the card sat there for the 5–10 s the delete took.
+// ── Delete state ──────────────────────────────────────────────────────────────
+// The task whose delete is in-flight. No confirmation popup (round-2 feedback):
+// tapping the trash button deletes straight away — the button shows a spinner and
+// is disabled while the API call runs, then the task leaves the list on the
+// refetch. The previous modal that lingered until the delete resolved is gone.
 const deletingId = ref<string | null>(null)
 
-function requestDelete(id: string): void {
-  confirmDeleteId.value = id
-}
-
-function cancelDelete(): void {
-  // Can't dismiss mid-delete — the action is already committed.
+async function onDelete(id: string): Promise<void> {
   if (deletingId.value !== null) return
-  confirmDeleteId.value = null
-}
-
-async function confirmDelete(): Promise<void> {
-  if (!confirmDeleteId.value || deletingId.value !== null) return
-  const id = confirmDeleteId.value
   deletingId.value = id
   try {
     await deleteTask(id)
   } finally {
     deletingId.value = null
-    confirmDeleteId.value = null
   }
 }
 
@@ -284,20 +267,18 @@ function qualityChips(task: TaskView): string[] {
           />
         </div>
 
-        <!-- Meta row: bigger % + quieter speed/size -->
-        <div class="task-meta">
-          <span class="meta-pct">{{ task.pct }}%</span>
-          <span v-if="isActive(task.status)" class="meta-speed">{{ formatSpeed(task.speedBytesPerSec) }}</span>
-          <span class="meta-size">{{ formatBytes(task.downloadedBytes) }} / {{ formatBytes(task.sizeBytes) }}</span>
-          <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
-        </div>
+        <!-- Footer: meta + actions on ONE row to save vertical space (round-2). -->
+        <div class="task-footer">
+          <div class="task-meta">
+            <span class="meta-pct">{{ task.pct }}%</span>
+            <span v-if="isActive(task.status)" class="meta-speed">{{ formatSpeed(task.speedBytesPerSec) }}</span>
+            <span class="meta-size">{{ formatBytes(task.downloadedBytes) }} / {{ formatBytes(task.sizeBytes) }}</span>
+            <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
+          </div>
 
-        <!-- Action row: pause/resume + delete as ONE right-aligned segmented
-             group (#267 task 01) — instead of pause far-left / delete far-right. -->
-        <div class="task-actions">
+          <!-- pause/resume + delete as ONE segmented group, to the right of the meta. -->
           <div class="action-group">
-            <!-- Primary action: icon-only pause/resume. Pause glyph while
-                 downloading/waiting/finishing; play glyph while paused. -->
+            <!-- Primary action: icon-only pause/resume. -->
             <button
               v-if="hasPrimaryAction(task.status)"
               type="button"
@@ -307,27 +288,26 @@ function qualityChips(task: TaskView): string[] {
               :disabled="deletingId === task.id"
               @click="onPrimary(task)"
             >
-              <!-- Pause glyph: two vertical bars -->
               <svg v-if="!isPaused(task.status)" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <rect x="6" y="4" width="4" height="16" rx="1" />
                 <rect x="14" y="4" width="4" height="16" rx="1" />
               </svg>
-              <!-- Play/resume glyph: right-pointing triangle -->
               <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <polygon points="5,3 19,12 5,21" />
               </svg>
             </button>
 
-            <!-- Delete: one tap opens the confirm dialog. -->
+            <!-- Delete: one tap deletes (no popup). Spinner + disabled while in-flight. -->
             <button
               type="button"
               class="action-seg action-seg--delete"
               :aria-label="`Удалить: ${task.title}`"
               :data-testid="`btn-delete-${task.id}`"
               :disabled="deletingId === task.id"
-              @click.stop="requestDelete(task.id)"
+              @click.stop="onDelete(task.id)"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <Spinner v-if="deletingId === task.id" :size="18" aria-hidden="true" />
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M3 6h18" />
                 <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
                 <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
@@ -339,29 +319,6 @@ function qualityChips(task: TaskView): string[] {
         </div>
       </Card>
     </TransitionGroup>
-
-    <!-- Delete confirmation dialog (destructive — kept per spec) -->
-    <Teleport to="body">
-      <Transition name="confirm-pop">
-        <div v-if="confirmDeleteId !== null" class="confirm-backdrop" @click.self="cancelDelete">
-          <div class="confirm-dialog" role="dialog" aria-modal="true" aria-label="Confirm delete">
-            <p class="confirm-message">
-              {{ deletingId !== null ? 'Удаляю задачу…' : 'Удалить задачу? Это действие нельзя отменить.' }}
-            </p>
-            <!-- While the delete is in-flight: a loader replaces the buttons and the
-                 dialog stays open until the task actually leaves the list (#269 task 10). -->
-            <div v-if="deletingId !== null" class="confirm-deleting" data-testid="delete-progress" aria-live="polite">
-              <Spinner :size="18" aria-hidden="true" />
-              <span>Удаляю…</span>
-            </div>
-            <div v-else class="confirm-actions">
-              <Button variant="neutral" size="sm" data-testid="btn-cancel-delete" @click="cancelDelete">Отмена</Button>
-              <Button variant="danger" size="sm" data-testid="btn-confirm-delete" @click="confirmDelete">Удалить</Button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
   </div>
 </template>
 
@@ -381,8 +338,9 @@ function qualityChips(task: TaskView): string[] {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  /* Left padding accounts for the 5px edge stripe so content doesn't overlap it. */
-  padding-left: calc(var(--space-4) + 5px);
+  /* The status edge is now the card's coloured 5px LEFT BORDER (Card.vue), so the
+     content inset is just the normal gutter — the border occupies its own space. */
+  padding-left: var(--space-4);
 }
 
 .task-header {
@@ -424,6 +382,19 @@ function qualityChips(task: TaskView): string[] {
 
 .task-progress {
   /* bar stretches full-width of the card body */
+}
+
+/* Footer row: meta on the left, the action group on the right, on ONE line to
+   save vertical space (round-2). The action group sits vertically centred. */
+.task-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.task-footer .task-meta {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .task-meta {
@@ -470,23 +441,18 @@ function qualityChips(task: TaskView): string[] {
   opacity: 0.75;
 }
 
-/* ── Action row ── */
-/* The actions read as ONE right-aligned segmented control (#267 task 01) rather
-   than pause-far-left / delete-far-right split across the card width. */
-.task-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-}
-
-/* Segmented group: shared strong border + offset shadow, hairline divider between
-   the (optional) pause/resume segment and the delete segment. */
+/* ── Action group (pause/resume + delete) ── */
+/* ONE segmented control: shared strong border + offset shadow, a divider between
+   the (optional) pause/resume segment and the delete segment. The end segments are
+   rounded INDIVIDUALLY rather than clipped by the group's overflow — iOS Safari
+   fails to clip a child's :active background to a rounded border, which leaked a
+   square fill over the corners (round-2 press-overflow fix). */
 .action-group {
   display: inline-flex;
+  flex-shrink: 0;
   border: var(--border-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  overflow: hidden;
 }
 
 .action-seg {
@@ -503,6 +469,15 @@ function qualityChips(task: TaskView): string[] {
   cursor: pointer;
   user-select: none;
   transition: background var(--dur-fast) var(--ease-out);
+}
+/* Nest the end segments inside the group radius (inner = group radius − border). */
+.action-seg:first-child {
+  border-top-left-radius: calc(var(--radius) - var(--border-thick));
+  border-bottom-left-radius: calc(var(--radius) - var(--border-thick));
+}
+.action-seg:last-child {
+  border-top-right-radius: calc(var(--radius) - var(--border-thick));
+  border-bottom-right-radius: calc(var(--radius) - var(--border-thick));
 }
 /* Divider between segments — the only internal line of the group. */
 .action-seg + .action-seg {
@@ -527,66 +502,6 @@ function qualityChips(task: TaskView): string[] {
 .action-seg--primary:active {
   background: var(--yellow);
   filter: brightness(0.92);
-}
-
-/* ── Delete confirmation dialog ── */
-.confirm-backdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
-  padding: var(--space-4);
-}
-
-.confirm-dialog {
-  background: var(--paper);
-  border: var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-5);
-  max-width: 320px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.confirm-message {
-  margin: 0;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  line-height: 1.5;
-}
-
-.confirm-actions {
-  display: flex;
-  gap: var(--space-2);
-  justify-content: flex-end;
-}
-
-/* In-flight delete loader (#269 task 10) — replaces the buttons while awaiting. */
-.confirm-deleting {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-}
-
-/* ── Confirm dialog pop ── */
-.confirm-pop-enter-active {
-  transition: opacity var(--dur-enter) var(--ease-out);
-}
-.confirm-pop-leave-active {
-  transition: opacity var(--dur-exit) var(--ease-in);
-}
-.confirm-pop-enter-from,
-.confirm-pop-leave-to {
-  opacity: 0;
 }
 
 /*

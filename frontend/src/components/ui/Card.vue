@@ -91,44 +91,22 @@ withDefaults(
   background: var(--violet);
 }
 
-/* ── Variant B: left edge stripe (#116) ──
- * A single thin coloured bar on the left side of the card — ONE status
- * accent only, no top strip + no coloured badge on the card face.
- * The stripe sits on the ::after pseudo-element so it doesn't conflict
- * with the top-strip ::before used by NAS/Shows cards. */
-.card[class*='stripe-']::after {
-  content: '';
-  position: absolute;
-  /* Sit flush on the card's OUTER left edge — extend OVER the border (by its
-   * width) so the colour reads as the left edge of the card itself, with corners
-   * that match the card radius. Previously the 5px bar sat INSIDE the border, so
-   * the black border framed it and the rounded corners clipped it (#267 task 02).
-   * Stripes are only used on download cards, whose border is --border-thin. */
-  top: calc(-1 * var(--border-thin));
-  bottom: calc(-1 * var(--border-thin));
-  left: calc(-1 * var(--border-thin));
-  width: calc(5px + var(--border-thin));
-  border-radius: var(--radius) 0 0 var(--radius);
+/* ── Variant B: coloured LEFT EDGE (#116) ──
+ * The status accent IS the card's own left border, thickened to --border-thick
+ * and tinted — so it follows the rounded corners exactly. Earlier takes drew a
+ * separate bar: inside the border it got clipped at the corners (#267 task 02);
+ * flush-outside the border it poked past the card outline and looked broken
+ * (round-2). A coloured border can do neither — no clip, no poke-out. The top
+ * strip (::before) used by NAS/Shows cards is independent and untouched. */
+.card[class*='stripe-'] {
+  border-left-width: var(--border-thick);
 }
-.stripe-red::after {
-  background: var(--red);
-}
-.stripe-orange::after {
-  background: var(--orange);
-}
-.stripe-yellow::after {
-  background: var(--yellow);
-}
-.stripe-green::after {
-  background: var(--green);
-}
-.stripe-violet::after {
-  background: var(--violet);
-}
-.stripe-default::after {
-  background: var(--ink);
-  opacity: 0.15;
-}
+.stripe-red    { border-left-color: var(--red); }
+.stripe-orange { border-left-color: var(--orange); }
+.stripe-yellow { border-left-color: var(--yellow); }
+.stripe-green  { border-left-color: var(--green); }
+.stripe-violet { border-left-color: var(--violet); }
+.stripe-default { border-left-color: var(--idle); }
 
 /* Press handled by the shared .nb-pressable utility (added when interactive). */
 .card.interactive {

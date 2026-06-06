@@ -121,15 +121,12 @@ describe('FolderPicker — browse tree (#2)', () => {
     expect(wrapper.text()).toContain('media')
   })
 
-  it('the back-to-tiles control returns to the quick list (#270 task 06: chevron + «Папки» label)', async () => {
+  it('has no in-app back-to-folders button — native Back drives it (round-2)', async () => {
     const wrapper = await openTree()
-    const backToTiles = wrapper.find('[data-testid="back-to-tiles-btn"]')
-    expect(backToTiles.exists()).toBe(true)
-    // #270 task 06: the bare hamburger glyph (#200) read as confusing — the
-    // control now carries a «Папки» label so it clearly means "back to folders".
-    expect(backToTiles.text()).toContain('Папки')
-    await backToTiles.trigger('click')
-    expect(wrapper.find('[data-testid="folder-tiles"]').exists()).toBe(true)
+    // The «Папки» control was removed: the native Telegram Back returns to the
+    // quick list (via the exposed stepBack(), covered in the nav describe below).
+    expect(wrapper.find('[data-testid="back-to-tiles-btn"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Папки')
   })
 
   it('drills into a folder, showing children and a breadcrumb crumb', async () => {

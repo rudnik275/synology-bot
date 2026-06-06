@@ -201,9 +201,7 @@ function formatDate(airDate: string): string {
 .show-hero {
   display: flex;
   gap: var(--space-3);
-  /* stretch so the titles column matches the poster height — lets the action
-     button drop to the poster's bottom line (#270 task 12). */
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 /* Hero poster: 2:3 ratio, block treatment */
@@ -253,10 +251,9 @@ function formatDate(airDate: string): string {
 }
 
 .show-action {
-  /* Push to the bottom-right corner of the hero block, on the poster's bottom
-     line (#270 task 12) — instead of sitting directly under the title. */
-  margin-top: auto;
-  align-self: flex-end;
+  /* Back under the title (round-2 reverted the bottom-corner placement), with a
+     bit more top breathing room than the original var(--space-2). */
+  margin-top: var(--space-4);
 }
 
 /* ── Block 2: status cards ───────────────────────────────────────────────── */
@@ -362,7 +359,8 @@ function formatDate(airDate: string): string {
 .sk-btn {
   height: 36px;
   width: 100px;
-  margin-top: var(--space-1);
+  /* Mirror the loaded button's bigger top margin (round-2). */
+  margin-top: var(--space-4);
 }
 
 .sk-status-card {

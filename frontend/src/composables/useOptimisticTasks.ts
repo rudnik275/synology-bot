@@ -81,8 +81,23 @@ export function resetOptimisticTasks(): void {
 }
 
 export function useOptimisticTasks() {
-  /** Insert a placeholder card immediately; returns its temp id for rollback. */
-  function add(input: { title: string; destination: string | null }): string {
+  /**
+   * Insert a placeholder card immediately; returns its temp id for rollback.
+   *
+   * `sizeBytes` / `year` / `quality` / `languages` are the bits AddFlow already
+   * knows at commit time (from the inspected file tree + the search result). They
+   * are optional — magnets and un-inspected sources have no size yet — and let
+   * the pending card render the info we DO know and fall back to a skeleton only
+   * for what we don't (instead of a generic spinner).
+   */
+  function add(input: {
+    title: string
+    destination: string | null
+    sizeBytes?: number
+    year?: number
+    quality?: string[]
+    languages?: string[]
+  }): string {
     const id = `optimistic-${crypto.randomUUID()}`
     state.entries.push({
       createdAt: now(),
@@ -90,11 +105,14 @@ export function useOptimisticTasks() {
         id,
         title: input.title || 'Добавление…',
         status: PENDING_STATUS,
-        sizeBytes: 0,
+        sizeBytes: input.sizeBytes ?? 0,
         downloadedBytes: 0,
         speedBytesPerSec: 0,
         pct: 0,
         destination: input.destination,
+        year: input.year,
+        quality: input.quality,
+        languages: input.languages,
       },
     })
     return id

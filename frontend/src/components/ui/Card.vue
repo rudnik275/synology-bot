@@ -45,6 +45,13 @@ withDefaults(
 .card {
   position: relative;
   background: var(--paper);
+  /* Clip the fill to the PADDING box so the white paper never bleeds past the
+   * rounded border into the offset shadow — that bleed is the faint light fringe
+   * at the bottom-right corner where the border meets the hard shadow (the white
+   * paper's anti-aliased corner peeking out from under the border). With
+   * padding-box the fill stops at the inner border edge and the corner reads as a
+   * clean black frame. */
+  background-clip: padding-box;
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);

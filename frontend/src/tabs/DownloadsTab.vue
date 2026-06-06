@@ -8,9 +8,11 @@
 //       downloading / waiting / finishing → «Пауза» (primary/yellow)
 //       paused                           → «Продолжить» (primary/yellow)
 //       finished / seeding / error       → no primary; just the delete action
-//   • Delete is a direct trash-icon button: one tap deletes straight away (no
-//     confirm popup) — the button shows a spinner + is disabled while in-flight,
-//     then the card leaves the list on the refetch.
+//   • Delete is a two-tap INLINE confirm: tapping the trash button arms the card
+//     and the action group morphs into [cancel ×][confirm ✓ (red)]; a second tap
+//     on the confirm button issues the delete (spinner + disabled while in-flight),
+//     then the card leaves the list on the refetch. No modal — the confirm lives in
+//     the action group itself.
 //   • Quality chips (year / resolution / codec / languages) from #117 under title.
 //   • Bigger % readout, quieter meta.
 //   • Elevation tiers (#101 D) preserved: active+error → raised, settled → flat.
@@ -47,12 +49,27 @@ const pending = computed(() => pendingTasks())
 watch(tasks, (real) => reconcile(real))
 
 // ── Delete state ──────────────────────────────────────────────────────────────
-// The task whose delete is in-flight. No confirmation popup (round-2 feedback):
-// tapping the trash button deletes straight away — the button shows a spinner and
-// is disabled while the API call runs, then the task leaves the list on the
-// refetch. The previous modal that lingered until the delete resolved is gone.
-const deletingId = ref<string | null>(null)
+// Two-tap inline confirm (round-3 feedback): tapping the trash button ARMS the
+// card — the action group morphs into [cancel ×][confirm ✓ (red)]. A second tap on
+// the confirm button issues the DELETE; the cancel button (or arming another card)
+// backs out. This is the inline confirm the user asked for, WITHOUT the lingering
+// modal that round-2 removed: the confirm lives in the card's own action group, and
+// while the delete is in-flight the confirm button shows a spinner + is disabled.
+const confirmingId = ref<string | null>(null) // the card currently armed for delete
+const deletingId = ref<string | null>(null) // the card whose delete is in-flight
 
+/** First tap on the trash button: arm this card for delete (no API call yet). */
+function armDelete(id: string): void {
+  if (deletingId.value !== null) return
+  confirmingId.value = id
+}
+
+/** Back out of the armed state without deleting. */
+function cancelDelete(): void {
+  confirmingId.value = null
+}
+
+/** Second tap (the confirm button): actually delete. */
 async function onDelete(id: string): Promise<void> {
   if (deletingId.value !== null) return
   deletingId.value = id
@@ -60,6 +77,7 @@ async function onDelete(id: string): Promise<void> {
     await deleteTask(id)
   } finally {
     deletingId.value = null
+    confirmingId.value = null
   }
 }
 
@@ -229,12 +247,28 @@ function qualityChips(task: TaskView): string[] {
           <h3 class="task-title">{{ p.title }}</h3>
           <span class="task-status-label">Добавление…</span>
         </div>
-        <div class="task-pending">
-          <Spinner :size="18" aria-hidden="true" />
-          <span class="task-pending-text">Добавляем на NAS…</span>
+
+        <!-- Quality chips we already know from the add (search results carry them). -->
+        <div v-if="qualityChips(p).length > 0" class="task-chips">
+          <Chip v-for="chip in qualityChips(p)" :key="chip" variant="tag">{{ chip }}</Chip>
         </div>
-        <div v-if="p.destination" class="task-meta">
-          <span class="meta-dest">{{ p.destination }}</span>
+
+        <!-- Empty progress bar instead of a spinner + «Добавляем…» text: the
+             «Добавление…» status above already says the download hasn't started,
+             so an empty bar reads as "queued, 0%" without the noisy loader. -->
+        <div class="task-progress">
+          <ProgressBar :value="0" tone="violet" hide-label />
+        </div>
+
+        <!-- Footer: show what we know (size when the source was inspected, the
+             destination); skeleton-placeholder the rest (the % and an unknown size). -->
+        <div class="task-footer">
+          <div class="task-meta">
+            <Skeleton class="meta-pct-sk" />
+            <span v-if="p.sizeBytes > 0" class="meta-size">{{ formatBytes(p.sizeBytes) }}</span>
+            <Skeleton v-else class="meta-size-sk" />
+            <span v-if="p.destination" class="meta-dest">{{ p.destination }}</span>
+          </div>
         </div>
       </Card>
 
@@ -276,45 +310,77 @@ function qualityChips(task: TaskView): string[] {
             <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
           </div>
 
-          <!-- pause/resume + delete as ONE segmented group, to the right of the meta. -->
-          <div class="action-group nb-framed">
-            <!-- Primary action: icon-only pause/resume. -->
-            <button
-              v-if="hasPrimaryAction(task.status)"
-              type="button"
-              class="action-seg action-seg--primary"
-              :aria-label="isPaused(task.status) ? 'Продолжить' : 'Пауза'"
-              :data-testid="`btn-primary-${task.id}`"
-              :disabled="deletingId === task.id"
-              @click="onPrimary(task)"
-            >
-              <svg v-if="!isPaused(task.status)" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <rect x="6" y="4" width="4" height="16" rx="1" />
-                <rect x="14" y="4" width="4" height="16" rx="1" />
-              </svg>
-              <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <polygon points="5,3 19,12 5,21" />
-              </svg>
-            </button>
+          <!-- pause/resume + delete as ONE segmented group, to the right of the meta.
+               The whole group is .nb-pressable so a tap on either button sinks the
+               group into its shadow (the «вдавливание» press feedback). -->
+          <div class="action-group nb-framed nb-pressable" :class="{ 'action-group--armed': confirmingId === task.id }">
+            <!-- ARMED: inline delete confirm — [cancel ×][confirm ✓ (red)]. -->
+            <template v-if="confirmingId === task.id">
+              <button
+                type="button"
+                class="action-seg action-seg--cancel"
+                aria-label="Отмена"
+                :data-testid="`btn-cancel-delete-${task.id}`"
+                :disabled="deletingId === task.id"
+                @click.stop="cancelDelete()"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="action-seg action-seg--confirm"
+                :aria-label="`Подтвердить удаление: ${task.title}`"
+                :data-testid="`btn-confirm-delete-${task.id}`"
+                :disabled="deletingId === task.id"
+                @click.stop="onDelete(task.id)"
+              >
+                <Spinner v-if="deletingId === task.id" :size="18" aria-hidden="true" />
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </button>
+            </template>
 
-            <!-- Delete: one tap deletes (no popup). Spinner + disabled while in-flight. -->
-            <button
-              type="button"
-              class="action-seg action-seg--delete"
-              :aria-label="`Удалить: ${task.title}`"
-              :data-testid="`btn-delete-${task.id}`"
-              :disabled="deletingId === task.id"
-              @click.stop="onDelete(task.id)"
-            >
-              <Spinner v-if="deletingId === task.id" :size="18" aria-hidden="true" />
-              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 6h18" />
-                <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                <line x1="10" y1="11" x2="10" y2="17" />
-                <line x1="14" y1="11" x2="14" y2="17" />
-              </svg>
-            </button>
+            <!-- DEFAULT: [pause/resume?][trash]. The trash button only ARMS — the
+                 actual delete needs the confirm tap above. -->
+            <template v-else>
+              <!-- Primary action: icon-only pause/resume. -->
+              <button
+                v-if="hasPrimaryAction(task.status)"
+                type="button"
+                class="action-seg action-seg--primary"
+                :aria-label="isPaused(task.status) ? 'Продолжить' : 'Пауза'"
+                :data-testid="`btn-primary-${task.id}`"
+                @click="onPrimary(task)"
+              >
+                <svg v-if="!isPaused(task.status)" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+                <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <polygon points="5,3 19,12 5,21" />
+                </svg>
+              </button>
+
+              <button
+                type="button"
+                class="action-seg action-seg--delete"
+                :aria-label="`Удалить: ${task.title}`"
+                :data-testid="`btn-delete-${task.id}`"
+                @click.stop="armDelete(task.id)"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 6h18" />
+                  <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              </button>
+            </template>
           </div>
         </div>
       </Card>
@@ -429,16 +495,18 @@ function qualityChips(task: TaskView): string[] {
   white-space: nowrap;
 }
 
-/* ── Optimistic (pending) placeholder loader (#instant-add) ── */
-.task-pending {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+/* ── Optimistic (pending) placeholder meta skeletons (#instant-add) ──
+   The pending card shows an empty progress bar + the info we already know
+   (size when the source was inspected, the destination); these placeholders
+   stand in for the %-readout and an unknown size until the real task lands. */
+.meta-pct-sk {
+  width: 36px;
+  height: 18px;
 }
-.task-pending-text {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  opacity: 0.75;
+.meta-size-sk {
+  width: 84px;
+  height: 12px;
+  align-self: center;
 }
 
 /* ── Action group (pause/resume + delete) ── */
@@ -453,6 +521,9 @@ function qualityChips(task: TaskView): string[] {
   flex-shrink: 0;
   --nb-frame-w: var(--border-thick);
   box-shadow: var(--shadow-sm);
+  /* Press follows the shadow offset (--shadow-sm = 3px) so the group sinks
+     exactly into its own shadow on tap. */
+  --press: var(--border-thin);
 }
 
 .action-seg {
@@ -460,14 +531,27 @@ function qualityChips(task: TaskView): string[] {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 52px;
-  min-height: 44px;
+  /* A touch wider + taller than before so the icon has room and reads centred
+     (round-3). The first/last paddings below re-centre the icon inside the
+     VISIBLE interior, compensating the 5px inset .nb-framed outline that overlays
+     the group's outer edges. */
+  width: 56px;
+  min-height: 46px;
   color: var(--ink);
   background: var(--cream);
   border: none;
   cursor: pointer;
   user-select: none;
   transition: background var(--dur-fast) var(--ease-out);
+}
+/* Centre the icon within the visible interior: the inset frame overlays 5px on
+   the group's outer edges, so the outermost segments gain matching padding there
+   so the icon does not read as shifted toward the frame. */
+.action-seg:first-child {
+  padding-left: var(--border-thick);
+}
+.action-seg:last-child {
+  padding-right: var(--border-thick);
 }
 /* Divider between segments — the only internal line of the group. */
 .action-seg + .action-seg {
@@ -491,6 +575,18 @@ function qualityChips(task: TaskView): string[] {
 }
 .action-seg--primary:active {
   background: var(--yellow);
+  filter: brightness(0.92);
+}
+
+/* ── Inline delete confirm (round-3): armed group = [cancel ×][confirm ✓ red] ──
+   The confirm carries the red destructive accent so the second tap reads as the
+   point of no return; cancel stays the quiet cream segment. */
+.action-seg--confirm {
+  background: var(--red);
+  color: var(--paper);
+}
+.action-seg--confirm:active {
+  background: var(--red);
   filter: brightness(0.92);
 }
 
@@ -645,7 +741,10 @@ function qualityChips(task: TaskView): string[] {
   --press: 3px;
 }
 
-/* Yellow «+» chip — the sole accent colour per ADR 0006 addendum */
+/* Yellow «+» chip — the sole accent colour per ADR 0006 addendum.
+   At 28px the 5px border + 12px radius read as a heavy "neither round nor square"
+   blob (round-3 feedback), so the chip uses the thin 3px border + a smaller 8px
+   radius: a crisp, clearly-rounded square sized to the small button. */
 .add-row-chip {
   display: inline-flex;
   align-items: center;
@@ -653,8 +752,8 @@ function qualityChips(task: TaskView): string[] {
   width: 28px;
   height: 28px;
   background: var(--yellow);
-  border: var(--border-strong);
-  border-radius: var(--radius);
+  border: var(--border);
+  border-radius: 8px;
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   line-height: 1;

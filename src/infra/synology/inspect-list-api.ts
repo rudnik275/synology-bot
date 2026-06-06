@@ -55,12 +55,16 @@ export class InspectListApi {
    * method that commits — `create`/`set`/`apply` all error 103). `selected` is
    * the JSON array of file indices to KEEP. Verified the selection is honored
    * (a 1-file commit downloads only that file).
+   *
+   * Returns the committed task's `id` (DSM `Task.List download` echoes a
+   * `task_id`, the SAME id the list / delete APIs use). `id` is omitted when
+   * DSM gives none.
    */
   async commitInspectList(
     listId: string,
     selected: number[],
     destination: string,
-  ): Promise<Result> {
+  ): Promise<{ ok: true; id?: string } | Extract<Result, { ok: false }>> {
     const result = await this.transport.request<{ task_id?: string[] }>(
       'SYNO.DownloadStation2.Task.List',
       2,
@@ -68,7 +72,7 @@ export class InspectListApi {
       ds2CreateParams({ listId, selected, destination }),
     )
     if (!result.ok) return result
-    return { ok: true }
+    return { ok: true, id: result.data.task_id?.[0] }
   }
 
   /**

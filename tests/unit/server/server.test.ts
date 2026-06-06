@@ -268,6 +268,13 @@ describe('Mini App server — tasks: create (unified POST /api/tasks)', () => {
     expect(args).toEqual({ uri: 'https://example.com/x.torrent', dest: '/v1' })
   })
 
+  it('echoes the created task id in the response body (for optimistic-card cancel)', async () => {
+    const app = makeApp(makeSynology({ createDownloadTask: async () => ({ ok: true, id: 'dbid_echo' }) }))
+    const res = await app.request('/api/tasks', jsonReq({ uri: 'magnet:?xt=urn:btih:abc', destination: '/v1' }))
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({ ok: true, id: 'dbid_echo' })
+  })
+
   it('fetches a Toloka URL with auth, then serves the .torrent for DownloadStation to fetch by URL', async () => {
     let createArgs: { uri: string; dest: string } | undefined
     let downloadedUrl: string | undefined
@@ -456,6 +463,19 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
     expect(createArgs?.dest).toBe('/films')
     expect(createArgs?.uri).toMatch(/^https:\/\/nas\.test\/torrent-file\/[a-f0-9]+\.torrent$/)
     expect(commitArgs).toEqual({ listId: 'btdlDEFER', selected: [0], dest: '/films' })
+  })
+
+  it('POST /api/tasks/commit echoes the committed task id', async () => {
+    const synology = makeSynology({
+      commitInspectList: async () => ({ ok: true, id: 'dbid_commit' }),
+    })
+    const app = makeApp(synology)
+    const res = await app.request(
+      '/api/tasks/commit',
+      jsonReq({ listId: 'btdlMAG', selected: [0], destination: '/films' })
+    )
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({ ok: true, id: 'dbid_commit' })
   })
 
   it('POST /api/tasks/commit 410 when the inspectToken is unknown/expired', async () => {

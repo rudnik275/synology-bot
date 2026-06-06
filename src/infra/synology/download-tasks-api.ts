@@ -64,15 +64,23 @@ export class DownloadTasksApi {
    * DS2 `entry.cgi` wants JSON-encoded values: `type` as `"url"`, `url` as a
    * JSON array `["…"]`, `destination` as `"…"` (plain values are misread).
    * `create_list:false` adds the whole torrent (no per-file inspect list).
+   *
+   * Returns the created task's `id` (DSM's `dbid_…`, the SAME id the list /
+   * delete APIs use — verified live 2026-06-03 that a successful `create`
+   * returns a `task_id`). `id` is omitted when DSM gives none; callers that need
+   * it (the Mini App's optimistic-card cancel) degrade gracefully without it.
    */
-  async createDownloadTask(uri: string, destination: string): Promise<Result> {
-    const result = await this.transport.request<unknown>(
+  async createDownloadTask(
+    uri: string,
+    destination: string,
+  ): Promise<{ ok: true; id?: string } | Extract<Result, { ok: false }>> {
+    const result = await this.transport.request<{ task_id?: string[] }>(
       'SYNO.DownloadStation2.Task',
       2,
       'create',
       ds2CreateParams({ uri, destination, createList: false }),
     )
     if (!result.ok) return result
-    return { ok: true }
+    return { ok: true, id: result.data.task_id?.[0] }
   }
 }

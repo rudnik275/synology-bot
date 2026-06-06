@@ -180,6 +180,24 @@ describe('SynologyClient characterization (#180)', () => {
       expect(p.get('destination')).toBe('"video"')
     })
 
+    it('createDownloadTask returns the created task_id (for optimistic-card cancel)', async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(mockResponse({ success: true, data: { task_id: ['dbid_new'] } })),
+      )
+
+      const result = await client.createDownloadTask(magnet, '/volume1/video')
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.id).toBe('dbid_new')
+    })
+
+    it('createDownloadTask returns id:undefined when DSM omits task_id', async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(mockResponse({ success: true, data: {} })))
+
+      const result = await client.createDownloadTask(magnet, '/volume1/video')
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.id).toBeUndefined()
+    })
+
     it('createInspectList emits create_list:true with the same quoted-JSON shape', async () => {
       fetchMock.mockImplementation(() =>
         Promise.resolve(mockResponse({ success: true, data: { list_id: ['L-1'] } })),
@@ -206,6 +224,8 @@ describe('SynologyClient characterization (#180)', () => {
 
       const result = await client.commitInspectList('list-xyz', [0, 2, 5], '/volume1/video')
       expect(result.ok).toBe(true)
+      // The committed task_id is echoed back for optimistic-card cancel.
+      if (result.ok) expect(result.id).toBe('T-1')
 
       const p = lastParams()
       expect(p.get('api')).toBe('SYNO.DownloadStation2.Task.List')

@@ -26,6 +26,7 @@ import Spinner from '../components/ui/Spinner.vue'
 import Skeleton from '../components/ui/Skeleton.vue'
 import { useTasks } from '../composables/useTasks'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
+import type { PendingTaskView } from '../composables/useOptimisticTasks'
 import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/ui/tones'
 import type { TaskView } from '../types'
@@ -38,15 +39,20 @@ const props = withDefaults(defineProps<{ onAddClick?: () => void }>(), {
 
 const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
 
-// Optimistic placeholders (added by AddFlow on «Добавить») render as their own
-// loader cards ABOVE the real list so a download appears the instant the sheet
-// closes. They live in a SEPARATE list from the real-task cards on purpose: the
-// real-task TransitionGroup stays byte-identical to before, and `pending` is
-// empty in steady state. We retire them as the polled list updates (reconcile is
-// a no-op while there are none, so it adds zero churn).
-const { pendingTasks, reconcile } = useOptimisticTasks()
+// Optimistic placeholders (added by AddFlow on «Добавить») render ABOVE the real
+// list so a download appears the instant the sheet closes — through the SAME card
+// template (see displayTasks below) so a just-added card is indistinguishable from
+// a real just-started one. `pending` is empty in steady state; we retire entries
+// as the polled list updates (reconcile is a no-op while there are none).
+const { pendingTasks, reconcile, remove: removePending } = useOptimisticTasks()
 const pending = computed(() => pendingTasks())
 watch(tasks, (real) => reconcile(real))
+
+// One unified list: pending placeholders render ABOVE the real tasks through the
+// SAME card template (status 'pending' → «Добавление…» label, violet stripe, 0%
+// readout, delete-only action group). reconcile() keeps `pending` empty in steady
+// state, so this is just `tasks` then.
+const displayTasks = computed<PendingTaskView[]>(() => [...pending.value, ...tasks.value])
 
 // ── Delete state ──────────────────────────────────────────────────────────────
 // Two-tap inline confirm (round-3 feedback): tapping the trash button ARMS the
@@ -57,6 +63,10 @@ watch(tasks, (real) => reconcile(real))
 // while the delete is in-flight the confirm button shows a spinner + is disabled.
 const confirmingId = ref<string | null>(null) // the card currently armed for delete
 const deletingId = ref<string | null>(null) // the card whose delete is in-flight
+// Pending placeholders the user confirmed delete on BEFORE their real DSM id was
+// known (the add request hadn't resolved yet). The watcher below fires the actual
+// delete the instant attachRealId records the id — see cancelPending().
+const awaitingRealIdToCancel = ref<Set<string>>(new Set())
 
 /** First tap on the trash button: arm this card for delete (no API call yet). */
 function armDelete(id: string): void {
@@ -72,6 +82,14 @@ function cancelDelete(): void {
 /** Second tap (the confirm button): actually delete. */
 async function onDelete(id: string): Promise<void> {
   if (deletingId.value !== null) return
+  // A pending placeholder's id is an `optimistic-…` id — there is no backend task
+  // to DELETE by it. Route it to the cancel path, which deletes the download by
+  // its REAL DSM id (the add response echoed it; #pending-cancel).
+  const placeholder = pending.value.find((p) => p.id === id)
+  if (placeholder) {
+    await cancelPending(placeholder)
+    return
+  }
   deletingId.value = id
   try {
     await deleteTask(id)
@@ -81,11 +99,60 @@ async function onDelete(id: string): Promise<void> {
   }
 }
 
+/**
+ * Cancel a still-pending («Добавление…») download. If its real DSM id is already
+ * known, delete it on the NAS now; otherwise mark it (spinner stays) and let the
+ * watcher fire the delete the moment attachRealId records the id.
+ */
+async function cancelPending(p: PendingTaskView): Promise<void> {
+  deletingId.value = p.id // spinner on the confirm button; the card stays armed
+  if (p.realId) {
+    await deleteRealAndDrop(p.id, p.realId)
+  } else {
+    awaitingRealIdToCancel.value.add(p.id)
+  }
+}
+
+/** Delete the real task on the NAS, then drop the placeholder + reset delete UI. */
+async function deleteRealAndDrop(optimisticId: string, realId: string): Promise<void> {
+  try {
+    await deleteTask(realId)
+  } finally {
+    removePending(optimisticId)
+    awaitingRealIdToCancel.value.delete(optimisticId)
+    if (deletingId.value === optimisticId) deletingId.value = null
+    if (confirmingId.value === optimisticId) confirmingId.value = null
+  }
+}
+
+// Resolve deferred cancels: when a placeholder the user already confirmed delete
+// on finally gains its real id (attachRealId, just after the add resolves), delete
+// it now. Also clears the delete-UI if the placeholder vanished first (add failed →
+// removed, or the 30 s TTL swept it) so a spinner never sticks.
+watch(pending, (list) => {
+  if (awaitingRealIdToCancel.value.size === 0) return
+  const present = new Set(list.map((p) => p.id))
+  for (const p of list) {
+    if (awaitingRealIdToCancel.value.has(p.id) && p.realId) {
+      awaitingRealIdToCancel.value.delete(p.id) // guard against a double-fire
+      void deleteRealAndDrop(p.id, p.realId)
+    }
+  }
+  for (const id of [...awaitingRealIdToCancel.value]) {
+    if (!present.has(id)) {
+      awaitingRealIdToCancel.value.delete(id)
+      if (deletingId.value === id) deletingId.value = null
+      if (confirmingId.value === id) confirmingId.value = null
+    }
+  }
+})
+
 // ── Status helpers ────────────────────────────────────────────────────────────
 
 /** Left-edge stripe tone — single accent for Variant B (#116). */
 function stripeToneForStatus(status: string): Tone {
   switch (status) {
+    case 'pending': // optimistic «Добавление…» placeholder — reads as queued/active
     case 'downloading':
     case 'finishing':
     case 'waiting':
@@ -102,9 +169,9 @@ function stripeToneForStatus(status: string): Tone {
   }
 }
 
-/** Elevation tier (#101 D): active + errors stay raised; settled tasks → flat. */
+/** Elevation tier (#101 D): active + errors + pending stay raised; settled → flat. */
 function cardVariantForStatus(status: string): 'flat' | 'raised' {
-  return isActive(status) || status === 'error' ? 'raised' : 'flat'
+  return isActive(status) || status === 'error' || status === 'pending' ? 'raised' : 'flat'
 }
 
 function isActive(status: string): boolean {
@@ -131,6 +198,7 @@ async function onPrimary(task: TaskView): Promise<void> {
 /** Human-readable status label for the overflow menu header / aria. */
 function statusLabel(status: string): string {
   switch (status) {
+    case 'pending':     return 'Добавление…'
     case 'downloading': return 'Загрузка'
     case 'finishing':   return 'Завершение'
     case 'hash_checking': return 'Проверка'
@@ -231,54 +299,19 @@ function qualityChips(task: TaskView): string[] {
         <span class="add-row-label">Добавить загрузку</span>
       </button>
 
-      <!-- Optimistic placeholders (#instant-add): a loader card per just-added
-           download, shown the moment the Add sheet closes and retired when the
-           real task lands on a poll. Empty in steady state — leaves the real-task
-           list below untouched. -->
+      <!-- Pending placeholders (#instant-add) render FIRST, through the same card
+           template as real tasks: a just-added download shows the moment the Add
+           sheet closes with a «Добавление…» status, an empty (0 %) bar, a 0 B / size
+           readout and a working delete — and is retired when the real task lands on
+           a poll. `displayTasks` is just `tasks` in steady state. -->
       <Card
-        v-for="p in pending"
-        :key="p.id"
-        edge-stripe="violet"
-        variant="raised"
-        class="task-card"
-        :data-testid="`pending-${p.id}`"
-      >
-        <div class="task-header">
-          <h3 class="task-title">{{ p.title }}</h3>
-          <span class="task-status-label">Добавление…</span>
-        </div>
-
-        <!-- Quality chips we already know from the add (search results carry them). -->
-        <div v-if="qualityChips(p).length > 0" class="task-chips">
-          <Chip v-for="chip in qualityChips(p)" :key="chip" variant="tag">{{ chip }}</Chip>
-        </div>
-
-        <!-- Empty progress bar instead of a spinner + «Добавляем…» text: the
-             «Добавление…» status above already says the download hasn't started,
-             so an empty bar reads as "queued, 0%" without the noisy loader. -->
-        <div class="task-progress">
-          <ProgressBar :value="0" tone="violet" hide-label />
-        </div>
-
-        <!-- Footer: show what we know (size when the source was inspected, the
-             destination); skeleton-placeholder the rest (the % and an unknown size). -->
-        <div class="task-footer">
-          <div class="task-meta">
-            <Skeleton class="meta-pct-sk" />
-            <span v-if="p.sizeBytes > 0" class="meta-size">{{ formatBytes(p.sizeBytes) }}</span>
-            <Skeleton v-else class="meta-size-sk" />
-            <span v-if="p.destination" class="meta-dest">{{ p.destination }}</span>
-          </div>
-        </div>
-      </Card>
-
-      <Card
-        v-for="(task, index) in tasks"
+        v-for="(task, index) in displayTasks"
         :key="task.id"
         :edge-stripe="stripeToneForStatus(task.status)"
         :variant="cardVariantForStatus(task.status)"
         class="task-card"
         :style="{ '--stagger-index': index }"
+        :data-testid="task.status === 'pending' ? `pending-${task.id}` : undefined"
       >
         <!-- Header row: title only (badge removed — edge stripe is the sole accent) -->
         <div class="task-header">
@@ -493,20 +526,6 @@ function qualityChips(task: TaskView): string[] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* ── Optimistic (pending) placeholder meta skeletons (#instant-add) ──
-   The pending card shows an empty progress bar + the info we already know
-   (size when the source was inspected, the destination); these placeholders
-   stand in for the %-readout and an unknown size until the real task lands. */
-.meta-pct-sk {
-  width: 36px;
-  height: 18px;
-}
-.meta-size-sk {
-  width: 84px;
-  height: 12px;
-  align-self: center;
 }
 
 /* ── Action group (pause/resume + delete) ── */

@@ -53,7 +53,18 @@ function normalizeDest(s: string | null | undefined): string {
 interface OptimisticEntry {
   task: TaskView
   createdAt: number
+  /**
+   * The real DSM task id, once the add request resolves with one (attachRealId).
+   * Lets reconcile retire this placeholder by EXACT id match (robust even when
+   * DSM renames the torrent so title/dest no longer match) and lets the pending
+   * card's «удалить» cancel the download by its real id before the next poll
+   * surfaces it. Undefined until the add resolves / if DSM returned no id.
+   */
+  realId?: string
 }
+
+/** A pending placeholder as a TaskView, carrying its real DSM id once known. */
+export type PendingTaskView = TaskView & { realId?: string }
 
 const state = reactive<{ entries: OptimisticEntry[] }>({ entries: [] })
 // Real task ids already observed — persists for the app session so the first
@@ -125,6 +136,16 @@ export function useOptimisticTasks() {
   }
 
   /**
+   * Record the real DSM task id on a placeholder once the add request resolves
+   * with one. No-op if the placeholder is already gone (retired/removed/TTL).
+   * Enables exact-id reconcile + cancel-by-real-id on the pending card.
+   */
+  function attachRealId(optimisticId: string, realId: string): void {
+    const entry = state.entries.find((e) => e.task.id === optimisticId)
+    if (entry) entry.realId = realId
+  }
+
+  /**
    * Retire placeholders as real tasks arrive. Each newly-appeared real task is
    * matched against outstanding placeholders by normalized title OR normalized
    * destination (whichever matches first). The oldest matching placeholder is
@@ -164,7 +185,11 @@ export function useOptimisticTasks() {
         const tDest = normalizeDest(t.destination)
 
         // entries are insertion-order (oldest at index 0) — find the first match.
+        // Prefer an EXACT real-id match (set by attachRealId): it's unambiguous
+        // and survives DSM renaming the torrent so title/dest drift. Fall back to
+        // the normalized title OR destination identity match.
         const matchIdx = state.entries.findIndex((e) => {
+          if (e.realId && e.realId === t.id) return true
           if (normalizeTitle(e.task.title) === tTitle) return true
           const eDest = normalizeDest(e.task.destination)
           return eDest !== '' && tDest !== '' && eDest === tDest
@@ -183,10 +208,12 @@ export function useOptimisticTasks() {
     }
   }
 
-  /** Placeholders as TaskViews, newest first (shown above real tasks). */
-  function pendingTasks(): TaskView[] {
-    return [...state.entries].sort((a, b) => b.createdAt - a.createdAt).map((e) => e.task)
+  /** Placeholders as TaskViews (with realId once known), newest first. */
+  function pendingTasks(): PendingTaskView[] {
+    return [...state.entries]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((e) => ({ ...e.task, realId: e.realId }))
   }
 
-  return { add, remove, reconcile, pendingTasks }
+  return { add, remove, attachRealId, reconcile, pendingTasks }
 }

@@ -28,14 +28,17 @@ export const api = {
   resumeTask: (id: string) => request<{ ok: true }>(`/tasks/${encodeURIComponent(id)}/resume`, { method: 'POST' }),
   deleteTask: (id: string, deleteFiles = false) =>
     request<{ ok: true }>(`/tasks/${encodeURIComponent(id)}?deleteFiles=${deleteFiles}`, { method: 'DELETE' }),
+  // The add endpoints echo the created task's `id` (DSM `dbid_…`) so the
+  // optimistic placeholder can cancel the download by its real id before the
+  // next poll surfaces it. `id` is absent if DSM returned none.
   createTask: (uri: string, destination: string, title?: string) =>
-    request<{ ok: true }>('/tasks', jsonBody({ uri, destination, title })),
+    request<{ ok: true; id?: string }>('/tasks', jsonBody({ uri, destination, title })),
   createTaskFromFile: (file: File, destination: string) => {
     const form = new FormData()
     form.append('file', file)
     form.append('destination', destination)
     // Do NOT set Content-Type — browser sets it with the multipart boundary.
-    return request<{ ok: true }>('/tasks', { method: 'POST', body: form })
+    return request<{ ok: true; id?: string }>('/tasks', { method: 'POST', body: form })
   },
 
   // --- Per-file selection (#123, instant tree #161): inspect → (poll?) → commit ---
@@ -63,7 +66,7 @@ export const api = {
   // handle is either a deferred `inspectToken` (server creates the DSM list now,
   // then commits) or a pre-created `listId` (magnet path) — see CommitHandle.
   commitTask: (handle: CommitHandle, selected: number[], destination: string) =>
-    request<{ ok: true }>('/tasks/commit', jsonBody({ ...handle, selected, destination })),
+    request<{ ok: true; id?: string }>('/tasks/commit', jsonBody({ ...handle, selected, destination })),
   // Abandon an inspect the user cancelled (best-effort). Only meaningful for the
   // magnet/listId path — the instant-tree path creates no DSM list to abandon.
   deleteInspect: (listId: string) =>

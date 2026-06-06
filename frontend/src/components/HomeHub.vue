@@ -17,6 +17,10 @@ import ProgressBar from './ui/ProgressBar.vue'
 import RingGauge from './ui/RingGauge.vue'
 import Skeleton from './ui/Skeleton.vue'
 import ScreenHeader from './ui/ScreenHeader.vue'
+// Imported (not /logo.png from public/) so Vite emits it into dist/assets/, which
+// the backend actually serves; root-level dist files fall through to the SPA
+// index.html catch-all and 404 as an image (see src/server/server.ts).
+import logoUrl from '../assets/logo.png'
 import type { SectionKey } from '../sections'
 import { useTasks } from '../composables/useTasks'
 import { useHealth } from '../composables/useHealth'
@@ -57,7 +61,7 @@ const overflowCount = computed(() => Math.max(0, downloads.value.activeCount - a
 <template>
   <div class="hub">
     <header class="brand">
-      <img class="brand-logo" src="/logo.png" alt="NAS Bot" width="56" height="56" decoding="async" />
+      <img class="brand-logo" :src="logoUrl" alt="NAS Bot" width="56" height="56" decoding="async" />
       <ScreenHeader title="Главная" />
     </header>
 

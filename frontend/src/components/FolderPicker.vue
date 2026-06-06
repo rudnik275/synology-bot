@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Destination folder picker (#2). Primary view is a flat list of "quick" folders
 // — your recent destinations plus the subfolders of the default media share
-// (/video) — so it is never empty, even on a cold start. «Браузить все папки»
-// opens a drill-down tree whose breadcrumb is tappable (each crumb navigates up
-// to that level); there is no separate "Up" button. Emits the chosen path via
-// v-model. Used by AddFlow (#63).
+// (/video) — so it is never empty, even on a cold start. «Все папки» opens a
+// drill-down tree whose breadcrumb is tappable (each crumb navigates up to that
+// level); there is no separate "Up" button. Emits the chosen path via v-model.
+// Used by AddFlow (#63).
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
@@ -164,45 +164,84 @@ defineExpose({ canStepBack, stepBack })
     <div v-if="view === 'quick'" class="quick-view">
       <span class="quick-label">Куда сохранить</span>
 
-      <!-- Skeleton placeholders while the full quick-list is still loading.
-           Shown instead of the partial list (recents-only) to avoid a 2→2 pop-in. -->
-      <ul v-if="quickLoading" class="quick-list" role="list" aria-busy="true" aria-label="Загрузка папок">
-        <li v-for="n in SKELETON_COUNT" :key="n">
-          <Skeleton class="folder-tile-skeleton" />
-        </li>
-      </ul>
+      <!-- ONE grouped panel (#101): a single black frame whose rows are divided
+           by quiet hairlines — not a stack of identical bordered boxes. The
+           selected row fills yellow edge-to-edge; the panel is .nb-framed so the
+           fill bleeds into the rounded corners with no sliver. «Все папки» is the
+           final action row, visually subordinate to the destinations above it. -->
+      <div class="folder-panel nb-framed">
 
-      <ul v-else class="quick-list" role="list" data-testid="folder-tiles">
-        <li v-for="path in quickFolders" :key="path">
-          <button
-            type="button"
-            class="folder-tile nb-pressable"
-            :class="{ 'folder-tile--selected': modelValue === path }"
-            data-testid="folder-tile"
-            :title="path"
-            @click="pickQuick(path)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" class="tile-icon">
-              <path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z" />
-            </svg>
-            <span class="tile-name">{{ shortName(path) }}</span>
-            <span class="tile-indicator" :class="{ 'tile-indicator--selected': modelValue === path }" aria-hidden="true"></span>
-          </button>
-        </li>
-      </ul>
+        <!-- Skeleton rows while the merged quick-list loads. Shown instead of the
+             partial (recents-only) list to avoid a 2→2 pop-in; keeps panel height
+             stable. -->
+        <ul v-if="quickLoading" class="folder-rows" role="list" aria-busy="true" aria-label="Загрузка папок">
+          <li v-for="n in SKELETON_COUNT" :key="n" class="folder-row folder-row--skeleton">
+            <Skeleton class="row-skeleton" />
+          </li>
+        </ul>
 
-      <!-- Link to the tree drill-down -->
-      <button
-        type="button"
-        class="more-link"
-        data-testid="open-tree-btn"
-        @click="openTree"
-      >
-        Браузить все папки
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="more-link-arrow">
-          <path d="M9 6l6 6-6 6" />
-        </svg>
-      </button>
+        <ul v-else class="folder-rows" role="radiogroup" aria-label="Куда сохранить" data-testid="folder-tiles">
+          <li v-for="path in quickFolders" :key="path">
+            <button
+              type="button"
+              class="folder-row"
+              :class="{ 'folder-row--selected': modelValue === path }"
+              role="radio"
+              :aria-checked="modelValue === path"
+              data-testid="folder-tile"
+              :title="path"
+              @click="pickQuick(path)"
+            >
+              <!-- Outline folder when unselected → solid ink folder when selected:
+                   a non-colour selection cue on top of the yellow fill + check. -->
+              <svg
+                viewBox="0 0 24 24"
+                :fill="modelValue === path ? 'currentColor' : 'none'"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                class="row-icon"
+              >
+                <path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z" />
+              </svg>
+              <span class="row-name">{{ shortName(path) }}</span>
+              <svg
+                v-if="modelValue === path"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                class="row-check"
+              >
+                <path d="M5 12.5l4.5 4.5L19 7" />
+              </svg>
+            </button>
+          </li>
+        </ul>
+
+        <!-- Final action row: drill into the full folder tree. -->
+        <button
+          v-if="!quickLoading"
+          type="button"
+          class="browse-row"
+          data-testid="open-tree-btn"
+          @click="openTree"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="browse-icon">
+            <circle cx="5" cy="12" r="1.7" />
+            <circle cx="12" cy="12" r="1.7" />
+            <circle cx="19" cy="12" r="1.7" />
+          </svg>
+          <span class="browse-label">Все папки</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="browse-arrow">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- ── SECONDARY: tree drill-down with a tappable breadcrumb ── -->
@@ -239,28 +278,30 @@ defineExpose({ canStepBack, stepBack })
       <!-- Loading indicator -->
       <LoadingText v-if="loading" class="picker-loading" data-testid="loading" />
 
-      <!-- Folder list -->
-      <ul v-else class="folder-list" role="list">
-        <li v-for="folder in folders" :key="folder.path">
-          <button
-            type="button"
-            class="folder-item nb-pressable"
-            data-testid="folder-item"
-            @click="drillInto(folder)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" class="folder-icon">
-              <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-            </svg>
-            {{ folder.name }}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="drill-arrow">
-              <path d="M9 6l6 6-6 6" />
-            </svg>
-          </button>
-        </li>
-        <li v-if="folders.length === 0 && !loading" class="picker-empty">
-          Нет подпапок
-        </li>
-      </ul>
+      <!-- Folder list — same grouped-panel language as the quick view. -->
+      <div v-else class="folder-panel nb-framed">
+        <ul class="folder-rows" role="list">
+          <li v-for="folder in folders" :key="folder.path">
+            <button
+              type="button"
+              class="folder-row folder-row--drill"
+              data-testid="folder-item"
+              @click="drillInto(folder)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true" class="row-icon">
+                <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+              </svg>
+              <span class="row-name">{{ folder.name }}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="row-drill">
+                <path d="M9 6l6 6-6 6" />
+              </svg>
+            </button>
+          </li>
+          <li v-if="folders.length === 0 && !loading" class="picker-empty">
+            Нет подпапок
+          </li>
+        </ul>
+      </div>
 
       <!-- No "Save here" button: entering a folder selects it, and the wizard
            footer «Далее» advances with that selection. -->
@@ -290,28 +331,35 @@ defineExpose({ canStepBack, stepBack })
   opacity: 0.45;
 }
 
-.quick-list {
+/* ── The one grouped panel (#101) ──
+ * A single rounded black frame (the .nb-framed inset outline — NOT a per-row
+ * border) plus the neo-brutalist offset drop shadow for lift. Rows live
+ * full-bleed inside it, divided by quiet hairlines, so the list reads as ONE
+ * card with calm rows rather than a stack of identical bordered boxes. */
+.folder-panel {
+  background: var(--paper);
+  box-shadow: var(--shadow-md);
+  --nb-frame-w: var(--border-thin);
+}
+
+.folder-rows {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
 }
 
-/* Large folder tile — border, offset shadow, mechanical press.
- * min-height 60px (>= 44px touch target). */
-.folder-tile {
+/* A quiet row. Full-bleed (no own border/radius); the panel frame owns the
+ * outline, and a hairline divides each row from the one above it. */
+.folder-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  min-height: 60px;
+  min-height: 52px;
   padding: var(--space-3) var(--space-4);
   background: var(--paper);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  border: none;
+  border-top: var(--hairline);
   cursor: pointer;
   text-align: left;
   font-family: var(--font);
@@ -320,26 +368,40 @@ defineExpose({ canStepBack, stepBack })
   -webkit-appearance: none;
   color: var(--ink);
   -webkit-text-fill-color: var(--ink);
-  /* Press via .nb-pressable — sinks 3px (matches --shadow-sm). */
+  /* Rows press with a tint, not the mechanical translate — they sit inside a
+   * fixed frame, so moving an individual row would look broken. */
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
-.folder-tile--selected {
-  border: var(--border-strong);
-  box-shadow: var(--shadow-md);
+/* The first row of a panel butts against the frame's top edge — no divider. */
+.folder-rows > li:first-child .folder-row {
+  border-top: none;
+}
+
+/* Press tint for tappable rows (skip the selected one — it's already filled). */
+.folder-row:not(.folder-row--selected):active {
+  background: var(--ink-active);
+}
+
+/* Selected destination: the whole row fills yellow, edge-to-edge. */
+.folder-row--selected {
   background: var(--yellow);
-  /* Selected tile presses 5px to match shadow-md depth. */
-  --press: 5px;
 }
 
-.tile-icon {
+.row-icon {
   width: 24px;
   height: 24px;
   flex-shrink: 0;
   color: var(--ink);
-  opacity: 0.75;
+  opacity: 0.7;
+}
+/* Selected → solid ink folder at full strength (outline → filled is the
+ * non-colour selection cue, alongside the check). */
+.folder-row--selected .row-icon {
+  opacity: 1;
 }
 
-.tile-name {
+.row-name {
   flex: 1;
   font-size: var(--fs-md);
   font-weight: var(--fw-bold);
@@ -349,61 +411,88 @@ defineExpose({ canStepBack, stepBack })
   text-overflow: ellipsis;
 }
 
-/* Selection indicator ring */
-.tile-indicator {
+.row-check {
   width: 22px;
   height: 22px;
-  border: 2px solid var(--ink);
-  border-radius: 50%;
   flex-shrink: 0;
-  transition: background var(--dur-fast) var(--ease-out);
-}
-.tile-indicator--selected {
-  background: var(--ink);
-}
-
-/* Skeleton placeholder matches the tile height so the list height is stable. */
-.folder-tile-skeleton {
-  height: 60px;
-  border-radius: var(--radius);
-}
-
-/* Quiet link to open the tree */
-.more-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: 48px;
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  border: none;
-  font-family: var(--font);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
   color: var(--ink);
-  opacity: 0.55;
-  cursor: pointer;
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-.more-link:hover,
-.more-link:focus-visible {
-  opacity: 0.85;
 }
 
-.more-link-arrow {
+/* Drill chevron on tree rows. */
+.row-drill {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
+  opacity: 0.35;
+  color: var(--ink);
+}
+
+/* Skeleton row — same height as a real row so the panel doesn't jump. */
+.folder-row--skeleton {
+  pointer-events: none;
+}
+.row-skeleton {
+  height: 20px;
+  width: 55%;
+  border-radius: var(--radius-pill);
+}
+
+/* ── «Все папки» — the final action row ──
+ * A row, but visually subordinate to the destinations above: muted glyph + a
+ * smaller uppercase label + a forward chevron that signals "drill deeper". */
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 48px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--paper);
+  border: none;
+  border-top: var(--hairline);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font);
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--ink);
+  -webkit-text-fill-color: var(--ink);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.browse-row:active {
+  background: var(--ink-active);
+}
+
+.browse-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--ink);
+  opacity: 0.4;
+}
+
+.browse-label {
+  flex: 1;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  opacity: 0.55;
+}
+
+.browse-arrow {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.4;
 }
 
 /* ── Tree view ── */
 .tree-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
 /* Tappable breadcrumb (replaces the old back-to-tiles + Up buttons). */
@@ -452,60 +541,8 @@ defineExpose({ canStepBack, stepBack })
   opacity: 0.6;
 }
 
-.folder-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.folder-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  background: var(--paper);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--font);
-  font-size: var(--fs-md);
-  /* Force ink text + reset native control look — iOS renders <button> text in
-     the system accent (blue) unless color + -webkit-text-fill-color are set. */
-  appearance: none;
-  -webkit-appearance: none;
-  color: var(--ink);
-  -webkit-text-fill-color: var(--ink);
-  transition:
-    transform var(--dur-press) var(--ease-mechanical),
-    box-shadow var(--dur-press) var(--ease-mechanical);
-}
-
-.folder-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  color: var(--yellow);
-  stroke: var(--ink);
-  fill: var(--yellow);
-}
-
-.drill-arrow {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  margin-left: auto;
-  opacity: 0.35;
-}
-
 .picker-empty {
-  padding: var(--space-3);
+  padding: var(--space-4);
   font-size: var(--fs-sm);
   opacity: 0.5;
   text-align: center;

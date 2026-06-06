@@ -7,7 +7,6 @@
 // passes data down as props and receives user actions as events. Behavior and DOM
 // (testids, classes) are preserved verbatim so the AddFlow integration net holds.
 import SearchField from './ui/SearchField.vue'
-import Button from './ui/Button.vue'
 import Chip from './ui/Chip.vue'
 import Skeleton from './ui/Skeleton.vue'
 import type { SearchResultView } from '../types'
@@ -45,61 +44,82 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   <div class="step-input">
     <div class="field search-field">
       <label class="field-label" for="search-query">Поиск</label>
+      <!-- #213: pinned at the top; only the results list below scrolls.
+           Redesign: the input and the «Поиск» submit live in ONE bordered frame
+           (.nb-framed → gapless coral segment, no corner slivers). The history
+           dropdown is a SIBLING of the frame, not a child — the frame clips
+           (overflow:hidden), so an in-frame dropdown would be cut off; it is
+           anchored to the sticky row instead. -->
       <div class="search-row">
-        <SearchField
-          id="search-query"
-          v-model="searchQuery"
-          placeholder="Введите название…"
-          data-testid="search-query"
-          class="search-row-field"
-          @search="emit('search')"
-          @focus="emit('focus')"
-          @blur="emit('blur')"
-        >
-          <!-- History dropdown — data/logic stays in AddFlow, slot keeps primitive dumb.
-               #268 task 04: only open when there are matching items. Previously it also
-               opened when searchHistory had entries but the filtered list was empty,
-               drawing a header-only, bordered empty dropdown on focus. -->
-          <div
-            v-if="searchHistoryVisible && filteredHistory.length > 0"
-            class="search-history-dropdown"
-            data-testid="search-history"
+        <div class="search-frame nb-framed">
+          <svg
+            class="search-frame-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
           >
-            <div class="search-history-header">
-              <span class="search-history-label">Недавнее</span>
-              <button
-                type="button"
-                class="search-history-clear"
-                data-testid="search-history-clear"
-                @mousedown.prevent="emit('clearHistory')"
-              >
-                Очистить
-              </button>
-            </div>
-            <ul class="search-history-list" role="listbox">
-              <li
-                v-for="item in filteredHistory"
-                :key="item"
-                class="search-history-item"
-                data-testid="history-item"
-                role="option"
-                @mousedown.prevent="emit('selectHistory', item)"
-              >
-                {{ item }}
-              </li>
-            </ul>
-          </div>
-        </SearchField>
-        <Button
-          variant="ink"
-          size="md"
-          class="search-btn"
-          data-testid="search-btn"
-          :disabled="searchLoading"
-          @click="emit('search')"
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <SearchField
+            id="search-query"
+            v-model="searchQuery"
+            bare
+            placeholder="Введите название…"
+            inputmode="search"
+            enterkeyhint="search"
+            data-testid="search-query"
+            class="search-row-field"
+            @search="emit('search')"
+            @focus="emit('focus')"
+            @blur="emit('blur')"
+          />
+          <button
+            type="button"
+            class="search-submit"
+            data-testid="search-btn"
+            :disabled="searchLoading"
+            @click="emit('search')"
+          >
+            {{ searchLoading ? '…' : 'Поиск' }}
+          </button>
+        </div>
+
+        <!-- Recent-search history — anchored to .search-row (sibling of the clipped
+             frame). #268 task 04: only open when there are matching items. -->
+        <div
+          v-if="searchHistoryVisible && filteredHistory.length > 0"
+          class="search-history-dropdown"
+          data-testid="search-history"
         >
-          {{ searchLoading ? '…' : 'Поиск' }}
-        </Button>
+          <div class="search-history-header">
+            <span class="search-history-label">Недавнее</span>
+            <button
+              type="button"
+              class="search-history-clear"
+              data-testid="search-history-clear"
+              @mousedown.prevent="emit('clearHistory')"
+            >
+              Очистить
+            </button>
+          </div>
+          <ul class="search-history-list" role="listbox">
+            <li
+              v-for="item in filteredHistory"
+              :key="item"
+              class="search-history-item"
+              data-testid="history-item"
+              role="option"
+              @mousedown.prevent="emit('selectHistory', item)"
+            >
+              {{ item }}
+            </li>
+          </ul>
+        </div>
       </div>
 
       <!-- Loading: skeleton result rows inside the same bordered card the real
@@ -124,9 +144,31 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
         {{ searchError }}
       </div>
 
-      <!-- Empty results -->
-      <div v-else-if="searchQueried && searchResults.length === 0" class="search-empty" data-testid="search-empty">
-        Ничего не найдено
+      <!-- Empty — inside the same bordered card as the results list, so it fills
+           the full height and reads as one consistent surface instead of a stray
+           line of grey text. UX: message + a recovery hint, not a dead end. -->
+      <div
+        v-else-if="searchQueried && searchResults.length === 0"
+        class="search-results search-results--empty"
+        data-testid="search-empty"
+      >
+        <div class="search-empty-inner">
+          <svg
+            class="search-empty-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+          <p class="search-empty-title">Ничего не найдено</p>
+          <p class="search-empty-hint" data-testid="search-empty-hint">Попробуйте изменить запрос</p>
+        </div>
       </div>
 
       <!-- Results — grouped card with hairline dividers (Variant B, #121) -->
@@ -199,17 +241,41 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   margin-bottom: 0;
 }
 
-/* #213: pin the search row at the top of the step. The history dropdown is
-   absolutely positioned relative to the SearchField, so it overlays the
-   scrolling results below rather than pushing them. */
+/* #213: pin the search row at the top of the step. position:sticky also anchors
+   the absolutely-positioned history dropdown (a sibling of the framed bar), so it
+   overlays the scrolling results below rather than pushing them. */
 .search-row {
-  display: flex;
-  gap: var(--space-2);
   position: sticky;
   top: 0;
   z-index: 10;
   background: var(--cream);
   padding-bottom: var(--space-2);
+}
+
+/* ── Segmented search bar (redesign) ──────────────────────────────────────────
+   ONE bordered frame holding: leading magnifier · bare input · coral «Поиск»
+   submit. .nb-framed paints the black outline as an inset overlay and clips
+   children to the rounded corners, so the coral segment reaches the corner with
+   NO sliver (tokens.css). The hard drop shadow lives here and lifts on focus,
+   replacing the old standalone field's focus shadow. */
+.search-frame {
+  display: flex;
+  align-items: stretch;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+.search-frame:focus-within {
+  box-shadow: var(--shadow-md);
+}
+
+.search-frame-icon {
+  flex-shrink: 0;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  margin-left: var(--space-3);
+  color: var(--ink);
+  opacity: 0.5;
 }
 
 .search-row-field {
@@ -218,24 +284,48 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
 }
 
 /* SearchField sets inheritAttrs:false, so the `.search-row-field` class above
-   lands on the inner <input>, NOT the component root — which left the root sized
-   to content and the input never filled the row. Grow the ROOT so the input
-   expands to all available horizontal space (round-2). */
-.search-row :deep(.search-field-root) {
+   lands on the inner <input>, NOT the component root. Grow the ROOT so the bare
+   input expands to fill the gap between the icon and the submit segment. */
+.search-frame :deep(.search-field-root) {
   flex: 1 1 auto;
   min-width: 0;
 }
-
-/* Layout only — the recipe lives in the shared <Button variant="ink">. */
-.search-btn {
-  white-space: nowrap;
+/* The icon already supplies the left inset, so the bare input needs only a small
+   gap from it (not its full default left padding). */
+.search-frame :deep(.search-field-input) {
+  padding-left: var(--space-2);
 }
 
-.search-empty {
-  padding: var(--space-3);
-  text-align: center;
+/* Coral submit segment — full-bleed fill (the frame clips it to the rounded
+   corner), divided from the input by a 3px ink hairline matching the frame
+   weight. Mechanical press would be clipped, so press = a brightness dip. */
+.search-submit {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  background: var(--coral);
+  color: var(--ink);
+  font-family: var(--font);
   font-size: var(--fs-sm);
-  opacity: 0.7;
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: none;
+  border-left: var(--border);
+  border-radius: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter var(--dur-fast) var(--ease-out);
+}
+.search-submit:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+.search-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .search-error {
@@ -247,12 +337,13 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   font-weight: var(--fw-medium);
 }
 
-/* Search history dropdown */
+/* Search history dropdown — anchored to .search-row, sits just below the framed
+   bar (the row's padding-bottom is subtracted so the gap matches the old field). */
 .search-history-dropdown {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% - var(--space-1));
   left: 0;
-  right: 0; /* spans the full SearchField width; the Search button is outside */
+  right: 0; /* spans the full bar width */
   background: var(--paper);
   border: var(--border-strong);
   border-radius: var(--radius);
@@ -331,13 +422,51 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   min-height: 0;
 }
 
-/* Loading variant: the same framed card, sized to its skeleton rows (the real
-   list is flex:1 to own the scroll region; the loader needn't fill it). */
+/* Loading variant: the same framed card, now filling the full height like the
+   real list (flex:1) so the skeleton occupies the whole screen instead of a
+   short content-sized block (user request). No inner scroll while loading. */
 .search-results--loading {
-  flex: 0 0 auto;
+  flex: 1;
+  overflow: hidden;
 }
 .result-row--skeleton {
   pointer-events: none;
+}
+
+/* Empty variant: reuse the bordered results card (so it fills the full height —
+   flex:1 from .search-results) and center a sticker-icon + message + recovery
+   hint inside it, instead of a stray line of grey text. */
+.search-results--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.search-empty-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+}
+.search-empty-icon {
+  width: 44px;
+  height: 44px;
+  color: var(--ink);
+  opacity: 0.55;
+}
+.search-empty-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.search-empty-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  opacity: 0.6;
 }
 .sk-result-title {
   height: 14px;

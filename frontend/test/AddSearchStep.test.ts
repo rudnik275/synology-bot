@@ -263,3 +263,93 @@ describe('#268 task 05 skeleton loader', () => {
     expect(loading.findAll('.result-row--skeleton').length).toBeGreaterThanOrEqual(3)
   })
 })
+
+// ── Search redesign: segmented single frame (input + coral submit) ──────────
+describe('search redesign: segmented frame', () => {
+  it('wraps the input and the submit button in ONE .search-frame', () => {
+    const wrapper = mount(AddSearchStep, { props: { ...baseProps, searchQuery: 'q' } })
+    const frame = wrapper.find('.search-frame')
+    expect(frame.exists()).toBe(true)
+    // Both the input and the search button live inside the single frame.
+    expect(frame.find('[data-testid="search-query"]').exists()).toBe(true)
+    expect(frame.find('[data-testid="search-btn"]').exists()).toBe(true)
+  })
+
+  it('the frame uses the gapless .nb-framed preset (no corner slivers)', () => {
+    const wrapper = mount(AddSearchStep, { props: { ...baseProps, searchQuery: 'q' } })
+    expect(wrapper.find('.search-frame').classes()).toContain('nb-framed')
+  })
+
+  it('CSS: the submit segment is a coral fill', () => {
+    const ruleMatch = cssSource.match(/\.search-submit\s*\{([^}]*)\}/)
+    expect(ruleMatch).not.toBeNull()
+    const decls = normalise(ruleMatch![1])
+    expect(decls).toContain('background: var(--coral)')
+  })
+
+  it('the search button preserves its data-testid and disables while loading', () => {
+    const wrapper = mount(AddSearchStep, {
+      props: { ...baseProps, searchQuery: 'q', searchLoading: true },
+    })
+    const btn = wrapper.find('[data-testid="search-btn"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('disabled')).toBeDefined()
+  })
+
+  it('history dropdown is a SIBLING of the framed bar, not clipped inside it', () => {
+    // The frame is .nb-framed (overflow:hidden) so the dropdown — which drops
+    // BELOW the bar — must live outside the frame or it would be clipped away.
+    const wrapper = mount(AddSearchStep, {
+      props: {
+        ...baseProps,
+        searchQuery: '',
+        searchHistoryVisible: true,
+        filteredHistory: ['old query'],
+        searchHistory: ['old query'],
+      },
+    })
+    expect(wrapper.find('[data-testid="search-history"]').exists()).toBe(true)
+    // Not a descendant of the clipped frame…
+    expect(wrapper.find('.search-frame [data-testid="search-history"]').exists()).toBe(false)
+    // …but still inside the sticky row that anchors it.
+    expect(wrapper.find('.search-row [data-testid="search-history"]').exists()).toBe(true)
+  })
+})
+
+// ── Full-height: loading skeleton + empty state fill the screen ─────────────
+describe('search redesign: full-height loading + empty', () => {
+  it('CSS: the loading card fills the height (flex:1, not content-sized)', () => {
+    const ruleMatch = cssSource.match(/\.search-results--loading\s*\{([^}]*)\}/)
+    expect(ruleMatch).not.toBeNull()
+    const decls = normalise(ruleMatch![1])
+    expect(decls).toContain('flex: 1')
+    // The old content-sized rule must be gone.
+    expect(decls).not.toContain('flex: 0 0 auto')
+  })
+
+  it('the empty state reuses the bordered results card (so it fills height)', () => {
+    const wrapper = mount(AddSearchStep, {
+      props: { ...baseProps, searchQuery: 'zzz', searchQueried: true, searchResults: [] },
+    })
+    const empty = wrapper.find('[data-testid="search-empty"]')
+    expect(empty.exists()).toBe(true)
+    // Same .search-results card chrome as the real list → flex:1 full height.
+    expect(empty.classes()).toContain('search-results')
+  })
+
+  it('CSS: the empty card centers its content', () => {
+    const ruleMatch = cssSource.match(/\.search-results--empty\s*\{([^}]*)\}/)
+    expect(ruleMatch).not.toBeNull()
+    const decls = normalise(ruleMatch![1])
+    expect(decls).toContain('display: flex')
+    expect(decls).toContain('align-items: center')
+    expect(decls).toContain('justify-content: center')
+  })
+
+  it('the empty state shows a helpful hint, not just bare text', () => {
+    const wrapper = mount(AddSearchStep, {
+      props: { ...baseProps, searchQuery: 'zzz', searchQueried: true, searchResults: [] },
+    })
+    expect(wrapper.find('[data-testid="search-empty-hint"]').exists()).toBe(true)
+  })
+})

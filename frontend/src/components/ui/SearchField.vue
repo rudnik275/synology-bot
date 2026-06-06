@@ -16,6 +16,10 @@ defineOptions({ inheritAttrs: false })
 
 defineProps<{
   modelValue: string
+  // `bare` strips the input's own border/shadow/radius/bg so it can sit INSIDE
+  // an outer frame (e.g. the add-search segmented bar, where the frame owns the
+  // chrome). Default false keeps the standalone Neo-Brutalist recipe (ShowsTab).
+  bare?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -31,6 +35,7 @@ const emit = defineEmits<{
     <input
       v-bind="$attrs"
       class="search-field-input"
+      :class="{ 'search-field-input--bare': bare }"
       :value="modelValue"
       autocomplete="off"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
@@ -66,5 +71,17 @@ const emit = defineEmits<{
 
 .search-field-input:focus {
   box-shadow: var(--shadow-md);
+}
+
+/* Bare: no chrome of its own — the surrounding frame owns the border/shadow/radius.
+   Keeps the touch height + typography so the field still feels like an input. */
+.search-field-input--bare {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+.search-field-input--bare:focus {
+  box-shadow: none;
 }
 </style>

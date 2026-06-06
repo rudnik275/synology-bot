@@ -52,19 +52,32 @@ watch(tasks, (real) => reconcile(real))
 // cancel/confirm). The dialog is the only guard before the destructive action.
 const confirmDeleteId = ref<string | null>(null)
 
+// Task whose delete is in-flight (#269 task 10). While set, the confirm dialog
+// shows a «Удаляю…» loader with the buttons gone, and stays open until the API
+// resolves — the task then leaves the list on the refetch. Without this the
+// dialog closed instantly and the card sat there for the 5–10 s the delete took.
+const deletingId = ref<string | null>(null)
+
 function requestDelete(id: string): void {
   confirmDeleteId.value = id
 }
 
 function cancelDelete(): void {
+  // Can't dismiss mid-delete — the action is already committed.
+  if (deletingId.value !== null) return
   confirmDeleteId.value = null
 }
 
 async function confirmDelete(): Promise<void> {
-  if (!confirmDeleteId.value) return
+  if (!confirmDeleteId.value || deletingId.value !== null) return
   const id = confirmDeleteId.value
-  confirmDeleteId.value = null
-  await deleteTask(id)
+  deletingId.value = id
+  try {
+    await deleteTask(id)
+  } finally {
+    deletingId.value = null
+    confirmDeleteId.value = null
+  }
 }
 
 // ── Status helpers ────────────────────────────────────────────────────────────
@@ -146,8 +159,10 @@ function qualityChips(task: TaskView): string[] {
   <div class="downloads-tab">
     <ScreenHeader title="Загрузки" />
 
-    <!-- Loading skeleton: content-shaped cards matching the real card geometry (#115 Variant A) -->
-    <div v-if="loading && tasks.length === 0" class="loading-state" aria-label="Загрузка списка" aria-busy="true">
+    <!-- Loading skeleton: content-shaped cards matching the real card geometry (#115 Variant A).
+         Suppressed while an optimistic placeholder is pending so a just-added download shows its
+         «Добавляем…» card immediately instead of the skeleton/empty screen (#269 task 09). -->
+    <div v-if="loading && tasks.length === 0 && pending.length === 0" class="loading-state" aria-label="Загрузка списка" aria-busy="true">
       <div v-for="i in 3" :key="i" class="sk-card" role="presentation">
         <!-- Left edge stripe in neutral skeleton grey (status unknown while loading) -->
         <div class="sk-edge" />
@@ -184,8 +199,10 @@ function qualityChips(task: TaskView): string[] {
       </template>
     </EmptyState>
 
-    <!-- Empty state: inline add-row as the Add affordance (#249). -->
-    <EmptyState v-else-if="!loading && tasks.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать.">
+    <!-- Empty state: inline add-row as the Add affordance (#249). Also suppressed
+         while a placeholder is pending (#269 task 09) — the just-added download
+         renders in the list below instead of flashing «Нет загрузок». -->
+    <EmptyState v-else-if="!loading && tasks.length === 0 && pending.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать.">
       <template #action>
         <button
           type="button"
@@ -275,44 +292,50 @@ function qualityChips(task: TaskView): string[] {
           <span v-if="task.destination" class="meta-dest">{{ task.destination }}</span>
         </div>
 
-        <!-- Action row: 0 or 1 primary icon button + direct delete (trash) button (#249) -->
+        <!-- Action row: pause/resume + delete as ONE right-aligned segmented
+             group (#267 task 01) — instead of pause far-left / delete far-right. -->
         <div class="task-actions">
-          <!-- Primary action: icon-only for pause/resume to keep cards compact (#249).
-               Pause glyph (⏸) while downloading/waiting/finishing; play glyph (▶) while paused. -->
-          <button
-            v-if="hasPrimaryAction(task.status)"
-            type="button"
-            class="btn-primary-icon nb-pressable"
-            :aria-label="isPaused(task.status) ? 'Продолжить' : 'Пауза'"
-            :data-testid="`btn-primary-${task.id}`"
-            @click="onPrimary(task)"
-          >
-            <!-- Pause glyph: two vertical bars -->
-            <svg v-if="!isPaused(task.status)" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <rect x="6" y="4" width="4" height="16" rx="1" />
-              <rect x="14" y="4" width="4" height="16" rx="1" />
-            </svg>
-            <!-- Play/resume glyph: right-pointing triangle -->
-            <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
-          </button>
+          <div class="action-group">
+            <!-- Primary action: icon-only pause/resume. Pause glyph while
+                 downloading/waiting/finishing; play glyph while paused. -->
+            <button
+              v-if="hasPrimaryAction(task.status)"
+              type="button"
+              class="action-seg action-seg--primary"
+              :aria-label="isPaused(task.status) ? 'Продолжить' : 'Пауза'"
+              :data-testid="`btn-primary-${task.id}`"
+              :disabled="deletingId === task.id"
+              @click="onPrimary(task)"
+            >
+              <!-- Pause glyph: two vertical bars -->
+              <svg v-if="!isPaused(task.status)" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="6" y="4" width="4" height="16" rx="1" />
+                <rect x="14" y="4" width="4" height="16" rx="1" />
+              </svg>
+              <!-- Play/resume glyph: right-pointing triangle -->
+              <svg v-else viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+            </button>
 
-          <!-- Delete: a direct trash-icon button → one tap opens the confirm dialog. -->
-          <button
-            class="btn-delete nb-pressable"
-            :aria-label="`Удалить: ${task.title}`"
-            :data-testid="`btn-delete-${task.id}`"
-            @click.stop="requestDelete(task.id)"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M3 6h18" />
-              <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-              <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-              <line x1="10" y1="11" x2="10" y2="17" />
-              <line x1="14" y1="11" x2="14" y2="17" />
-            </svg>
-          </button>
+            <!-- Delete: one tap opens the confirm dialog. -->
+            <button
+              type="button"
+              class="action-seg action-seg--delete"
+              :aria-label="`Удалить: ${task.title}`"
+              :data-testid="`btn-delete-${task.id}`"
+              :disabled="deletingId === task.id"
+              @click.stop="requestDelete(task.id)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 6h18" />
+                <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                <line x1="10" y1="11" x2="10" y2="17" />
+                <line x1="14" y1="11" x2="14" y2="17" />
+              </svg>
+            </button>
+          </div>
         </div>
       </Card>
     </TransitionGroup>
@@ -322,8 +345,16 @@ function qualityChips(task: TaskView): string[] {
       <Transition name="confirm-pop">
         <div v-if="confirmDeleteId !== null" class="confirm-backdrop" @click.self="cancelDelete">
           <div class="confirm-dialog" role="dialog" aria-modal="true" aria-label="Confirm delete">
-            <p class="confirm-message">Удалить задачу? Это действие нельзя отменить.</p>
-            <div class="confirm-actions">
+            <p class="confirm-message">
+              {{ deletingId !== null ? 'Удаляю задачу…' : 'Удалить задачу? Это действие нельзя отменить.' }}
+            </p>
+            <!-- While the delete is in-flight: a loader replaces the buttons and the
+                 dialog stays open until the task actually leaves the list (#269 task 10). -->
+            <div v-if="deletingId !== null" class="confirm-deleting" data-testid="delete-progress" aria-live="polite">
+              <Spinner :size="18" aria-hidden="true" />
+              <span>Удаляю…</span>
+            </div>
+            <div v-else class="confirm-actions">
               <Button variant="neutral" size="sm" data-testid="btn-cancel-delete" @click="cancelDelete">Отмена</Button>
               <Button variant="danger" size="sm" data-testid="btn-confirm-delete" @click="confirmDelete">Удалить</Button>
             </div>
@@ -440,58 +471,62 @@ function qualityChips(task: TaskView): string[] {
 }
 
 /* ── Action row ── */
+/* The actions read as ONE right-aligned segmented control (#267 task 01) rather
+   than pause-far-left / delete-far-right split across the card width. */
 .task-actions {
   display: flex;
-  gap: var(--space-2);
+  justify-content: flex-end;
   align-items: center;
 }
 
-/* Icon-only pause/resume button (#249): compact, same height as the delete button.
-   margin-left:auto pushes the delete to the far right when no icon is present;
-   when both are shown the icon sits flush-left and delete is at the far right. */
-.btn-primary-icon {
+/* Segmented group: shared strong border + offset shadow, hairline divider between
+   the (optional) pause/resume segment and the delete segment. */
+.action-group {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 44px;
-  min-height: 44px;
-  color: var(--ink);
-  background: var(--yellow);
   border: var(--border-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  cursor: pointer;
-  user-select: none;
-}
-.btn-primary-icon svg {
-  width: 20px;
-  height: 20px;
+  overflow: hidden;
 }
 
-/* Delete: direct trash-icon button. Black ink icon (the confirmation dialog
-   carries the destructive weight). Sits as the trailing action (margin-left:auto
-   right-aligns it when there is no primary button; when a primary is present its
-   the icon button is already left of it). */
-.btn-delete {
+.action-seg {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-left: auto;
-  width: 44px;
+  width: 52px;
   min-height: 44px;
   color: var(--ink);
   background: var(--cream);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  border: none;
+  border-radius: 0;
   cursor: pointer;
   user-select: none;
+  transition: background var(--dur-fast) var(--ease-out);
 }
-.btn-delete svg {
+/* Divider between segments — the only internal line of the group. */
+.action-seg + .action-seg {
+  border-left: var(--border-strong);
+}
+.action-seg:active {
+  background: var(--ink-active);
+}
+.action-seg:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.action-seg svg {
   width: 20px;
   height: 20px;
+}
+
+/* Pause/resume segment carries the yellow action accent. */
+.action-seg--primary {
+  background: var(--yellow);
+}
+.action-seg--primary:active {
+  background: var(--yellow);
+  filter: brightness(0.92);
 }
 
 /* ── Delete confirmation dialog ── */
@@ -530,6 +565,16 @@ function qualityChips(task: TaskView): string[] {
   display: flex;
   gap: var(--space-2);
   justify-content: flex-end;
+}
+
+/* In-flight delete loader (#269 task 10) — replaces the buttons while awaiting. */
+.confirm-deleting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
 }
 
 /* ── Confirm dialog pop ── */

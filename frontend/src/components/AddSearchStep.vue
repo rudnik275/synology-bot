@@ -9,7 +9,7 @@
 import SearchField from './ui/SearchField.vue'
 import Button from './ui/Button.vue'
 import Chip from './ui/Chip.vue'
-import LoadingText from './ui/LoadingText.vue'
+import Skeleton from './ui/Skeleton.vue'
 import type { SearchResultView } from '../types'
 
 defineProps<{
@@ -56,9 +56,12 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
           @focus="emit('focus')"
           @blur="emit('blur')"
         >
-          <!-- History dropdown — data/logic stays in AddFlow, slot keeps primitive dumb -->
+          <!-- History dropdown — data/logic stays in AddFlow, slot keeps primitive dumb.
+               #268 task 04: only open when there are matching items. Previously it also
+               opened when searchHistory had entries but the filtered list was empty,
+               drawing a header-only, bordered empty dropdown on focus. -->
           <div
-            v-if="searchHistoryVisible && (filteredHistory.length > 0 || searchHistory.length > 0)"
+            v-if="searchHistoryVisible && filteredHistory.length > 0"
             class="search-history-dropdown"
             data-testid="search-history"
           >
@@ -99,12 +102,22 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
         </Button>
       </div>
 
-      <!-- Loading -->
-      <LoadingText
+      <!-- Loading: skeleton result rows inside the same bordered card the real
+           results use, instead of a plain text loader (#268 task 05). -->
+      <div
         v-if="searchLoading"
-        class="search-loading"
+        class="search-results search-results--loading"
         data-testid="search-loading"
-      />
+        aria-busy="true"
+        aria-label="Поиск"
+      >
+        <div v-for="i in 5" :key="i" class="result-row result-row--skeleton">
+          <div class="result-row-content">
+            <Skeleton class="sk-result-title" />
+            <Skeleton class="sk-result-meta" />
+          </div>
+        </div>
+      </div>
 
       <!-- Error -->
       <div v-else-if="searchError" class="search-error" role="alert" data-testid="search-error">
@@ -209,7 +222,6 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   white-space: nowrap;
 }
 
-.search-loading,
 .search-empty {
   padding: var(--space-3);
   text-align: center;
@@ -291,19 +303,41 @@ function seedHealth(seeders: number): 'green' | 'amber' | 'red' {
   background: var(--yellow);
 }
 
-/* ── Results list (Variant B, #121; box border dropped #11) ── */
+/* ── Results list (Variant B, #121) ── */
 
-/* Outer container: borderless scrolling list (the box border read as an
-   artifact — #11). #213: this is the single scroll region of step 1 — the
-   pinned search row stays put while the results list scrolls under it. */
+/* Outer container: a bordered "card" wrapping the scrolling list. #213: this is
+   the single scroll region of step 1 — the pinned search row stays put while the
+   results list scrolls under it. */
 .search-results {
-  /* #11: no outer bordered-box chrome — the bottom border read as a leftover
-     artifact. A clean scrolling list; the row hairline dividers carry structure. */
+  /* #268 task 05: restore the bordered-box chrome that #11 dropped — the user
+     wants the black-bordered card back. With the inner-scroll fix (#12) the
+     bottom border frames the scrolling list instead of reading as a stray
+     artifact; the row hairline dividers carry the internal structure. */
+  border: var(--border);
   border-radius: var(--radius);
   overflow: hidden auto;
   background: var(--paper);
+  box-shadow: var(--shadow-sm);
   flex: 1;
   min-height: 0;
+}
+
+/* Loading variant: the same framed card, sized to its skeleton rows (the real
+   list is flex:1 to own the scroll region; the loader needn't fill it). */
+.search-results--loading {
+  flex: 0 0 auto;
+}
+.result-row--skeleton {
+  pointer-events: none;
+}
+.sk-result-title {
+  height: 14px;
+  width: 60%;
+}
+.sk-result-meta {
+  height: 11px;
+  width: 38%;
+  margin-top: 6px;
 }
 
 /* Each row is a full-width button with a hairline divider beneath it */

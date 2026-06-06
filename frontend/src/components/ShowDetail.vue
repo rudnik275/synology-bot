@@ -190,14 +190,20 @@ function formatDate(airDate: string): string {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-4);
+  /* #270 task 13: no own padding — ShowsTab already pads the section by
+     var(--space-4). The own 16px padding stacked on top, insetting the content
+     to ~32px while the «Шоу» header stayed at 16px (different grids). Drop it so
+     the whole page shares one 16px-left grid with the header. */
+  padding: 0;
 }
 
 /* ── Block 1: title row ──────────────────────────────────────────────────── */
 .show-hero {
   display: flex;
   gap: var(--space-3);
-  align-items: flex-start;
+  /* stretch so the titles column matches the poster height — lets the action
+     button drop to the poster's bottom line (#270 task 12). */
+  align-items: stretch;
 }
 
 /* Hero poster: 2:3 ratio, block treatment */
@@ -247,7 +253,10 @@ function formatDate(airDate: string): string {
 }
 
 .show-action {
-  margin-top: var(--space-2);
+  /* Push to the bottom-right corner of the hero block, on the poster's bottom
+     line (#270 task 12) — instead of sitting directly under the title. */
+  margin-top: auto;
+  align-self: flex-end;
 }
 
 /* ── Block 2: status cards ───────────────────────────────────────────────── */

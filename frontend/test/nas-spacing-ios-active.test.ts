@@ -1,5 +1,6 @@
 // TDD tests for:
-//   #1  NasTab .section-head asymmetric margin (40px top / 8px bottom)
+//   #1  NasTab .section-head asymmetric margin — label hugs its own card below,
+//       separated from the block above (rebalanced in #270 task 11)
 //   #14 iOS :active enabler — touchstart listener added to body
 //
 // Written RED first (before implementation), then made GREEN.
@@ -14,8 +15,8 @@ import * as path from 'path'
 // inside the .vue SFC source. This directly pins the shipped rule to the
 // intended visual contract ("margin: 40px 0 var(--space-2)").
 
-describe('NasTab .section-head margin rhythm (#1)', () => {
-  it('has a 40px top margin on .section-head in the component source', () => {
+describe('NasTab .section-head margin rhythm (#1, rebalanced #270 task 11)', () => {
+  it('has top-only margin on .section-head so the label hugs its card below', () => {
     const vueFile = path.resolve(
       import.meta.dir,
       '../src/tabs/NasTab.vue',
@@ -27,9 +28,17 @@ describe('NasTab .section-head margin rhythm (#1)', () => {
     expect(styleMatch).not.toBeNull()
     const css = styleMatch![1]
 
-    // The .section-head rule must use a large top margin (40px) so the label
-    // visually groups with the block below it, not the block above.
-    expect(css).toMatch(/\.section-head\s*\{[^}]*margin:\s*40px\s+0\s+var\(--space-2\)/)
+    // #270 task 11: the label hugs its OWN card below (no bottom margin — the
+    // tight base gap separates them by ~4px) and sits ~16px below the previous
+    // section's card (this 12px top margin + the 4px base gap). The earlier
+    // 40px-top / 8px-bottom rhythm read as too loose for the user.
+    expect(css).toMatch(/\.section-head\s*\{[^}]*margin:\s*var\(--space-3\)\s+0\s+0/)
+  })
+
+  it('uses a 4px base gap on .nas-tab so labels hug their cards', () => {
+    const vueFile = path.resolve(import.meta.dir, '../src/tabs/NasTab.vue')
+    const css = fs.readFileSync(vueFile, 'utf-8').match(/<style[^>]*>([\s\S]*?)<\/style>/)![1]
+    expect(css).toMatch(/\.nas-tab\s*\{[^}]*gap:\s*var\(--space-1\)/)
   })
 })
 

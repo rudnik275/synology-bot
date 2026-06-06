@@ -220,3 +220,46 @@ describe('#12 inner scroll: results container owns the scroll region', () => {
     expect(decls).toContain('z-index')
   })
 })
+
+// ── #268 task 04: history dropdown only opens when there are matching items ──
+describe('#268 task 04 history dropdown', () => {
+  it('does NOT render the dropdown when the filtered list is empty (even if history exists)', () => {
+    // Previously it also opened on `searchHistory.length > 0`, drawing a
+    // header-only, bordered empty dropdown on focus.
+    const wrapper = mount(AddSearchStep, {
+      props: {
+        ...baseProps,
+        searchQuery: 'zzz',
+        searchHistoryVisible: true,
+        filteredHistory: [],
+        searchHistory: ['old query'],
+      },
+    })
+    expect(wrapper.find('[data-testid="search-history"]').exists()).toBe(false)
+  })
+
+  it('renders the dropdown when there are filtered (matching) items', () => {
+    const wrapper = mount(AddSearchStep, {
+      props: {
+        ...baseProps,
+        searchQuery: '',
+        searchHistoryVisible: true,
+        filteredHistory: ['old query'],
+        searchHistory: ['old query'],
+      },
+    })
+    expect(wrapper.find('[data-testid="search-history"]').exists()).toBe(true)
+  })
+})
+
+// ── #268 task 05: the loading state is a skeleton card, not a text loader ──
+describe('#268 task 05 skeleton loader', () => {
+  it('shows skeleton result rows while loading', () => {
+    const wrapper = mount(AddSearchStep, {
+      props: { ...baseProps, searchQuery: 'x', searchLoading: true },
+    })
+    const loading = wrapper.find('[data-testid="search-loading"]')
+    expect(loading.exists()).toBe(true)
+    expect(loading.findAll('.result-row--skeleton').length).toBeGreaterThanOrEqual(3)
+  })
+})

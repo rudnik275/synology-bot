@@ -1,14 +1,17 @@
 import { InlineKeyboard } from 'grammy'
 import type { Category } from './categories.ts'
 
-/** The three Mini App tabs (mirrors frontend TabKey). */
-export type Tab = 'downloads' | 'nas' | 'shows'
+/** Mini App deep-link targets: the three spoke sections + the hub/root.
+ *  A `hub` token isn't a section, so the frontend's resolveStartView falls back
+ *  to the Home hub (mirrors frontend StartView). */
+export type Tab = 'downloads' | 'nas' | 'shows' | 'hub'
 
 /**
- * Deep-link map (ADR 0006): push category → target Mini App tab.
+ * Deep-link map (ADR 0006): push category → target Mini App view.
  *   torrents      → downloads
  *   health        → nas
- *   deploy        → nas
+ *   deploy        → hub   (#269 task 07: deploy links opened the NAS tab, which
+ *                          the user found confusing — they should land on root)
  *   subscriptions → shows
  */
 export function categoryToTab(category: Category): Tab {
@@ -16,8 +19,9 @@ export function categoryToTab(category: Category): Tab {
     case 'torrents':
       return 'downloads'
     case 'health':
-    case 'deploy':
       return 'nas'
+    case 'deploy':
+      return 'hub'
     case 'subscriptions':
       return 'shows'
   }

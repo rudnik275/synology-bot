@@ -8,8 +8,8 @@ describe('categoryToTab', () => {
   it('maps health → nas', () => {
     expect(categoryToTab('health')).toBe('nas')
   })
-  it('maps deploy → nas', () => {
-    expect(categoryToTab('deploy')).toBe('nas')
+  it('maps deploy → hub (#269 task 07: deploy links land on root, not the NAS tab)', () => {
+    expect(categoryToTab('deploy')).toBe('hub')
   })
   it('maps subscriptions → shows', () => {
     expect(categoryToTab('subscriptions')).toBe('shows')
@@ -41,6 +41,12 @@ describe('openMiniAppButton', () => {
     const kb = openMiniAppButton('https://nas.example.com', 'shows')
     const btn = kb!.inline_keyboard[0][0] as { web_app: { url: string } }
     expect(btn.web_app.url).toContain('tgWebAppStartParam=shows')
+  })
+
+  it('encodes the hub target (#269 task 07) — frontend resolves it to the root', () => {
+    const kb = openMiniAppButton('https://nas.example.com', 'hub')
+    const btn = kb!.inline_keyboard[0][0] as { web_app: { url: string } }
+    expect(btn.web_app.url).toContain('tgWebAppStartParam=hub')
   })
 
   it('preserves the configured base url', () => {

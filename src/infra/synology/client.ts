@@ -92,7 +92,10 @@ export class SynologyClient {
     return this.downloadTasks.deleteTask(taskId, deleteFiles)
   }
 
-  createDownloadTask(uri: string, destination: string): Promise<Result> {
+  createDownloadTask(
+    uri: string,
+    destination: string,
+  ): Promise<{ ok: true; id?: string } | Extract<Result, { ok: false }>> {
     return this.downloadTasks.createDownloadTask(uri, destination)
   }
 
@@ -109,7 +112,11 @@ export class SynologyClient {
     return this.inspectList.getInspectList(listId)
   }
 
-  commitInspectList(listId: string, selected: number[], destination: string): Promise<Result> {
+  commitInspectList(
+    listId: string,
+    selected: number[],
+    destination: string,
+  ): Promise<{ ok: true; id?: string } | Extract<Result, { ok: false }>> {
     return this.inspectList.commitInspectList(listId, selected, destination)
   }
 

@@ -180,3 +180,34 @@ describe('useOptimisticTasks — reconcile by identity', () => {
     expect(pendingTasks()).toHaveLength(0)
   })
 })
+
+describe('useOptimisticTasks — real-id (attachRealId + reconcile by id)', () => {
+  it('attachRealId surfaces the real id on the pending task', () => {
+    const { add, attachRealId, pendingTasks } = useOptimisticTasks()
+    const id = add({ title: 'Movie', destination: '/video' })
+    expect(pendingTasks()[0].realId).toBeUndefined()
+
+    attachRealId(id, 'dbid_42')
+    expect(pendingTasks()[0].realId).toBe('dbid_42')
+  })
+
+  it('attachRealId on an unknown/retired id is a no-op (does not throw)', () => {
+    const { attachRealId, pendingTasks } = useOptimisticTasks()
+    attachRealId('optimistic-gone', 'dbid_x')
+    expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('reconcile retires by EXACT real-id match even when title AND dest drift', () => {
+    const { add, attachRealId, reconcile, pendingTasks } = useOptimisticTasks()
+    reconcile([])
+
+    const id = add({ title: 'Tracker Name 2015', destination: '/video/новое' })
+    attachRealId(id, 'dbid_99')
+    expect(pendingTasks()).toHaveLength(1)
+
+    // DSM renamed the torrent AND reports a different-looking destination — only
+    // the exact real-id ties them together.
+    reconcile([realTask({ id: 'dbid_99', title: 'Completely Different.mkv', destination: '/elsewhere' })])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+})

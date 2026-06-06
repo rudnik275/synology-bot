@@ -176,7 +176,10 @@ export function registerTaskRoutes(app: Hono<AppEnv>, deps: TaskRouteDeps, stash
     const src = await resolveSource(c, toloka, tolokaBaseUrl, stash)
     if (!src.ok) return c.json({ error: src.error }, src.status)
     const result = await synology.createDownloadTask(src.url, src.destination)
-    return respondResult(c, result, { okStatus: 201 })
+    if (!result.ok) return respondResult(c, result)
+    // Echo the created task id so the Mini App's optimistic card can cancel it
+    // before the next poll picks it up (id omitted if DSM returned none).
+    return c.json({ ok: true, id: result.id }, 201)
   })
 
   // --- Per-file selection (#123): inspect → (client picks files) → commit ---
@@ -260,6 +263,7 @@ export function registerTaskRoutes(app: Hono<AppEnv>, deps: TaskRouteDeps, stash
       if (createdFromToken) void synology.deleteInspectList(listIdToCommit)
       return respondResult(c, result)
     }
-    return c.json({ ok: true }, 201)
+    // Echo the committed task id (see POST /api/tasks) for optimistic cancel.
+    return c.json({ ok: true, id: result.id }, 201)
   })
 }

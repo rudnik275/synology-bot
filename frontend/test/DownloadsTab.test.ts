@@ -490,20 +490,93 @@ describe('DownloadsTab — optimistic placeholder + delete feedback (#269)', () 
     expect(bar.attributes('aria-valuenow')).toBe('0')
   })
 
-  it('pending card shows the known size when the source was inspected, skeleton otherwise (round-3)', async () => {
+  it('pending card shows a 0% + «0 B / size» readout instead of skeletons (no-skeleton redesign)', async () => {
     globalThis.fetch = (() => Promise.resolve(jsonResponse({ tasks: [] }))) as typeof fetch
     const optimistic = useOptimisticTasks()
-    // Known size from an inspected add → rendered as a human size, no size skeleton.
+    // Known size from an inspected add → rendered as «0 B / 1.9 GB».
     optimistic.add({ title: 'Known Size', destination: '/downloads', sizeBytes: 2_000_000_000 })
-    // Unknown size (magnet) → a skeleton placeholder stands in.
+    // Unknown size (magnet) → «0 B / 0 B», same as a real just-started task.
     optimistic.add({ title: 'Unknown Size', destination: '/downloads' })
 
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    // The inspected card shows a real size; at least one card shows a size skeleton.
-    expect(wrapper.text()).toContain('1.9 GB')
-    expect(wrapper.find('.meta-size-sk').exists()).toBe(true)
+    // The skeleton placeholders are gone for good.
+    expect(wrapper.find('.meta-size-sk').exists()).toBe(false)
+    expect(wrapper.find('.meta-pct-sk').exists()).toBe(false)
+
+    // Both pending cards read «0%»; the known-size one shows its total after «0 B /».
+    const pcts = wrapper.findAll('.meta-pct').map((n) => n.text())
+    expect(pcts.filter((t) => t === '0%').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.text()).toContain('0 B / 1.9 GB')
+    expect(wrapper.text()).toContain('0 B / 0 B')
+  })
+
+  it('pending card has a working delete that cancels by the real DSM id', async () => {
+    const calls: { url: string; init?: RequestInit }[] = []
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      calls.push({ url, init: init ? { ...init } : undefined })
+      return Promise.resolve(jsonResponse({ tasks: [] }))
+    }) as typeof fetch
+
+    const optimistic = useOptimisticTasks()
+    const oid = optimistic.add({ title: 'Cancel Me', destination: '/downloads' })
+    // The add resolved with the real DSM id (attachRealId), so cancel is immediate.
+    optimistic.attachRealId(oid, 'dbid_real_1')
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // The pending card is the only card → its trash button is the only delete.
+    const trash = wrapper.find('.action-seg--delete')
+    expect(trash.exists()).toBe(true)
+
+    // Two-tap: arm, then confirm.
+    await trash.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[data-testid^="btn-confirm-delete-"]').trigger('click')
+    await flushPromises()
+
+    // DELETE hit the REAL id, not the optimistic placeholder id.
+    const del = calls.find((c) => c.init?.method === 'DELETE')
+    expect(del).toBeDefined()
+    expect(del!.url).toContain('/api/tasks/dbid_real_1')
+    expect(del!.url).not.toContain('optimistic-')
+    // The placeholder is dropped.
+    expect(wrapper.text()).not.toContain('Cancel Me')
+  })
+
+  it('pending card delete defers until the real id arrives, then cancels', async () => {
+    const calls: { url: string; init?: RequestInit }[] = []
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      calls.push({ url, init: init ? { ...init } : undefined })
+      return Promise.resolve(jsonResponse({ tasks: [] }))
+    }) as typeof fetch
+
+    const optimistic = useOptimisticTasks()
+    const oid = optimistic.add({ title: 'Defer Me', destination: '/downloads' })
+    // NOTE: no realId yet — the add request hasn't resolved.
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // Arm + confirm while the real id is still unknown → no DELETE can fire yet.
+    await wrapper.find('.action-seg--delete').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[data-testid^="btn-confirm-delete-"]').trigger('click')
+    await flushPromises()
+    expect(calls.some((c) => c.init?.method === 'DELETE')).toBe(false)
+    // The confirm button shows a spinner while waiting.
+    expect(wrapper.find('[data-testid^="btn-confirm-delete-"] .spinner').exists()).toBe(true)
+
+    // The add resolves → attachRealId → the deferred delete fires automatically.
+    optimistic.attachRealId(oid, 'dbid_late')
+    await flushPromises()
+
+    const del = calls.find((c) => c.init?.method === 'DELETE')
+    expect(del).toBeDefined()
+    expect(del!.url).toContain('/api/tasks/dbid_late')
+    expect(wrapper.text()).not.toContain('Defer Me')
   })
 
   it('pending card renders quality chips it already knows from the add (round-3)', async () => {

@@ -435,11 +435,19 @@ function create(): void {
   open.value = false
   emit('added') // notify the shell to navigate to Downloads (#249)
   resetForm()
-  void doAdd().catch((e) => {
-    optimistic.remove(optimisticId)
-    // The sheet is gone, so surface failures on the next open via errorMsg.
-    errorMsg.value = e instanceof Error ? e.message : String(e)
-  })
+  void doAdd()
+    .then((res) => {
+      // The add endpoints echo the created task's real DSM id — record it on the
+      // placeholder so its «удалить» can cancel the download by that id (and so
+      // reconcile retires it by exact id even if DSM renamed the torrent).
+      const id = (res as { id?: string } | null | undefined)?.id
+      if (id) optimistic.attachRealId(optimisticId, id)
+    })
+    .catch((e) => {
+      optimistic.remove(optimisticId)
+      // The sheet is gone, so surface failures on the next open via errorMsg.
+      errorMsg.value = e instanceof Error ? e.message : String(e)
+    })
 }
 
 /**

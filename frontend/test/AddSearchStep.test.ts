@@ -71,23 +71,8 @@ describe('#10 full-width input', () => {
     expect(field.exists()).toBe(true)
   })
 
-  it('CSS: .search-row-field has flex:1', () => {
-    // Ensures the input region grows to fill available width.
-    expect(normalise(cssSource)).toContain('.search-row-field')
-    const ruleMatch = cssSource.match(/\.search-row-field\s*\{([^}]*)\}/)
-    expect(ruleMatch).not.toBeNull()
-    const decls = normalise(ruleMatch![1])
-    expect(decls).toContain('flex: 1')
-  })
-
-  it('CSS: .search-row-field has min-width:0 to prevent flex overflow', () => {
-    // Without min-width:0 the flex child cannot shrink below its intrinsic width,
-    // which causes the input to overflow on narrow screens.
-    const ruleMatch = cssSource.match(/\.search-row-field\s*\{([^}]*)\}/)
-    expect(ruleMatch).not.toBeNull()
-    const decls = normalise(ruleMatch![1])
-    expect(decls).toContain('min-width: 0')
-  })
+  // NOTE: the .search-row-field flex:1 / min-width:0 CSS now lives in the shared
+  // SearchBar.vue (see SearchBar.test.ts). Here we keep the DOM-level hook checks.
 
   it('SearchField has no inline max-width or fixed-width style that would limit it', () => {
     const wrapper = mount(AddSearchStep, {
@@ -280,12 +265,8 @@ describe('search redesign: segmented frame', () => {
     expect(wrapper.find('.search-frame').classes()).toContain('nb-framed')
   })
 
-  it('CSS: the submit segment is a coral fill', () => {
-    const ruleMatch = cssSource.match(/\.search-submit\s*\{([^}]*)\}/)
-    expect(ruleMatch).not.toBeNull()
-    const decls = normalise(ruleMatch![1])
-    expect(decls).toContain('background: var(--coral)')
-  })
+  // NOTE: the coral .search-submit fill CSS now lives in the shared SearchBar.vue
+  // (see SearchBar.test.ts). The DOM-level button checks below stay here.
 
   it('the search button preserves its data-testid and disables while loading', () => {
     const wrapper = mount(AddSearchStep, {

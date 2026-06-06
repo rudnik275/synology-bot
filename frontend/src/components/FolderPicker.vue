@@ -209,8 +209,9 @@ defineExpose({ canStepBack, stepBack })
     <div v-else class="tree-view">
       <nav class="crumbs" aria-label="Путь">
         <!-- Returns to the quick list; the home crumb + folder crumbs are tappable
-             to jump up a level (replaces the old "Up" button). #200: icon-only
-             (the folder-list word was dropped) — the quick-list tiles read as folders. -->
+             to jump up a level (replaces the old "Up" button). #270 task 06: a
+             back-chevron + «Папки» label reads as "back to the folder shortcuts",
+             instead of the bare hamburger glyph (#200) the user found confusing. -->
         <button
           type="button"
           class="crumb crumb--quick"
@@ -218,7 +219,8 @@ defineExpose({ canStepBack, stepBack })
           aria-label="К списку папок"
           @click="backToQuick"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="crumb-quick-icon"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="crumb-quick-icon"><path d="M15 18l-6-6 6-6" /></svg>
+          <span class="crumb-quick-label">Папки</span>
         </button>
         <span class="crumb-sep" aria-hidden="true">·</span>
         <button
@@ -439,17 +441,23 @@ defineExpose({ canStepBack, stepBack })
   cursor: pointer;
 }
 
-/* #200: icon-only back-to-tiles control (the folder-list word was dropped). */
+/* #270 task 06: back-to-folders control — chevron + «Папки» label. */
 .crumb--quick {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 3px;
+  opacity: 0.75;
 }
 
 .crumb-quick-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: block;
+}
+
+.crumb-quick-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
 }
 
 .crumb-home {

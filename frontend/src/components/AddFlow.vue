@@ -13,7 +13,7 @@
 // out of this component — DownloadsTab renders an inline «Добавить загрузку»
 // row (#118) and calls openSheet() via the exposed method. The deep-link/handoff
 // path (torrentToken / auto-open) is unchanged.
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import Sheet from './ui/Sheet.vue'
 import Button from './ui/Button.vue'
 import FolderPicker from './FolderPicker.vue'
@@ -228,15 +228,25 @@ function onBack(): void {
 }
 
 const { show: showTgBackButton, hide: hideTgBackButton } = useTgBackButton(onBack)
-watch(open, (isOpen) => {
-  if (isOpen) showTgBackButton()
-  else hideTgBackButton()
+// On open we must (a) tell the shell we own Back so it releases its section→hub
+// handler, then (b) assert OUR back button — and the order is load-bearing. The
+// shell HIDES the native button when it releases (App.vue owns-back coordination),
+// and because the wizard opens synchronously, that hide runs as a LATER scheduler
+// job than this watcher. Showing on the same tick let the shell's hide land after
+// our show, so the button vanished and the user saw only the native close ✕ with
+// no Back (#269 task 08). Fix: emit ownership synchronously (lets the shell react),
+// then show on the NEXT tick, once the shell has released. (ShowsTab's detail-open
+// is already async/awaited, so it never tripped this race.) On close we just emit
+// + hide; the shell re-shows its section→hub Back in a later job, after our hide.
+watch(open, async (isOpen) => {
+  emit('owns-back', isOpen)
+  if (isOpen) {
+    await nextTick()
+    showTgBackButton()
+  } else {
+    hideTgBackButton()
+  }
 })
-
-// Mirror sheet-open state to the shell (see the `owns-back` emit above). Emitted
-// for every open/close so the shell can re-enable its section→hub back the
-// instant the wizard closes.
-watch(open, (isOpen) => emit('owns-back', isOpen))
 
 // --- Inspect-on-Confirm (#123) ---
 // The inspect→commit state machine lives in useInspectCommit (#171). This
@@ -498,13 +508,12 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
     </div>
 
     <!-- Sticky footer with the single forward CTA. The stepper was removed (#215);
-         "Назад" is the native Telegram BackButton (not an in-sheet control). -->
-    <div class="wizard-footer">
-      <!-- Actions row: a single primary CTA (#5). "Назад" is the native Telegram
-           BackButton, not an in-sheet button, so there is no back/next pair to
-           balance. Step 1 (Search) has no forward button — tapping a result
-           advances. Step 2 → «Далее», step 3 → «Добавить». -->
-      <div v-if="step !== 1" class="footer-actions">
+         "Назад" is the native Telegram BackButton (not an in-sheet control).
+         Step 1 (Search) has no forward button — tapping a result advances — so the
+         whole footer is omitted there; otherwise its top border drew a stray line
+         across the empty search screen (#268 task 03). Step 2 → «Далее», step 3 → «Добавить». -->
+    <div v-if="step !== 1" class="wizard-footer">
+      <div class="footer-actions">
         <Button
           v-if="step < lastStep"
           variant="primary"

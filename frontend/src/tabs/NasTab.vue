@@ -281,8 +281,17 @@ const ramDonut = computed(() => {
 .nas-tab {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  /* #270 task 11: tight 4px base gap so each section label hugs its own card;
+     the larger gap that separates one section block from the next comes from the
+     section-head's top margin (below). */
+  gap: var(--space-1);
   padding: var(--space-4);
+}
+
+/* «СОСТОЯНИЕ» subtitle hugs the storage hero — drop the shared header's bottom
+   margin so the only gap is the 4px base (#270 task 11). */
+.nas-tab :deep(.screen-header) {
+  margin-bottom: 0;
 }
 
 /* ── NAS loading skeleton (#208) ── */
@@ -430,7 +439,9 @@ const ramDonut = computed(() => {
 
 /* ── Section heads + labels ── */
 .section-head {
-  margin: 40px 0 var(--space-2);
+  /* #270 task 11: 4px above its own card (via the base gap; mb:0), ~16px below
+     the previous section's card (this 12px top margin + 4px base gap). */
+  margin: var(--space-3) 0 0;
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
   text-transform: uppercase;
@@ -456,7 +467,9 @@ const ramDonut = computed(() => {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: var(--space-4);
-  margin-bottom: var(--space-3);
+  /* #270 task 11: separation from the next section comes from that section-head's
+     top margin, not here — keeps the «НАГРУЗКА» label ~16px below this card. */
+  margin-bottom: 0;
 }
 .fill-orange { background: var(--orange); }
 .fill-red { background: var(--red); }

@@ -99,8 +99,15 @@ withDefaults(
 .card[class*='stripe-']::after {
   content: '';
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 5px;
+  /* Sit flush on the card's OUTER left edge — extend OVER the border (by its
+   * width) so the colour reads as the left edge of the card itself, with corners
+   * that match the card radius. Previously the 5px bar sat INSIDE the border, so
+   * the black border framed it and the rounded corners clipped it (#267 task 02).
+   * Stripes are only used on download cards, whose border is --border-thin. */
+  top: calc(-1 * var(--border-thin));
+  bottom: calc(-1 * var(--border-thin));
+  left: calc(-1 * var(--border-thin));
+  width: calc(5px + var(--border-thin));
   border-radius: var(--radius) 0 0 var(--radius);
 }
 .stripe-red::after {

@@ -445,4 +445,29 @@ describe('App shell — native Back coordination (with inline add row)', () => {
     // One press pops section → hub.
     expect(wrapper.find('[data-testid="hub-row-downloads"]').exists()).toBe(true)
   })
+
+  it('keeps the native Back button VISIBLE when the wizard opens from a section (#269 task 08)', async () => {
+    stubFetch()
+    const back = installBackButton()
+    mockTelegram('downloads') // boot into a section so the shell shows Back
+    const App = await loadApp()
+    const wrapper = mount(App)
+    await flushPromises()
+
+    // Section root: the shell owns Back, so it is visible.
+    expect(back.visible).toBe(true)
+
+    // Open the wizard. The shell releases Back to the wizard — but the button must
+    // STAY visible (now the wizard's own Back), not vanish. Regression: the shell's
+    // hide ran AFTER the wizard's show on the same synchronous tick, so the button
+    // disappeared and the user saw only the native close ✕ with no Back (#269 task 08).
+    await wrapper.find('[data-testid="add-row"]').trigger('click')
+    await flushPromises()
+
+    expect(back.visible).toBe(true)
+    // And the press is the wizard's (stays in the section, does not pop to the hub).
+    back.press()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="hub-row-downloads"]').exists()).toBe(false)
+  })
 })

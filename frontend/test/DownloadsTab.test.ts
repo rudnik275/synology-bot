@@ -12,6 +12,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createApp } from 'vue'
 import DownloadsTab from '../src/tabs/DownloadsTab.vue'
 import { useTasks } from '../src/composables/useTasks'
+import { useOptimisticTasks } from '../src/composables/useOptimisticTasks'
 import type { TaskView } from '../src/types'
 
 const realFetch = globalThis.fetch
@@ -437,6 +438,57 @@ describe('DownloadsTab', () => {
     // These are the old badge texts — they must not appear as sticker chips
     // (status is now shown as quieter text, not bold badges)
     expect(wrapper.findAll('.sticker')).toHaveLength(0)
+  })
+})
+
+describe('DownloadsTab — optimistic placeholder + delete feedback (#269)', () => {
+  it('renders the optimistic placeholder when the real list is empty (task 09)', async () => {
+    globalThis.fetch = (() => Promise.resolve(jsonResponse({ tasks: [] }))) as typeof fetch
+    // A download was just added — its optimistic placeholder lives in the singleton
+    // store. Before the fix the empty-list EmptyState/skeleton hid it, so the user
+    // saw a blank screen for the ~20–30 s the real task took to be indexed (#269 task 09).
+    useOptimisticTasks().add({ title: 'Pending Movie 2160p', destination: '/downloads' })
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Добавляем на NAS')
+    expect(wrapper.text()).toContain('Pending Movie 2160p')
+    expect(wrapper.text()).not.toContain('Нет загрузок')
+    expect(wrapper.find('.sk-card').exists()).toBe(false)
+  })
+
+  it('shows a loader and disables actions while a delete is in-flight, then removes the task (task 10)', async () => {
+    let resolveDelete!: () => void
+    const deleteGate = new Promise<void>((r) => { resolveDelete = r })
+    let deleted = false
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      if (method === 'DELETE') {
+        return deleteGate.then(() => { deleted = true; return jsonResponse({ ok: true }) })
+      }
+      return Promise.resolve(jsonResponse({ tasks: deleted ? [] : [downloadingTask] }))
+    }) as typeof fetch
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // Open the confirm dialog, then confirm — the delete is gated (stays in-flight).
+    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    ;(document.querySelector('[data-testid="btn-confirm-delete"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+
+    // In-flight: a loader replaces the buttons and the card's delete action is disabled.
+    expect(document.querySelector('[data-testid="delete-progress"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="btn-confirm-delete"]')).toBeNull()
+    expect(wrapper.find('[data-testid="btn-delete-task-1"]').attributes('disabled')).toBeDefined()
+
+    // Resolve the delete → the task leaves the list and the dialog closes.
+    resolveDelete()
+    await flushPromises()
+    expect(wrapper.text()).not.toContain(downloadingTask.title)
+    expect(document.querySelector('[data-testid="delete-progress"]')).toBeNull()
   })
 })
 

@@ -317,7 +317,8 @@ async function runDeployReporter({
     setLastImageId: (sha) => store.setKv('bot_image_sha', sha),
     version: pkg.version,
     notify: (message) => ownerNotifier.send('deploy', message, {
-      replyMarkup: openMiniAppButton(miniappUrl, 'nas'),
+      // #269 task 07: deploy «Открыть» opens the hub/root, not the NAS tab.
+      replyMarkup: openMiniAppButton(miniappUrl, 'hub'),
     }),
   })
   await reporter.report()

@@ -182,6 +182,47 @@ body {
   box-shadow: var(--shadow-md);
   border-radius: var(--radius);
 }
+
+/*
+ * ── Gapless filled frame — the one fix for "coloured block in a black rounded
+ * frame" (progress tracks, segmented button groups, anything with a coloured
+ * fill that must reach a rounded black outline). ──────────────────────────────
+ *
+ * THE BUG IT KILLS: the obvious build — `parent { border; border-radius }` with
+ * a rounded/clipped child fill — is TWO independently rounded rectangles whose
+ * corners never line up to the sub-pixel. The parent's background bleeds through
+ * as a thin sliver at every rounded corner ("обрезанный бордер" / "заливка не
+ * полностью"). It is worst in the iOS WebView, where `overflow:hidden` +
+ * `border-radius` does not reliably clip a (re-painting / :active) child at all.
+ *
+ * THE FIX: there is only ONE rounded rectangle. The black outline is an INSET
+ * box-shadow painted by an overlay (::after) ON TOP of the fill — not a border —
+ * so the fill is FULL-BLEED (nothing eats its edges) and the outline simply
+ * overlays its perimeter. No two boxes to misalign → no sliver, ever.
+ *
+ *   <div class="nb-framed">          ← rounds + clips + paints the frame on top
+ *     <div class="…fill" style="width:42%"></div>   ← full-bleed, NO border/radius
+ *   </div>
+ *
+ * Knobs: --nb-frame-w sets outline thickness (default --border-thin); set
+ * border-radius on the element to taste. translateZ(0) promotes it to its own
+ * layer so the iOS WebView clips the fills to the rounded corners reliably.
+ */
+.nb-framed {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  transform: translateZ(0);
+}
+.nb-framed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--nb-frame-w, var(--border-thin)) var(--ink);
+  pointer-events: none;
+  z-index: 1;
+}
 .nb-uppercase {
   text-transform: uppercase;
   letter-spacing: 0.04em;

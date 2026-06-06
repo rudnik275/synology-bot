@@ -20,7 +20,7 @@ const pct = computed(() => Math.max(0, Math.min(100, Math.round(props.value))))
 
 <template>
   <div class="progress" role="progressbar" :aria-valuenow="pct" aria-valuemin="0" aria-valuemax="100">
-    <div class="track">
+    <div class="track nb-framed">
       <div class="fill" :class="`tone-${tone}`" :style="{ width: pct + '%' }" />
     </div>
     <span v-if="!hideLabel" class="label">{{ pct }}%</span>
@@ -33,13 +33,13 @@ const pct = computed(() => Math.max(0, Math.min(100, Math.round(props.value))))
   align-items: center;
   gap: var(--space-2);
 }
+/* Track geometry only — the rounded clip + black outline come from .nb-framed
+   (tokens.css), which paints the outline as an inset overlay over a FULL-BLEED
+   fill so the fill reaches the corners with no cream sliver (esp. iOS WebView). */
 .track {
   flex: 1;
   height: 14px;
   background: var(--cream);
-  border: var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
 }
 .fill {
   height: 100%;

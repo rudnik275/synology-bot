@@ -277,7 +277,7 @@ function qualityChips(task: TaskView): string[] {
           </div>
 
           <!-- pause/resume + delete as ONE segmented group, to the right of the meta. -->
-          <div class="action-group">
+          <div class="action-group nb-framed">
             <!-- Primary action: icon-only pause/resume. -->
             <button
               v-if="hasPrimaryAction(task.status)"
@@ -442,16 +442,16 @@ function qualityChips(task: TaskView): string[] {
 }
 
 /* ── Action group (pause/resume + delete) ── */
-/* ONE segmented control: shared strong border + offset shadow, a divider between
-   the (optional) pause/resume segment and the delete segment. The end segments are
-   rounded INDIVIDUALLY rather than clipped by the group's overflow — iOS Safari
-   fails to clip a child's :active background to a rounded border, which leaked a
-   square fill over the corners (round-2 press-overflow fix). */
+/* ONE segmented control built on the shared .nb-framed preset (tokens.css): the
+   5px black outline is an inset overlay over FULL-BLEED segments, so the coloured
+   fills reach the rounded corners with no cream sliver — and the layer promotion
+   in .nb-framed makes the iOS WebView clip the segments' :active repaint to the
+   rounded corners reliably (the leak that the old per-segment-radius hack fought
+   by abandoning the clip altogether). Only the offset shadow lives here now. */
 .action-group {
   display: inline-flex;
   flex-shrink: 0;
-  border: var(--border-strong);
-  border-radius: var(--radius);
+  --nb-frame-w: var(--border-thick);
   box-shadow: var(--shadow-sm);
 }
 
@@ -465,19 +465,9 @@ function qualityChips(task: TaskView): string[] {
   color: var(--ink);
   background: var(--cream);
   border: none;
-  border-radius: 0;
   cursor: pointer;
   user-select: none;
   transition: background var(--dur-fast) var(--ease-out);
-}
-/* Nest the end segments inside the group radius (inner = group radius − border). */
-.action-seg:first-child {
-  border-top-left-radius: calc(var(--radius) - var(--border-thick));
-  border-bottom-left-radius: calc(var(--radius) - var(--border-thick));
-}
-.action-seg:last-child {
-  border-top-right-radius: calc(var(--radius) - var(--border-thick));
-  border-bottom-right-radius: calc(var(--radius) - var(--border-thick));
 }
 /* Divider between segments — the only internal line of the group. */
 .action-seg + .action-seg {
@@ -561,19 +551,20 @@ function qualityChips(task: TaskView): string[] {
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   padding: var(--space-4);
-  /* Left padding accounts for the 5px edge stripe (mirrors .task-card) */
-  padding-left: calc(var(--space-4) + 5px);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   overflow: hidden;
 }
 
-/* Neutral skeleton grey edge stripe — left side, same position as Card::after stripe */
+/* Neutral skeleton grey edge stripe — mirrors the real Card::after stripe: a
+   coloured (here: neutral grey) bar framed in black, the card's own border on
+   three sides + this bar's border-right drawing the inner black line. */
 .sk-edge {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 5px;
+  width: 6px;
+  border-right: var(--border-thin) solid var(--ink);
   border-radius: var(--radius) 0 0 var(--radius);
   background: var(--sk-edge); /* neutral skeleton grey — no status hue */
 }

@@ -92,21 +92,33 @@ withDefaults(
 }
 
 /* ── Variant B: coloured LEFT EDGE (#116) ──
- * The status accent IS the card's own left border, thickened to --border-thick
- * and tinted — so it follows the rounded corners exactly. Earlier takes drew a
- * separate bar: inside the border it got clipped at the corners (#267 task 02);
- * flush-outside the border it poked past the card outline and looked broken
- * (round-2). A coloured border can do neither — no clip, no poke-out. The top
- * strip (::before) used by NAS/Shows cards is independent and untouched. */
-.card[class*='stripe-'] {
-  border-left-width: var(--border-thick);
+ * A coloured bar hugging the LEFT edge, FRAMED IN BLACK exactly like the top
+ * accent strip (::before): the card's own black border frames it on three sides
+ * and the bar's own border-right draws the fourth (inner) black line. It is the
+ * ::before top-strip mechanism rotated 90°, so a top accent and a left accent
+ * read as the same component on different edges.
+ *
+ * Why not just tint the card's border-left (the previous take)? That gave a flat
+ * one-colour stripe with NO black outline — it no longer matched the top strip
+ * the design is built around. Why not a free-floating bar? Inside the border it
+ * clipped at the corners; outside it poked past the outline (#267 round-2). This
+ * pseudo-element sits in the same place the proven ::before does, so it inherits
+ * the same gap-free corner behaviour. */
+.card[class*='stripe-']::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  border-right: var(--border-thin) solid var(--ink);
+  border-radius: var(--radius) 0 0 var(--radius);
+  background: var(--stripe-color, var(--idle));
 }
-.stripe-red    { border-left-color: var(--red); }
-.stripe-orange { border-left-color: var(--orange); }
-.stripe-yellow { border-left-color: var(--yellow); }
-.stripe-green  { border-left-color: var(--green); }
-.stripe-violet { border-left-color: var(--violet); }
-.stripe-default { border-left-color: var(--idle); }
+.stripe-red    { --stripe-color: var(--red); }
+.stripe-orange { --stripe-color: var(--orange); }
+.stripe-yellow { --stripe-color: var(--yellow); }
+.stripe-green  { --stripe-color: var(--green); }
+.stripe-violet { --stripe-color: var(--violet); }
+.stripe-default { --stripe-color: var(--idle); }
 
 /* Press handled by the shared .nb-pressable utility (added when interactive). */
 .card.interactive {

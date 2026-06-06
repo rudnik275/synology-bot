@@ -207,7 +207,7 @@ describe('DownloadsTab', () => {
     expect(deleteBtn.exists()).toBe(true)
   })
 
-  // ── Direct trash-icon delete with confirmation ─────────────────────────────
+  // ── Direct trash-icon delete (no confirm popup, round-2) ───────────────────
 
   it('the delete (trash) button is shown directly on the card — no menu reveal', async () => {
     globalThis.fetch = (() =>
@@ -220,48 +220,7 @@ describe('DownloadsTab', () => {
     expect(wrapper.find('[data-testid="btn-delete-task-1"]').exists()).toBe(true)
   })
 
-  it('clicking the trash button opens the confirmation dialog in one tap', async () => {
-    globalThis.fetch = (() =>
-      Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
-    const wrapper = mount(DownloadsTab)
-    await flushPromises()
-
-    // No dialog before the tap.
-    expect(document.querySelector('[data-testid="btn-confirm-delete"]')).toBeNull()
-
-    // Single tap on the trash button.
-    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
-    await wrapper.vm.$nextTick()
-
-    // Confirmation dialog should appear (renders in Teleport, look at document)
-    const confirmBtn = document.querySelector('[data-testid="btn-confirm-delete"]')
-    expect(confirmBtn).not.toBeNull()
-  })
-
-  it('Cancel in confirmation dialog closes it without deleting', async () => {
-    const calls: { url: string; init?: RequestInit }[] = []
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      calls.push({ url, init: init ? { ...init } : undefined })
-      return Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))
-    }) as typeof fetch
-
-    const wrapper = mount(DownloadsTab)
-    await flushPromises()
-
-    // Tap trash → cancel
-    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
-    await wrapper.vm.$nextTick()
-
-    const cancelBtn = document.querySelector('[data-testid="btn-cancel-delete"]') as HTMLButtonElement
-    cancelBtn.click()
-    await flushPromises()
-
-    // No DELETE call should have been issued
-    const deleteCalls = calls.filter((c) => c.init?.method === 'DELETE')
-    expect(deleteCalls).toHaveLength(0)
-  })
-
-  it('Confirm delete in dialog issues DELETE /api/tasks/:id', async () => {
+  it('clicking the trash button deletes directly — no confirmation popup (round-2)', async () => {
     const calls: { url: string; init?: RequestInit }[] = []
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       calls.push({ url, init: init ? { ...init } : undefined })
@@ -274,17 +233,16 @@ describe('DownloadsTab', () => {
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    // Tap trash → confirm
-    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
-    await wrapper.vm.$nextTick()
+    // No confirm dialog exists anymore — not before, not after the tap.
+    expect(document.querySelector('[data-testid="btn-confirm-delete"]')).toBeNull()
 
-    const confirmBtn = document.querySelector('[data-testid="btn-confirm-delete"]') as HTMLButtonElement
-    confirmBtn.click()
+    // A single tap issues the DELETE straight away, with no intermediate dialog.
+    await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
     await flushPromises()
 
+    expect(document.querySelector('[data-testid="btn-confirm-delete"]')).toBeNull()
     const deleteCall = calls.find(
-      (c) =>
-        c.url.startsWith(`/api/tasks/${downloadingTask.id}`) && c.init?.method === 'DELETE',
+      (c) => c.url.startsWith(`/api/tasks/${downloadingTask.id}`) && c.init?.method === 'DELETE',
     )
     expect(deleteCall).toBeDefined()
   })
@@ -458,7 +416,7 @@ describe('DownloadsTab — optimistic placeholder + delete feedback (#269)', () 
     expect(wrapper.find('.sk-card').exists()).toBe(false)
   })
 
-  it('shows a loader and disables actions while a delete is in-flight, then removes the task (task 10)', async () => {
+  it('shows a spinner + disables the button while a delete is in-flight, then removes the task (round-2)', async () => {
     let resolveDelete!: () => void
     const deleteGate = new Promise<void>((r) => { resolveDelete = r })
     let deleted = false
@@ -473,22 +431,20 @@ describe('DownloadsTab — optimistic placeholder + delete feedback (#269)', () 
     const wrapper = mount(DownloadsTab)
     await flushPromises()
 
-    // Open the confirm dialog, then confirm — the delete is gated (stays in-flight).
+    // One tap deletes directly (no popup); the delete is gated so it stays in-flight.
     await wrapper.find('[data-testid="btn-delete-task-1"]').trigger('click')
     await wrapper.vm.$nextTick()
-    ;(document.querySelector('[data-testid="btn-confirm-delete"]') as HTMLButtonElement).click()
-    await wrapper.vm.$nextTick()
 
-    // In-flight: a loader replaces the buttons and the card's delete action is disabled.
-    expect(document.querySelector('[data-testid="delete-progress"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="btn-confirm-delete"]')).toBeNull()
-    expect(wrapper.find('[data-testid="btn-delete-task-1"]').attributes('disabled')).toBeDefined()
+    // In-flight: the trash button shows a spinner and is disabled (so is pause).
+    const delBtn = wrapper.find('[data-testid="btn-delete-task-1"]')
+    expect(delBtn.attributes('disabled')).toBeDefined()
+    expect(delBtn.find('.spinner').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="btn-primary-task-1"]').attributes('disabled')).toBeDefined()
 
-    // Resolve the delete → the task leaves the list and the dialog closes.
+    // Resolve the delete → the task leaves the list.
     resolveDelete()
     await flushPromises()
     expect(wrapper.text()).not.toContain(downloadingTask.title)
-    expect(document.querySelector('[data-testid="delete-progress"]')).toBeNull()
   })
 })
 

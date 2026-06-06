@@ -208,21 +208,10 @@ defineExpose({ canStepBack, stepBack })
     <!-- ── SECONDARY: tree drill-down with a tappable breadcrumb ── -->
     <div v-else class="tree-view">
       <nav class="crumbs" aria-label="Путь">
-        <!-- Returns to the quick list; the home crumb + folder crumbs are tappable
-             to jump up a level (replaces the old "Up" button). #270 task 06: a
-             back-chevron + «Папки» label reads as "back to the folder shortcuts",
-             instead of the bare hamburger glyph (#200) the user found confusing. -->
-        <button
-          type="button"
-          class="crumb crumb--quick"
-          data-testid="back-to-tiles-btn"
-          aria-label="К списку папок"
-          @click="backToQuick"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="crumb-quick-icon"><path d="M15 18l-6-6 6-6" /></svg>
-          <span class="crumb-quick-label">Папки</span>
-        </button>
-        <span class="crumb-sep" aria-hidden="true">·</span>
+        <!-- No in-app "back to folders" control (round-2): the native Telegram Back
+             button drives it. Inside a folder, Back pops one level; at the tree root
+             Back returns to the pre-picked quick list. That's wired via the exposed
+             stepBack() (AddFlow.onBack). The home + path crumbs remain tappable. -->
         <button
           type="button"
           class="crumb"
@@ -439,25 +428,6 @@ defineExpose({ canStepBack, stepBack })
   -webkit-text-fill-color: var(--ink);
   opacity: 0.55;
   cursor: pointer;
-}
-
-/* #270 task 06: back-to-folders control — chevron + «Папки» label. */
-.crumb--quick {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  opacity: 0.75;
-}
-
-.crumb-quick-icon {
-  width: 16px;
-  height: 16px;
-  display: block;
-}
-
-.crumb-quick-label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
 }
 
 .crumb-home {

@@ -20,7 +20,7 @@ import Card from '../components/ui/Card.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
 import EmptyState from '../components/ui/EmptyState.vue'
-import SearchField from '../components/ui/SearchField.vue'
+import SearchBar from '../components/ui/SearchBar.vue'
 import Skeleton from '../components/ui/Skeleton.vue'
 
 // `owns-back` tells the App shell when THIS section owns the native Telegram
@@ -68,6 +68,12 @@ watch(query, (q) => {
     hideTgBackButton()
   }
 })
+
+// Submit/Enter on the search bar: search already runs live (debounced) on every
+// keystroke, so committing just dismisses the keyboard (mirrors the prior blur).
+function dismissKeyboard(): void {
+  ;(document.activeElement as HTMLElement | null)?.blur()
+}
 
 const isSearchMode = computed(() => query.value.trim().length >= 2)
 const hasDetail = computed(() => selectedShowId.value !== null)
@@ -151,14 +157,17 @@ async function handleUnsubscribe(): Promise<void> {
     <template v-else>
       <ScreenHeader title="Шоу" />
 
-      <!-- Pinned search field -->
+      <!-- Pinned search bar — same shared SearchBar (input + «Поиск» submit) as
+           the add-flow search step. Search runs live on input (debounced); the
+           submit/Enter just commits by dismissing the keyboard. -->
       <div class="search-wrapper">
-        <SearchField
+        <SearchBar
           v-model="query"
+          :loading="searchLoading"
           data-testid="search-input"
           type="search"
           placeholder="Поиск шоу…"
-          @search="(e) => (e.target as HTMLElement).blur()"
+          @search="dismissKeyboard"
         />
       </div>
 
@@ -339,17 +348,6 @@ async function handleUnsubscribe(): Promise<void> {
   margin-inline: calc(-1 * var(--space-4));
   padding-inline: var(--space-4);
 }
-
-/*
- * #210: Suppress the enlarged shadow-md on focus for the Shows search field.
- * AddFlow's SearchField shows shadow-md to signal the history dropdown opening;
- * here there's no dropdown, so the larger shadow reads as a phantom border.
- * Keep the static shadow-sm (from SearchField base) — just don't enlarge it.
- */
-.search-wrapper :deep(.search-field-input:focus) {
-  box-shadow: var(--shadow-sm);
-}
-
 
 /* Skeleton show-item rows (#208) — mirrors .show-row geometry */
 .show-skeleton {

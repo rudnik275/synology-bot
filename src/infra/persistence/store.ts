@@ -103,6 +103,22 @@ export class PersistentStore {
     )
   }
 
+  /** Remove ALL notif_dedup rows for a task (any event). Used when the task itself is deleted (#300). */
+  clearAllNotifFired(taskId: string): void {
+    this.db.run('DELETE FROM notif_dedup WHERE task_id = ?', [taskId])
+  }
+
+  /**
+   * Safety sweep (#300): delete notif_dedup rows older than `cutoffMs` whose
+   * task no longer exists in task_completion — these can never be needed again.
+   */
+  sweepOrphanNotifDedup(cutoffMs: number): void {
+    this.db.run(
+      'DELETE FROM notif_dedup WHERE fired_at < ? AND task_id NOT IN (SELECT task_id FROM task_completion)',
+      [cutoffMs]
+    )
+  }
+
   insertCompletion(taskId: string, completedAt: number): void {
     this.db.run(
       'INSERT OR IGNORE INTO task_completion (task_id, completed_at) VALUES (?, ?)',

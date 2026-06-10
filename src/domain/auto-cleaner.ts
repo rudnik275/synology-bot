@@ -7,6 +7,12 @@ export interface AutoCleanerDeps {
   deleteTask: (taskId: string) => Promise<{ ok: true } | { ok: false; reason: string }>
   /** Remove the task_completion row (dedup cleanup). */
   removeCompletion: (taskId: string) => Promise<void>
+  /** Remove ALL notif_dedup rows for the task (any event) once it is deleted (#300). */
+  clearNotifDedup: (taskId: string) => Promise<void>
+  /** Safety sweep (#300): delete orphan notif_dedup rows with fired_at older than the cutoff. */
+  sweepOrphanNotifDedup: (cutoffMs: number) => Promise<void>
+  /** Purge expired add-intake stashes (.torrent blobs / magnet URIs) (#300). */
+  pruneExpiredStashes: () => Promise<void>
   /** Send a notification message to the owner. */
   notify: (message: string) => Promise<void>
   /** Number of days to retain completed task entries. Default 7. */
@@ -21,9 +27,11 @@ export interface AutoCleanerDeps {
  * One call to `cleanup()` = one tick:
  *  1. Query completed tasks older than retentionDays.
  *  2. For each, call deleteTask (removes task entry from DownloadStation, keeps files).
- *  3. On success, call removeCompletion to clean up the dedup row.
+ *  3. On success, call removeCompletion + clearNotifDedup to clean up dedup rows.
  *  4. On Synology error: log and skip (next tick will retry).
  *  5. If any tasks were deleted, send one summary push to the owner.
+ *  6. Housekeeping (#300, every tick): sweep orphan notif_dedup rows older than
+ *     the retention cutoff and prune expired torrent stashes.
  */
 export class AutoCleaner {
   private readonly deps: AutoCleanerDeps
@@ -36,8 +44,6 @@ export class AutoCleaner {
     const cutoffMs = this.deps.now() - this.deps.retentionDays * DAY_MS
     const taskIds = await this.deps.getCompleted(cutoffMs)
 
-    if (taskIds.length === 0) return
-
     let deletedCount = 0
 
     for (const taskId of taskIds) {
@@ -48,10 +54,19 @@ export class AutoCleaner {
           continue
         }
         await this.deps.removeCompletion(taskId)
+        await this.deps.clearNotifDedup(taskId)
         deletedCount++
       } catch (err) {
         console.error(`[AutoCleaner] Unexpected error processing task ${taskId}:`, err)
       }
+    }
+
+    // Housekeeping (#300): runs every tick, regardless of whether tasks were found.
+    try {
+      await this.deps.sweepOrphanNotifDedup(cutoffMs)
+      await this.deps.pruneExpiredStashes()
+    } catch (err) {
+      console.error('[AutoCleaner] Housekeeping sweep failed:', err)
     }
 
     if (deletedCount > 0) {

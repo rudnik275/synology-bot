@@ -286,6 +286,9 @@ function startAutoCleaner({ config, store, synology, ownerNotifier }: WatcherDep
     getCompleted: (cutoffMs) => Promise.resolve(store.getCompletedBefore(cutoffMs)),
     deleteTask: (taskId) => synology.deleteTask(taskId),
     removeCompletion: (taskId) => { store.removeCompletion(taskId); return Promise.resolve() },
+    clearNotifDedup: (taskId) => { store.clearAllNotifFired(taskId); return Promise.resolve() },
+    sweepOrphanNotifDedup: (cutoffMs) => { store.sweepOrphanNotifDedup(cutoffMs); return Promise.resolve() },
+    pruneExpiredStashes: () => { store.pruneExpiredStashes(); return Promise.resolve() },
     notify: (message) => ownerNotifier.send('torrents', message, {
       replyMarkup: openMiniAppButton(config.miniappUrl, 'downloads'),
     }),

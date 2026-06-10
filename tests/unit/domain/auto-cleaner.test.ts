@@ -15,6 +15,9 @@ function makeHarness(opts: {
   cleaner: AutoCleaner
   deleted: string[]
   removed: string[]
+  dedupCleared: string[]
+  sweepCutoffs: number[]
+  pruneCalls: number[]
   notifications: string[]
   completions: Array<{ taskId: string; completedAt: number }>
   deleteError: string | undefined
@@ -23,6 +26,9 @@ function makeHarness(opts: {
   const completions: Array<{ taskId: string; completedAt: number }> = opts.completions ?? []
   const deleted: string[] = []
   const removed: string[] = []
+  const dedupCleared: string[] = []
+  const sweepCutoffs: number[] = []
+  const pruneCalls: number[] = []
   const notifications: string[] = []
   let deleteError: string | undefined = opts.deleteError
 
@@ -42,6 +48,15 @@ function makeHarness(opts: {
     removeCompletion: async (taskId: string) => {
       removed.push(taskId)
     },
+    clearNotifDedup: async (taskId: string) => {
+      dedupCleared.push(taskId)
+    },
+    sweepOrphanNotifDedup: async (cutoffMs: number) => {
+      sweepCutoffs.push(cutoffMs)
+    },
+    pruneExpiredStashes: async () => {
+      pruneCalls.push(1)
+    },
     notify: async (message: string) => {
       notifications.push(message)
     },
@@ -51,7 +66,7 @@ function makeHarness(opts: {
 
   const cleaner = new AutoCleaner(deps)
 
-  return { cleaner, deleted, removed, notifications, completions, deleteError: opts.deleteError }
+  return { cleaner, deleted, removed, dedupCleared, sweepCutoffs, pruneCalls, notifications, completions, deleteError: opts.deleteError }
 }
 
 // ---- Tests ----
@@ -138,6 +153,9 @@ describe('AutoCleaner', () => {
           if (idx !== -1) completions.splice(idx, 1)
           removed.push(taskId)
         },
+        clearNotifDedup: async () => {},
+        sweepOrphanNotifDedup: async () => {},
+        pruneExpiredStashes: async () => {},
         notify: async (msg: string) => { notifications.push(msg) },
         retentionDays: 7,
         now: () => NOW,
@@ -252,6 +270,9 @@ describe('AutoCleaner', () => {
         },
         deleteTask: async (taskId: string) => { deleted.push(taskId); return { ok: true } },
         removeCompletion: async () => {},
+        clearNotifDedup: async () => {},
+        sweepOrphanNotifDedup: async () => {},
+        pruneExpiredStashes: async () => {},
         notify: async (msg) => { notifications.push(msg) },
         retentionDays: 7,
         now: () => customNow,
@@ -262,6 +283,58 @@ describe('AutoCleaner', () => {
 
       expect(deleted).toContain('task-x')
       expect(notifications).toHaveLength(1)
+    })
+  })
+
+  // --- Persistence GC (#300) ---
+
+  describe('notif_dedup cleanup on task deletion (#300)', () => {
+    it('clears all notif_dedup rows for every deleted task', async () => {
+      const h = makeHarness({
+        completions: [
+          { taskId: 'task-a', completedAt: NOW - 10 * DAY_MS },
+          { taskId: 'task-b', completedAt: NOW - 8 * DAY_MS },
+        ],
+      })
+
+      await h.cleaner.cleanup()
+
+      expect(h.dedupCleared).toEqual(['task-a', 'task-b'])
+    })
+
+    it('does NOT clear notif_dedup when Synology delete fails (retry keeps dedup intact)', async () => {
+      const h = makeHarness({
+        completions: [{ taskId: 'task-fail', completedAt: NOW - 8 * DAY_MS }],
+        deleteError: 'Synology error code 500',
+      })
+
+      await h.cleaner.cleanup()
+
+      expect(h.dedupCleared).toHaveLength(0)
+    })
+  })
+
+  describe('housekeeping sweep (#300)', () => {
+    it('runs sweepOrphanNotifDedup with the retention cutoff and pruneExpiredStashes even when there are no old tasks', async () => {
+      const h = makeHarness({ completions: [] })
+
+      await h.cleaner.cleanup()
+
+      expect(h.sweepCutoffs).toEqual([NOW - 7 * DAY_MS])
+      expect(h.pruneCalls).toHaveLength(1)
+      expect(h.notifications).toHaveLength(0)
+    })
+
+    it('runs housekeeping once per tick alongside task cleanup', async () => {
+      const h = makeHarness({
+        completions: [{ taskId: 'task-old', completedAt: NOW - 8 * DAY_MS }],
+      })
+
+      await h.cleaner.cleanup()
+      await h.cleaner.cleanup()
+
+      expect(h.sweepCutoffs).toHaveLength(2)
+      expect(h.pruneCalls).toHaveLength(2)
     })
   })
 })

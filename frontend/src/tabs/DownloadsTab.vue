@@ -27,6 +27,7 @@ import Skeleton from '../components/ui/Skeleton.vue'
 import { useTasks } from '../composables/useTasks'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
 import type { PendingTaskView } from '../composables/useOptimisticTasks'
+import { useAddFailures } from '../composables/useAddFailures'
 import { formatBytes, formatSpeed } from '../format'
 import type { Tone } from '../components/ui/tones'
 import type { TaskView } from '../types'
@@ -47,6 +48,12 @@ const { tasks, loading, error, pause, resume, delete: deleteTask } = useTasks()
 const { pendingTasks, reconcile, remove: removePending } = useOptimisticTasks()
 const pending = computed(() => pendingTasks())
 watch(tasks, (real) => reconcile(real))
+
+// Failed adds (#288): when a background add rejects, AddFlow rolls the pending
+// placeholder back AND records the failure here — rendered as a red «Ошибка
+// добавления» card pinned above the list until dismissed, so a failed add never
+// silently vanishes.
+const { failures, dismiss: dismissFailure } = useAddFailures()
 
 // One unified list: pending placeholders render ABOVE the real tasks through the
 // SAME card template (status 'pending' → «Добавление…» label, violet stripe, 0%
@@ -231,7 +238,7 @@ function qualityChips(task: TaskView): string[] {
     <!-- Loading skeleton: content-shaped cards matching the real card geometry (#115 Variant A).
          Suppressed while an optimistic placeholder is pending so a just-added download shows its
          «Добавляем…» card immediately instead of the skeleton/empty screen (#269 task 09). -->
-    <div v-if="loading && tasks.length === 0 && pending.length === 0" class="loading-state" aria-label="Загрузка списка" aria-busy="true">
+    <div v-if="loading && tasks.length === 0 && pending.length === 0 && failures.length === 0" class="loading-state" aria-label="Загрузка списка" aria-busy="true">
       <div v-for="i in 3" :key="i" class="sk-card" role="presentation">
         <!-- Left edge stripe in neutral skeleton grey (status unknown while loading) -->
         <div class="sk-edge" />
@@ -260,7 +267,7 @@ function qualityChips(task: TaskView): string[] {
     <!-- Error state — only when there are no tasks to show (mirrors NasTab's
          `error && !data` guard): an error with data already on screen must not
          blank the whole list. -->
-    <EmptyState v-else-if="error && tasks.length === 0" title="Ошибка" :message="error">
+    <EmptyState v-else-if="error && tasks.length === 0 && failures.length === 0" title="Ошибка" :message="error">
       <template #icon>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10" />
@@ -273,7 +280,7 @@ function qualityChips(task: TaskView): string[] {
     <!-- Empty state: inline add-row as the Add affordance (#249). Also suppressed
          while a placeholder is pending (#269 task 09) — the just-added download
          renders in the list below instead of flashing «Нет загрузок». -->
-    <EmptyState v-else-if="!loading && tasks.length === 0 && pending.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать.">
+    <EmptyState v-else-if="!loading && tasks.length === 0 && pending.length === 0 && failures.length === 0" title="Нет загрузок" message="Добавьте торрент, чтобы начать.">
       <template #action>
         <button
           type="button"
@@ -300,6 +307,43 @@ function qualityChips(task: TaskView): string[] {
         <span class="add-row-chip" aria-hidden="true">+</span>
         <span class="add-row-label">Добавить загрузку</span>
       </button>
+
+      <!-- Failed adds (#288): a background add that rejected. Red-striped card with
+           the error message + a dismiss ✕; persists until dismissed (no TTL) so the
+           failure is never silent. Pinned ABOVE pending placeholders + real tasks. -->
+      <Card
+        v-for="f in failures"
+        :key="f.id"
+        edge-stripe="red"
+        variant="raised"
+        class="task-card task-card--failed"
+        :data-testid="`add-failed-${f.id}`"
+      >
+        <div class="task-header">
+          <h3 class="task-title">{{ f.title }}</h3>
+          <span class="task-status-label" :aria-label="'Status: Ошибка добавления'">Ошибка добавления</span>
+        </div>
+        <p class="failed-msg" data-testid="add-failed-msg">Не удалось добавить: {{ f.message }}</p>
+        <div class="task-footer">
+          <div class="task-meta">
+            <span v-if="f.destination" class="meta-dest">{{ f.destination }}</span>
+          </div>
+          <div class="action-group nb-framed nb-pressable">
+            <button
+              type="button"
+              class="action-seg"
+              :aria-label="`Скрыть ошибку: ${f.title}`"
+              :data-testid="`add-failed-dismiss-${f.id}`"
+              @click.stop="dismissFailure(f.id)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <line x1="6" y1="6" x2="18" y2="18" />
+                <line x1="18" y1="6" x2="6" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </Card>
 
       <!-- Pending placeholders (#instant-add) render FIRST, through the same card
            template as real tasks: a just-added download shows the moment the Add
@@ -472,6 +516,16 @@ function qualityChips(task: TaskView): string[] {
   opacity: 0.5;
   white-space: nowrap;
   padding-top: 2px;
+}
+
+/* Failed-add card (#288): the error message line under the title. */
+.failed-msg {
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--ink);
+  opacity: 0.75;
+  overflow-wrap: anywhere;
 }
 
 /* Quality chips: year / resolution / codec / languages */

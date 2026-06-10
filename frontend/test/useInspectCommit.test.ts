@@ -136,6 +136,84 @@ describe('useInspectCommit — magnet (poll) path', () => {
   })
 })
 
+describe('useInspectCommit — magnet poll hint + timeout (#304)', () => {
+  // Tiny injected delays so the timeout path doesn't take ~30 s of wall clock.
+  const FAST = { pollIntervalMs: 1, hintAfterAttempts: 2, pollAttempts: 4 }
+
+  it('shows the peer-wait hint after a few not-ready polls, clears it on ready', async () => {
+    let polls = 0
+    const { api } = makeApi({
+      started: { listId: 'LMAG' },
+      poll: () => (++polls >= 3 ? { ready: true, files: FILES } : { ready: false, files: [] }),
+    })
+    const ic = useInspectCommit(api, FAST)
+
+    expect(ic.inspectHint.value).toBeNull()
+    const outcome = await ic.runInspect(SEARCH_SOURCE)
+
+    // The hint was set during the wait (observable post-hoc via the final state
+    // transitions): it must be CLEARED once the metadata arrived.
+    expect(outcome.kind).toBe('ready')
+    expect(ic.inspectHint.value).toBeNull()
+    expect(ic.inspectTimedOut.value).toBe(false)
+  })
+
+  it('the hint is visible WHILE waiting on peers (not-ready polls past the threshold)', async () => {
+    let polls = 0
+    let sawHintDuringWait: string | null = null
+    const { api } = makeApi()
+    const ic = useInspectCommit(api, FAST)
+    api.inspect = () => Promise.resolve({ listId: 'LMAG' })
+    api.pollInspect = () => {
+      polls++
+      // Capture the hint state as the NEXT poll fires — after 2 not-ready polls
+      // (hintAfterAttempts) the hint must be up.
+      if (polls === 3) sawHintDuringWait = ic.inspectHint.value
+      return Promise.resolve({ ready: polls >= 3 ? true : false, files: polls >= 3 ? FILES : [] })
+    }
+
+    await ic.runInspect(SEARCH_SOURCE)
+
+    expect(sawHintDuringWait).toBe('⏳ Ожидание метаданных от пиров…')
+  })
+
+  it('exhausting the poll attempts marks a TIMEOUT (whole fallback, no inspectError)', async () => {
+    const { api, calls } = makeApi({ started: { listId: 'LMAG' }, poll: { ready: false, files: [] } })
+    const ic = useInspectCommit(api, FAST)
+
+    const outcome = await ic.runInspect(SEARCH_SOURCE)
+
+    expect(calls.pollInspect).toHaveLength(FAST.pollAttempts)
+    expect(outcome).toEqual({ kind: 'whole' })
+    expect(ic.inspectState.value).toBe('whole')
+    expect(ic.inspectTimedOut.value).toBe(true) // timeout, distinct from a failure…
+    expect(ic.inspectError.value).toBeNull() // …no error recorded
+    expect(ic.inspectHint.value).toBeNull() // hint cleared once settled
+  })
+
+  it('a magnet that parses zero files is whole but NOT a timeout', async () => {
+    const { api } = makeApi({ started: { listId: 'LMAG' }, poll: { ready: true, files: [] } })
+    const ic = useInspectCommit(api, FAST)
+
+    await ic.runInspect(SEARCH_SOURCE)
+
+    expect(ic.inspectState.value).toBe('whole')
+    expect(ic.inspectTimedOut.value).toBe(false)
+  })
+
+  it('resetInspect clears the hint + timeout flags', async () => {
+    const { api } = makeApi({ started: { listId: 'LMAG' }, poll: { ready: false, files: [] } })
+    const ic = useInspectCommit(api, FAST)
+    await ic.runInspect(SEARCH_SOURCE)
+    expect(ic.inspectTimedOut.value).toBe(true)
+
+    ic.resetInspect()
+
+    expect(ic.inspectTimedOut.value).toBe(false)
+    expect(ic.inspectHint.value).toBeNull()
+  })
+})
+
 describe('useInspectCommit — stale run (reset / re-open mid-flight)', () => {
   it('a run made stale by resetInspect does not mutate state and releases its list', async () => {
     // Gate the inspect so we can reset BEFORE it resolves.
@@ -189,6 +267,67 @@ describe('useInspectCommit — fast-tap chained commit (#161)', () => {
     expect(outcome).toEqual({ kind: 'ready', handle: { inspectToken: 'TOK' }, indices: [0, 1] })
     // The commit would use the OUTCOME's handle/indices, not the cleared refs.
     expect(ic.commitHandle.value).toBeNull() // releaseInflight nulled it
+  })
+
+  it('a STALE releaseInflight does NOT clobber a newer session\'s commitHandle (#294)', async () => {
+    // Fast-tap chain settling AFTER the user reopened the wizard and a NEW
+    // inspect set a new commitHandle: the old chain's releaseInflight must be a
+    // no-op, or the new session's per-file selection silently degrades to a
+    // whole-torrent add.
+    let releaseFirst!: (s: InspectStarted) => void
+    const firstGate = new Promise<InspectStarted>((r) => { releaseFirst = r })
+    const { api } = makeApi({ started: { inspectToken: 'TOK2', files: FILES } })
+    const realInspect = api.inspect
+    let call = 0
+    api.inspect = (uri, destination, title) =>
+      ++call === 1 ? firstGate : realInspect(uri, destination, title)
+    const ic = useInspectCommit(api)
+
+    // Session A: inspect in flight, fast-tap protects it, sheet closes (reset).
+    ic.runInspect(SEARCH_SOURCE)
+    const pendingA = ic.inFlight()!
+    ic.protectInflight()
+    ic.resetInspect()
+
+    // Session B: wizard reopened, NEW inspect resolves and sets a NEW handle.
+    await ic.runInspect(SEARCH_SOURCE)
+    expect(ic.commitHandle.value).toEqual({ inspectToken: 'TOK2' })
+
+    // Session A's run finally settles (stale) and its chain releases.
+    releaseFirst({ inspectToken: 'TOK1', files: FILES })
+    await pendingA
+    ic.releaseInflight()
+
+    // B's handle survives — the stale release must not null it.
+    expect(ic.commitHandle.value).toEqual({ inspectToken: 'TOK2' })
+    expect(ic.inspectState.value).toBe('ready')
+  })
+
+  it('after a stale protect, resetInspect in the NEW session works normally (#294)', async () => {
+    // Session A protected, then a new run B started (which makes A's protection
+    // moot). A later resetInspect must invalidate B normally — the leftover
+    // protect flag from A must not suppress B's stale-run guard.
+    let releaseA!: (s: InspectStarted) => void
+    const gateA = new Promise<InspectStarted>((r) => { releaseA = r })
+    let releaseB!: (s: InspectStarted) => void
+    const gateB = new Promise<InspectStarted>((r) => { releaseB = r })
+    const { api } = makeApi()
+    let call = 0
+    api.inspect = () => (++call === 1 ? gateA : gateB)
+    const ic = useInspectCommit(api)
+
+    ic.runInspect(SEARCH_SOURCE)
+    ic.protectInflight()
+    ic.resetInspect() // sheet closed; A protected
+
+    const pB = ic.runInspect(SEARCH_SOURCE) // reopen → session B
+    ic.resetInspect() // close again — must make B stale (seq bump despite A's old flag)
+    releaseB({ inspectToken: 'TOKB', files: FILES })
+    const outcomeB = await pB
+    expect(outcomeB).toEqual({ kind: 'whole' }) // B was correctly invalidated
+    expect(ic.commitHandle.value).toBeNull()
+
+    releaseA({ inspectToken: 'TOKA', files: FILES })
   })
 
   it('inFlight() is null once the run settles', async () => {

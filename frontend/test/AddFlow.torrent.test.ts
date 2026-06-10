@@ -235,6 +235,12 @@ describe('AddFlow bot handoff — magnet/URL uri (#120)', () => {
     // Recovery: sheet stays open on the Search step (not the folder step).
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="search-query"]')).not.toBeNull()
+    // #307: the expired-stash 404 surfaces as a FRIENDLY banner on the Search
+    // step — not the raw 'not found' / 'HTTP 404' body.
+    const banner = document.querySelector('[data-testid="wizard-error"]')
+    expect(banner).not.toBeNull()
+    expect(banner!.textContent).toContain('Ссылка устарела — перешлите торрент боту ещё раз.')
+    expect(banner!.textContent).not.toContain('not found')
     wrapper.unmount()
   })
 })

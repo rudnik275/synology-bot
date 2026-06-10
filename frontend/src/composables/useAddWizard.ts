@@ -174,7 +174,14 @@ export function useAddWizard(deps: WizardDeps): UseAddWizard {
       // Recovery: drop back to the normal in-app search flow.
       handoff.value = false
       mode.value = 'search'
-      errorMsg.value = e instanceof Error ? e.message : String(e)
+      // #307: an expired/consumed stash returns 404 {error:'not found'} — the
+      // api layer surfaces that as a raw 'not found' / 'HTTP 404' Error message,
+      // which reads as gibberish on the Search step. Translate it into an
+      // actionable instruction; everything else keeps its real message.
+      const raw = e instanceof Error ? e.message : String(e)
+      errorMsg.value = /^not found$|HTTP 404/i.test(raw.trim())
+        ? 'Ссылка устарела — перешлите торрент боту ещё раз.'
+        : raw
       step.value = 1
     }
   }

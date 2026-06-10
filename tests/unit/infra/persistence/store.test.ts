@@ -76,4 +76,39 @@ describe('PersistentStore', () => {
     store.markNotifFired('task1', 'completed')
     expect(store.wasNotifFired('task1', 'completed')).toBe(true)
   })
+
+  // --- Persistence GC (#300) ---
+
+  it('clearAllNotifFired removes every event for the task, leaves other tasks alone', () => {
+    store.markNotifFired('task1', 'finished')
+    store.markNotifFired('task1', 'failed')
+    store.markNotifFired('task2', 'finished')
+
+    store.clearAllNotifFired('task1')
+
+    expect(store.wasNotifFired('task1', 'finished')).toBe(false)
+    expect(store.wasNotifFired('task1', 'failed')).toBe(false)
+    expect(store.wasNotifFired('task2', 'finished')).toBe(true)
+  })
+
+  it('sweepOrphanNotifDedup removes old orphan rows but keeps rows whose task is still in task_completion', () => {
+    store.markNotifFired('orphan', 'finished')
+    store.markNotifFired('tracked', 'finished')
+    store.insertCompletion('tracked', Date.now())
+
+    // Cutoff in the future → all current rows count as "old"
+    store.sweepOrphanNotifDedup(Date.now() + 60_000)
+
+    expect(store.wasNotifFired('orphan', 'finished')).toBe(false)
+    expect(store.wasNotifFired('tracked', 'finished')).toBe(true)
+  })
+
+  it('sweepOrphanNotifDedup keeps orphan rows newer than the cutoff', () => {
+    store.markNotifFired('fresh-orphan', 'finished')
+
+    // Cutoff in the past → nothing is old enough to sweep
+    store.sweepOrphanNotifDedup(Date.now() - 60_000)
+
+    expect(store.wasNotifFired('fresh-orphan', 'finished')).toBe(true)
+  })
 })

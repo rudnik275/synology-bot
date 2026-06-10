@@ -27,6 +27,15 @@ export class TaskMonitor {
   private notify: NotifyFn
   private store: TaskMonitorStore
   private detectors: TaskDetector[]
+  /**
+   * Task ids handed to `notify` but not yet confirmed delivered. Prevents
+   * duplicate enqueues across ticks while the downstream debouncer holds the
+   * task. Persistence (notif_dedup + completion) happens only in
+   * `markDelivered`, i.e. AFTER a successful Telegram send — at-least-once
+   * delivery: a crash before delivery re-notifies on restart rather than
+   * silently dropping the push (#291).
+   */
+  private pendingNotify = new Set<string>()
 
   constructor(
     getTasks: GetTasksFn,
@@ -60,17 +69,18 @@ export class TaskMonitor {
     for (const task of tasks) {
       if (!FINISHED_STATUSES.has(task.status)) continue
       if (this.store.wasNotifFired(task.id, 'finished')) continue
+      if (this.pendingNotify.has(task.id)) continue
 
       try {
         await this.notify(task)
       } catch (err) {
         console.error(`[TaskMonitor] notify failed for task ${task.id}:`, err)
-        // Do not mark as fired — will retry next tick
+        // Do not mark as pending — will retry next tick
         continue
       }
 
-      this.store.markNotifFired(task.id, 'finished')
-      this.store.insertCompletion(task.id, Date.now())
+      // Enqueued downstream — don't persist yet; wait for markDelivered.
+      this.pendingNotify.add(task.id)
     }
 
     // Run all per-tick detectors
@@ -84,11 +94,16 @@ export class TaskMonitor {
   }
 
   /**
-   * Start polling on a fixed interval. Returns the timer so callers can stop it.
+   * Confirm a finished notification was actually delivered (Telegram send
+   * succeeded). Only now do we persist the dedup marker and completion record.
+   * Called by the delivery layer (FinishedDebouncer onDelivered in app.ts).
    */
-  start(intervalMs: number): ReturnType<typeof setInterval> {
-    return setInterval(() => {
-      this.tick().catch((err) => console.error('[TaskMonitor] unexpected error in tick:', err))
-    }, intervalMs)
+  markDelivered(taskId: string): void {
+    this.store.markNotifFired(taskId, 'finished')
+    this.store.insertCompletion(taskId, Date.now())
+    this.pendingNotify.delete(taskId)
   }
 }
+
+// Polling is driven externally via runPollingLoop (sleep-then-tick, no
+// overlapping ticks — #284); TaskMonitor deliberately has no own timer.

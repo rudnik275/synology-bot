@@ -42,4 +42,20 @@ describe('extractMagnet', () => {
   it('returns null for empty string', () => {
     expect(extractMagnet('')).toBeNull()
   })
+
+  it('matches an uppercase magnet scheme', () => {
+    const magnet = 'MAGNET:?XT=URN:BTIH:ABCDEF1234567890ABCDEF1234567890ABCDEF12'
+    expect(extractMagnet(magnet)).toBe(magnet)
+  })
+
+  it('handles BitTorrent v2 (urn:btmh:) hashes', () => {
+    const magnet =
+      'magnet:?xt=urn:btmh:1220caf1e1c30e81cb361b9ee167c4aa64228a7fa3b3a3a3a3a3a3a3a3a3a3a3a3&dn=Foo'
+    expect(extractMagnet(magnet)).toBe(magnet)
+  })
+
+  it('extracts a magnet embedded mid-sentence with query params intact', () => {
+    const magnet = 'magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12&dn=Show&tr=udp%3A%2F%2Ft.example'
+    expect(extractMagnet(`Смотри: ${magnet} — годнота`)).toBe(magnet)
+  })
 })

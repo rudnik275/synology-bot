@@ -111,11 +111,54 @@ describe('uri-intake handler (#120)', () => {
     const d = deps()
     registerUriIntakeRoute(bot as never, d as never)
 
-    await bot.emit('message:text', makeCtx('just chatting'))
+    const ctx = makeCtx('just chatting')
+    await bot.emit('message:text', ctx)
 
     expect(d.store.stashUri).not.toHaveBeenCalled()
     // Stays silent so the DM isn't noisy.
-    expect(d.store.stashUri).toHaveBeenCalledTimes(0)
+    expect(ctx.reply).not.toHaveBeenCalled()
+  })
+
+  it('extracts and stashes a magnet embedded in surrounding text (#299)', async () => {
+    const bot = makeFakeBot()
+    const d = deps()
+    registerUriIntakeRoute(bot as never, d as never)
+
+    const magnet = 'magnet:?xt=urn:btih:abcdef1234567890abcdef1234567890abcdef12&dn=Movie'
+    const ctx = makeCtx(`Смотри что нашёл:\n${magnet}\nкачни плз`)
+    await bot.emit('message:text', ctx)
+
+    expect(d.store.stashUri).toHaveBeenCalledTimes(1)
+    expect(d.store.stashUri.mock.calls[0][1]).toBe(magnet)
+
+    const replyOpts = ctx.reply.mock.calls[0][1] as {
+      reply_markup?: { inline_keyboard: unknown[][] }
+    }
+    const btn = replyOpts.reply_markup!.inline_keyboard.flat()[0] as { web_app?: { url: string } }
+    expect(btn.web_app?.url).toContain('tgWebAppStartParam=tor-TOKEN123')
+  })
+
+  it('still ignores a plain http URL embedded in a sentence (no magnet)', async () => {
+    const bot = makeFakeBot()
+    const d = deps()
+    registerUriIntakeRoute(bot as never, d as never)
+
+    const ctx = makeCtx('see https://example.com for details')
+    await bot.emit('message:text', ctx)
+
+    expect(d.store.stashUri).not.toHaveBeenCalled()
+    expect(ctx.reply).not.toHaveBeenCalled()
+  })
+
+  it('a standalone http(s) URL still triggers intake (behavior unchanged)', async () => {
+    const bot = makeFakeBot()
+    const d = deps()
+    registerUriIntakeRoute(bot as never, d as never)
+
+    await bot.emit('message:text', makeCtx('https://tracker.example/file.torrent'))
+
+    expect(d.store.stashUri).toHaveBeenCalledTimes(1)
+    expect(d.store.stashUri.mock.calls[0][1]).toBe('https://tracker.example/file.torrent')
   })
 
   it('does not stash when the Mini App is not configured (empty miniappUrl)', async () => {

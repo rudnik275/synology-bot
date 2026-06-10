@@ -174,6 +174,75 @@ describe('ReachabilityMonitor', () => {
     expect(h.state).toBe('reachable')
   })
 
+  // Send-then-commit: a failed onEvent must NOT persist the new state
+  it('onEvent throws on nas.down → state NOT persisted → next tick retries the alert', async () => {
+    const events: Array<{ event: NasEvent; reason?: string }> = []
+    const state = { current: 'reachable' as NasState }
+    let failNext = true
+
+    const monitor = new ReachabilityMonitor(
+      {
+        checkReachability: async () => makeFail('timeout'),
+        onEvent: async (event, reason) => {
+          if (failNext) throw new Error('telegram down')
+          events.push({ event, reason })
+        },
+        getState: () => state.current,
+        setState: (s) => { state.current = s },
+      },
+      { debounceCount: 1 }
+    )
+
+    // First tick: send fails → state must stay reachable
+    await expect(monitor.poll()).rejects.toThrow('telegram down')
+    expect(state.current).toBe('reachable')
+    expect(events).toHaveLength(0)
+
+    // Second tick: send succeeds → alert delivered, state committed
+    failNext = false
+    await monitor.poll()
+    expect(events).toHaveLength(1)
+    expect(events[0].event).toBe('nas.down')
+    expect(state.current).toBe('unreachable')
+  })
+
+  it('onEvent throws on nas.recovered → state stays unreachable → next tick retries', async () => {
+    const events: NasEvent[] = []
+    const state = { current: 'unreachable' as NasState }
+    let failNext = true
+
+    const monitor = new ReachabilityMonitor({
+      checkReachability: async () => makeOk(),
+      onEvent: async (event) => {
+        if (failNext) throw new Error('telegram down')
+        events.push(event)
+      },
+      getState: () => state.current,
+      setState: (s) => { state.current = s },
+    })
+
+    await expect(monitor.poll()).rejects.toThrow('telegram down')
+    expect(state.current).toBe('unreachable')
+    expect(events).toHaveLength(0)
+
+    failNext = false
+    await monitor.poll()
+    expect(events).toEqual(['nas.recovered'])
+    expect(state.current).toBe('reachable')
+  })
+
+  it('onEvent succeeds → state persisted, no duplicate event next tick', async () => {
+    const h = makeHarness('reachable', 1)
+    h.setCheck(makeFail('timeout'))
+
+    await h.monitor.poll()
+    expect(h.events).toHaveLength(1)
+    expect(h.state).toBe('unreachable')
+
+    await h.monitor.poll()
+    expect(h.events).toHaveLength(1)
+  })
+
   // Cycle 10: with debounceCount=2 (from config), exactly 2 failures trigger down
   it('debounceCount=2: two failures → nas.down emitted', async () => {
     const h = makeHarness('reachable', 2)

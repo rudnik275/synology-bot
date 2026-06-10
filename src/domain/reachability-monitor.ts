@@ -39,14 +39,16 @@ export class ReachabilityMonitor {
     if (result.ok) {
       this.failureCount = 0
       if (currentState === 'unreachable') {
-        this.deps.setState('reachable')
+        // Send-then-commit: persist state only after the alert is delivered,
+        // so a transient send failure retries on the next tick.
         await this.deps.onEvent('nas.recovered')
+        this.deps.setState('reachable')
       }
     } else {
       this.failureCount++
       if (currentState === 'reachable' && this.failureCount >= this.debounceCount) {
-        this.deps.setState('unreachable')
         await this.deps.onEvent('nas.down', result.reason)
+        this.deps.setState('unreachable')
       }
       // While already unreachable: silence subsequent failures
     }

@@ -253,6 +253,95 @@ describe('DiskHealthWatcher – combined and multi-disk', () => {
   })
 })
 
+describe('DiskHealthWatcher – send-then-commit', () => {
+  function makeFlakyHarness(disks: DiskEntry[]) {
+    const store = makeFakeStore()
+    const pushes: string[] = []
+    const flag = { failNext: true }
+    const watcher = new DiskHealthWatcher({
+      getDiskInfo: async () => ({ ok: true as const, data: { disks } }),
+      getState: (event, resourceId) => store.getState(event, resourceId),
+      setState: (event, resourceId, state) => store.setState(event, resourceId, state),
+      notify: async (message: string) => {
+        if (flag.failNext) throw new Error('telegram down')
+        pushes.push(message)
+      },
+    })
+    return { watcher, store, pushes, flag }
+  }
+
+  it('notify throws on temp alert → state NOT persisted → next tick retries', async () => {
+    const h = makeFlakyHarness([makeDisk('disk1', 'WD Red', 58, 'critical')])
+
+    await expect(h.watcher.check()).rejects.toThrow('telegram down')
+    expect(h.pushes).toHaveLength(0)
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('ok')
+
+    h.flag.failNext = false
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(1)
+    expect(h.pushes[0]).toContain('перегрев')
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
+  })
+
+  it('notify throws on temp recovery → state stays hot → next tick retries', async () => {
+    const h = makeFlakyHarness([makeDisk('disk1', 'WD Red', 45, 'normal')])
+    h.store.setState('disk_temp', 'disk1', 'hot')
+
+    await expect(h.watcher.check()).rejects.toThrow('telegram down')
+    expect(h.pushes).toHaveLength(0)
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
+
+    h.flag.failNext = false
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(1)
+    expect(h.pushes[0]).toContain('температура в норме')
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('ok')
+  })
+
+  it('notify throws on SMART alert → state NOT persisted → next tick retries', async () => {
+    const h = makeFlakyHarness([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal', 'warning')])
+
+    await expect(h.watcher.check()).rejects.toThrow('telegram down')
+    expect(h.pushes).toHaveLength(0)
+    expect(h.store.getState('disk_smart', 'disk1')).toBe('ok')
+
+    h.flag.failNext = false
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(1)
+    expect(h.pushes[0]).toContain('SMART:')
+    expect(h.store.getState('disk_smart', 'disk1')).toBe('warn')
+  })
+
+  it('notify throws on SMART recovery → state stays warn → next tick retries', async () => {
+    const h = makeFlakyHarness([makeDisk('disk1', 'WD Red', 40, 'normal', 'normal', 'normal')])
+    h.store.setState('disk_smart', 'disk1', 'warn')
+
+    await expect(h.watcher.check()).rejects.toThrow('telegram down')
+    expect(h.pushes).toHaveLength(0)
+    expect(h.store.getState('disk_smart', 'disk1')).toBe('warn')
+
+    h.flag.failNext = false
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(1)
+    expect(h.pushes[0]).toContain('SMART восстановлен')
+    expect(h.store.getState('disk_smart', 'disk1')).toBe('ok')
+  })
+
+  it('notify succeeds → state persisted, no duplicate push next tick', async () => {
+    const h = makeHarness()
+    h.setDisks([makeDisk('disk1', 'WD Red', 58, 'critical', 'normal', 'warning')])
+
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(2)
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
+    expect(h.store.getState('disk_smart', 'disk1')).toBe('warn')
+
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(2)
+  })
+})
+
 describe('DiskHealthWatcher – error handling', () => {
   it('getDiskInfo error → watcher logs but does not crash, no push', async () => {
     const pushes: string[] = []

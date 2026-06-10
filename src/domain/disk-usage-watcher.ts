@@ -65,19 +65,21 @@ export class DiskUsageWatcher {
     const isWarned = await this.deps.isVolumeWarned(volume.id)
 
     if (!isWarned && usedPct >= this.deps.highPct) {
-      // ok → warn: crossed high threshold
-      await this.deps.markWarned(volume.id)
+      // ok → warn: crossed high threshold.
+      // Send-then-commit: persist only after the notification is delivered,
+      // so a transient send failure retries on the next tick.
       const pctDisplay = Math.round(usedPct)
       await this.deps.notify(
         `⚠️ ${volume.vol_path} заполнен на ${pctDisplay}% (${formatBytesPair(used, total)})`
       )
+      await this.deps.markWarned(volume.id)
     } else if (isWarned && usedPct < this.deps.lowPct) {
       // warn → ok: dropped below low threshold
-      await this.deps.clearWarned(volume.id)
       const pctDisplay = Math.round(usedPct)
       await this.deps.notify(
         `✅ ${volume.vol_path} восстановлен (${pctDisplay}% использовано)`
       )
+      await this.deps.clearWarned(volume.id)
     }
     // Otherwise: no transition (hysteresis band or already in correct state)
   }

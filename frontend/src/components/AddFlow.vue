@@ -25,6 +25,7 @@ import { usePrefersReducedMotion } from '../composables/usePrefersReducedMotion'
 import { useFolderShortcuts } from '../composables/useFolderShortcuts'
 import { useSearchHistory } from '../composables/useSearchHistory'
 import { useOptimisticTasks } from '../composables/useOptimisticTasks'
+import { useAddFailures } from '../composables/useAddFailures'
 import { useTgBackButton } from '../composables/useTgBackButton'
 import { useAddWizard } from '../composables/useAddWizard'
 import { useInspectCommit, type InspectSource } from '../composables/useInspectCommit'
@@ -51,6 +52,7 @@ const { prefersReducedMotion } = usePrefersReducedMotion()
 const { lastFolder, recordRecent } = useFolderShortcuts()
 const { history: searchHistory, recordQuery, clearHistory: clearSearchHistory } = useSearchHistory()
 const optimistic = useOptimisticTasks()
+const addFailures = useAddFailures()
 const inspect = useInspectCommit(api)
 
 // ─── Confirm step: inspect → select → commit (#123) ──────────────────────────
@@ -67,6 +69,8 @@ const {
   inspectFiles,
   selectedIndices,
   inspectError,
+  inspectHint,
+  inspectTimedOut,
   runInspect,
   resetInspect,
   cancelInspectIfOpen,
@@ -444,9 +448,17 @@ function create(): void {
       if (id) optimistic.attachRealId(optimisticId, id)
     })
     .catch((e) => {
+      // Roll the placeholder back, but DON'T fail silently (#288): the sheet is
+      // long gone and a reopen lands on step 1 (where errorMsg was cleared by
+      // resetForm anyway), so the only honest surface is the Downloads list
+      // itself — record the failure so DownloadsTab pins a red «Ошибка
+      // добавления» card above the list until the owner dismisses it.
       optimistic.remove(optimisticId)
-      // The sheet is gone, so surface failures on the next open via errorMsg.
-      errorMsg.value = e instanceof Error ? e.message : String(e)
+      addFailures.add({
+        title,
+        destination: dest || null,
+        message: e instanceof Error ? e.message : String(e),
+      })
     })
 }
 
@@ -481,6 +493,15 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
       <component :is="'div'" :class="['wizard-step', { 'wizard-step--animated': !prefersReducedMotion }]">
 
         <!-- ── Step 1: Search (in-app primary entry; skipped on bot handoff) ── -->
+        <!-- Wizard-level error on the Search step (#307): the failed bot-handoff
+             (expired stash, etc.) recovers here, so its message must render HERE —
+             errorMsg otherwise only shows inside the Confirm step. -->
+        <p
+          v-if="step === 1 && errorMsg"
+          class="wizard-error"
+          role="alert"
+          data-testid="wizard-error"
+        >{{ errorMsg }}</p>
         <AddSearchStep
           v-if="step === 1"
           v-model:search-query="searchQuery"
@@ -518,6 +539,8 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
           :file-tree="fileTree"
           :selected-size="selectedSize"
           :inspect-error="inspectError"
+          :inspect-hint="inspectHint"
+          :inspect-timed-out="inspectTimedOut"
           :destination="destination"
           :error-msg="errorMsg"
           @go-back="goBack"
@@ -616,6 +639,18 @@ function captureWholeTorrentAdd(dest: string): () => Promise<unknown> {
 /* ── Step 2: Folder ── */
 .step-folder {
   flex: 1;
+}
+
+/* Wizard-level error banner on the Search step (#307) — same recipe as the
+   Confirm step's .error-msg (AddConfirmStep.vue). */
+.wizard-error {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--red);
+  border: var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
 }
 
 /* The «Добавить» CTA is coral on the Confirm step (commit = terminal add action). */

@@ -8,6 +8,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import AddFlow from '../src/components/AddFlow.vue'
 import { useOptimisticTasks } from '../src/composables/useOptimisticTasks'
+import { useAddFailures } from '../src/composables/useAddFailures'
 
 const realFetch = globalThis.fetch
 
@@ -350,6 +351,40 @@ describe('AddFlow (search-only)', () => {
     expect(JSON.parse(commit!.init?.body as string).listId).toBe('btdlTEST')
     // … and the failed add rolled the placeholder back out of the Downloads list.
     expect(optimistic.pendingTasks()).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('a failed background add records a VISIBLE failure entry — not a silent vanish (#288)', async () => {
+    // #288: the rollback above used to be the END of the story — the placeholder
+    // vanished with zero feedback (errorMsg was nulled by the next openSheet and
+    // only ever rendered on step 3). The failure must instead be recorded so
+    // DownloadsTab can pin a red «Ошибка добавления» card until dismissed.
+    const failuresStore = useAddFailures()
+    const wrapper = await openWizard()
+    await reachConfirm()
+    const prev = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      fetchCalls.push({ url, init })
+      if ((url as string) === '/api/tasks/commit') return Promise.resolve(jsonResponse({ error: 'destination is required' }, 400))
+      return (prev as typeof fetch)(url as string, init)
+    }) as typeof fetch
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    expect(failuresStore.failures).toHaveLength(1)
+    expect(failuresStore.failures[0]!.title).toBe('Movie One')
+    expect(failuresStore.failures[0]!.message).toBe('destination is required')
+    wrapper.unmount()
+  })
+
+  it('a successful add records NO failure entry (#288)', async () => {
+    const failuresStore = useAddFailures()
+    const wrapper = await openWizard()
+    await reachConfirm()
+    document.querySelector<HTMLButtonElement>('[data-testid="create-btn"]')!.click()
+    await flushPromises()
+
+    expect(failuresStore.failures).toHaveLength(0)
     wrapper.unmount()
   })
 

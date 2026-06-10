@@ -729,3 +729,65 @@ describe('useTasks composable', () => {
     unmount()
   })
 })
+
+// ── Failed-add card (#288) ─────────────────────────────────────────────────────
+// A background add that rejected: AddFlow rolls the placeholder back AND records
+// the failure in useAddFailures; DownloadsTab pins a red «Ошибка добавления»
+// card above the list until the owner dismisses it — a failed add never
+// silently vanishes anymore.
+describe('DownloadsTab — failed-add card (#288)', () => {
+  it('renders a failure as a red-striped card with the error message', async () => {
+    globalThis.fetch = (() => Promise.resolve(jsonResponse({ tasks: [] }))) as typeof fetch
+    const { useAddFailures } = await import('../src/composables/useAddFailures')
+    useAddFailures().add({
+      title: 'Broken Movie 1080p',
+      destination: '/downloads/movies',
+      message: 'destination is required',
+    })
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    // The card shows: title, the failed-add status label, and the error message.
+    expect(wrapper.text()).toContain('Broken Movie 1080p')
+    expect(wrapper.text()).toContain('Ошибка добавления')
+    expect(wrapper.text()).toContain('Не удалось добавить: destination is required')
+    // Red edge stripe — failure accent.
+    const failedCard = wrapper.find('.task-card--failed')
+    expect(failedCard.exists()).toBe(true)
+    // It must NOT be swallowed by the empty state.
+    expect(wrapper.text()).not.toContain('Нет загрузок')
+    expect(wrapper.find('.sk-card').exists()).toBe(false)
+  })
+
+  it('the dismiss ✕ removes the failure card', async () => {
+    globalThis.fetch = (() => Promise.resolve(jsonResponse({ tasks: [] }))) as typeof fetch
+    const { useAddFailures } = await import('../src/composables/useAddFailures')
+    const store = useAddFailures()
+    const fid = store.add({ title: 'Dismiss Me', destination: null, message: 'boom' })
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Dismiss Me')
+
+    await wrapper.find(`[data-testid="add-failed-dismiss-${fid}"]`).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Dismiss Me')
+    expect(store.failures).toHaveLength(0)
+  })
+
+  it('failure cards render above pending placeholders and real tasks', async () => {
+    globalThis.fetch = (() => Promise.resolve(jsonResponse({ tasks: [downloadingTask] }))) as typeof fetch
+    const { useAddFailures } = await import('../src/composables/useAddFailures')
+    useAddFailures().add({ title: 'Failed First', destination: null, message: 'err' })
+    useOptimisticTasks().add({ title: 'Pending Second', destination: '/downloads' })
+
+    const wrapper = mount(DownloadsTab)
+    await flushPromises()
+
+    const titles = wrapper.findAll('.task-title').map((n) => n.text())
+    expect(titles[0]).toBe('Failed First')
+    expect(titles.indexOf('Failed First')).toBeLessThan(titles.indexOf('Pending Second'))
+  })
+})

@@ -25,6 +25,11 @@ defineProps<{
   fileTree: FileTreeModel | null
   selectedSize: number
   inspectError: string | null
+  /** Progress hint while a magnet poll waits on peer metadata (#304). */
+  inspectHint: string | null
+  /** True when the magnet poll timed out (no peers) — the 'whole' fallback then
+   *  reads as a metadata timeout, not an inspect failure (#304). */
+  inspectTimedOut: boolean
   destination: string
   errorMsg: string | null
 }>()
@@ -62,13 +67,16 @@ const emit = defineEmits<{ goBack: [] }>()
         </div>
 
         <!-- Inspecting: loading state while polling the inspect list. -->
-        <LoadingText
-          v-if="inspectState === 'inspecting'"
-          label="Читаю содержимое торрента…"
-          :size="16"
-          class="files-loading"
-          data-testid="inspect-loading"
-        />
+        <template v-if="inspectState === 'inspecting'">
+          <LoadingText
+            label="Читаю содержимое торрента…"
+            :size="16"
+            class="files-loading"
+            data-testid="inspect-loading"
+          />
+          <!-- Magnet poll taking long → DSM is waiting on peers for the metadata (#304). -->
+          <p v-if="inspectHint" class="files-hint" data-testid="inspect-hint">{{ inspectHint }}</p>
+        </template>
 
         <!-- Ready: the interactive tree with functional checkboxes. -->
         <FileTree
@@ -78,12 +86,14 @@ const emit = defineEmits<{ goBack: [] }>()
           v-model:selected="selectedIndices"
         />
 
-        <!-- Whole-torrent fallback (magnet / inspect unavailable or failed). -->
+        <!-- Whole-torrent fallback: metadata timeout (#304) / inspect failed / unavailable. -->
         <div v-else class="files-whole" data-testid="inspect-whole">
           <p class="files-whole-msg">
-            {{ inspectError
-              ? 'Не удалось прочитать список файлов — будет добавлен торрент целиком.'
-              : 'Для этого источника список файлов недоступен — торрент добавится целиком.' }}
+            {{ inspectTimedOut
+              ? 'Метаданные недоступны — торрент будет добавлен целиком.'
+              : inspectError
+                ? 'Не удалось прочитать список файлов — будет добавлен торрент целиком.'
+                : 'Для этого источника список файлов недоступен — торрент добавится целиком.' }}
           </p>
         </div>
       </div>
@@ -195,6 +205,14 @@ const emit = defineEmits<{ goBack: [] }>()
 /* Inspecting / loading state. */
 .files-loading {
   padding: var(--space-4) 0;
+}
+
+/* Peer-wait hint under the inspecting loader (#304). */
+.files-hint {
+  margin: 0;
+  padding-bottom: var(--space-3);
+  font-size: var(--fs-sm);
+  opacity: 0.7;
 }
 
 /* Whole-torrent fallback message. */

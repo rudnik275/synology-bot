@@ -96,6 +96,9 @@ afterEach(async () => {
   // `doc.createTextNode`. By afterEach time the DOM is registered.
   const { resetOptimisticTasks } = await import('./src/composables/useOptimisticTasks')
   resetOptimisticTasks()
+  // The failed-add store (#288) is a module singleton too — same treatment.
+  const { resetAddFailures } = await import('./src/composables/useAddFailures')
+  resetAddFailures()
   // useHealth is also a module-singleton; clear its data so it cannot leak between
   // files. Safe here — auto-unmount ran first, so no mounted consumer re-renders.
   const { resetHealth } = await import('./src/composables/useHealth')

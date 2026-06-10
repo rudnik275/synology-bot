@@ -468,3 +468,65 @@ describe('AddFlow confirm — master select-all over whole tree (#251)', () => {
     wrapper.unmount()
   })
 })
+
+// ── Magnet-inspect wait/timeout messaging (#304) — AddConfirmStep rendering ────
+// The polling state machine itself is covered in useInspectCommit.test.ts;
+// here we pin the three distinct Confirm-step surfaces: the peer-wait hint
+// while inspecting, and the timeout message (distinct from a plain failure).
+const { default: AddConfirmStep } = await import('../src/components/AddConfirmStep.vue')
+
+describe('AddConfirmStep — magnet inspect hint + timeout messages (#304)', () => {
+  function mountConfirm(over: Record<string, unknown> = {}) {
+    return mount(AddConfirmStep, {
+      props: {
+        confirmTitle: 'Magnet Movie',
+        confirmChips: [],
+        inspectState: 'inspecting',
+        inspectFiles: [],
+        fileTree: null,
+        selectedSize: 0,
+        inspectError: null,
+        inspectHint: null,
+        inspectTimedOut: false,
+        destination: '/downloads',
+        errorMsg: null,
+        selected: [],
+        'onUpdate:selected': () => {},
+        ...over,
+      },
+    })
+  }
+
+  it('shows the peer-wait hint under the loader while inspecting', () => {
+    const wrapper = mountConfirm({ inspectHint: '⏳ Ожидание метаданных от пиров…' })
+    const hint = wrapper.find('[data-testid="inspect-hint"]')
+    expect(hint.exists()).toBe(true)
+    expect(hint.text()).toContain('Ожидание метаданных от пиров')
+    // The loader itself stays up too.
+    expect(wrapper.find('[data-testid="inspect-loading"]').exists()).toBe(true)
+  })
+
+  it('no hint element while inspecting without a hint', () => {
+    const wrapper = mountConfirm()
+    expect(wrapper.find('[data-testid="inspect-hint"]').exists()).toBe(false)
+  })
+
+  it('a TIMEOUT fallback reads «Метаданные недоступны…», not the failure text', () => {
+    const wrapper = mountConfirm({ inspectState: 'whole', inspectTimedOut: true })
+    const whole = wrapper.find('[data-testid="inspect-whole"]')
+    expect(whole.text()).toContain('Метаданные недоступны — торрент будет добавлен целиком.')
+    expect(whole.text()).not.toContain('Не удалось прочитать')
+  })
+
+  it('a failed inspect still reads the failure text (timeout flag off)', () => {
+    const wrapper = mountConfirm({ inspectState: 'whole', inspectError: 'boom' })
+    expect(wrapper.find('[data-testid="inspect-whole"]').text())
+      .toContain('Не удалось прочитать список файлов — будет добавлен торрент целиком.')
+  })
+
+  it('a plain magnet fallback keeps the neutral unavailable text', () => {
+    const wrapper = mountConfirm({ inspectState: 'whole' })
+    expect(wrapper.find('[data-testid="inspect-whole"]').text())
+      .toContain('Для этого источника список файлов недоступен — торрент добавится целиком.')
+  })
+})

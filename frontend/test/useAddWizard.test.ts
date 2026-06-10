@@ -193,15 +193,37 @@ describe('useAddWizard — bot handoff (deep link)', () => {
 
   it('on stash failure, recovers to the in-app search flow at step 1 with an error', async () => {
     const deps = makeDeps({
-      torrentStash: async () => { throw new Error('not found') },
+      torrentStash: async () => { throw new Error('boom') },
     })
     const w = useAddWizard(deps)
     await w.startFromStashedTorrent('GONE')
     expect(w.handoff.value).toBe(false)
     expect(w.mode.value).toBe('search')
     expect(w.step.value).toBe(1)
-    expect(w.errorMsg.value).toBe('not found')
+    expect(w.errorMsg.value).toBe('boom')
     expect(w.open.value).toBe(true)
+  })
+
+  // #307: an expired/consumed stash 404s with {error:'not found'} — the raw
+  // 'not found' / 'HTTP 404' message reads as gibberish, so it is translated
+  // into an actionable instruction (resend the torrent to the bot).
+  it('an expired stash («not found») surfaces the friendly resend message (#307)', async () => {
+    const deps = makeDeps({
+      torrentStash: async () => { throw new Error('not found') },
+    })
+    const w = useAddWizard(deps)
+    await w.startFromStashedTorrent('EXPIRED')
+    expect(w.step.value).toBe(1)
+    expect(w.errorMsg.value).toBe('Ссылка устарела — перешлите торрент боту ещё раз.')
+  })
+
+  it('a bare HTTP 404 (no error body) also maps to the friendly message (#307)', async () => {
+    const deps = makeDeps({
+      torrentStash: async () => { throw new Error('HTTP 404') },
+    })
+    const w = useAddWizard(deps)
+    await w.startFromStashedTorrent('EXPIRED')
+    expect(w.errorMsg.value).toBe('Ссылка устарела — перешлите торрент боту ещё раз.')
   })
 
   it('on the handoff path goBack from Confirm stops at Folder (no step 1)', async () => {

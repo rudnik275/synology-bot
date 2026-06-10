@@ -49,6 +49,20 @@ export interface InspectApi {
   deleteInspect: (listId: string) => Promise<unknown>
 }
 
+/** Magnet-poll tuning knobs (#304). Production uses the defaults; tests inject
+ *  tiny delays so the timeout path doesn't take ~30 s of wall-clock time. */
+export interface InspectPollOptions {
+  /** Max poll attempts before the whole-torrent timeout fallback (default 30). */
+  pollAttempts?: number
+  /** Delay between poll attempts in ms (default 1000). */
+  pollIntervalMs?: number
+  /** After how many not-ready polls the peer-wait hint shows (default 3). */
+  hintAfterAttempts?: number
+}
+
+/** Shown while a magnet poll is taking long — DSM is waiting on peers (#304). */
+export const INSPECT_PEER_WAIT_HINT = '⏳ Ожидание метаданных от пиров…'
+
 export interface UseInspectCommit {
   // ─── Reactive state (read by AddFlow's template + create()) ───
   inspectState: Ref<InspectState>
@@ -57,6 +71,11 @@ export interface UseInspectCommit {
   inspectFiles: Ref<InspectFileView[]>
   selectedIndices: Ref<number[]>
   inspectError: Ref<string | null>
+  /** Progress hint while a magnet poll is waiting on peer metadata (#304). */
+  inspectHint: Ref<string | null>
+  /** True when the magnet poll exhausted its attempts without metadata — the
+   *  'whole' fallback is a TIMEOUT, not an inspect failure (#304). */
+  inspectTimedOut: Ref<boolean>
 
   // ─── Actions ───
   /** Inspect `source` (tracking the run as in-flight), settling to ready (tree
@@ -79,7 +98,11 @@ export interface UseInspectCommit {
   clearHandle: () => void
 }
 
-export function useInspectCommit(api: InspectApi): UseInspectCommit {
+export function useInspectCommit(api: InspectApi, options: InspectPollOptions = {}): UseInspectCommit {
+  const pollAttempts = options.pollAttempts ?? 30
+  const pollIntervalMs = options.pollIntervalMs ?? 1000
+  const hintAfterAttempts = options.hintAfterAttempts ?? 3
+
   // The handle used to commit the current inspect: a deferred `inspectToken`
   // (instant tree — no DSM list exists yet) or a pre-created `listId` (magnet poll
   // path). Only the listId path has a NAS list to release on cancel.
@@ -88,6 +111,8 @@ export function useInspectCommit(api: InspectApi): UseInspectCommit {
   const inspectFiles = ref<InspectFileView[]>([])
   const selectedIndices = ref<number[]>([])
   const inspectError = ref<string | null>(null)
+  const inspectHint = ref<string | null>(null)
+  const inspectTimedOut = ref(false)
 
   // Private: drop a stale poll that resolves after reset / re-open.
   let inspectSeq = 0
@@ -99,6 +124,11 @@ export function useInspectCommit(api: InspectApi): UseInspectCommit {
   // guard would otherwise bail and delete the very list we're committing). Cleared
   // once the run settles. The next inspect (re-open) starts fresh, so it can't leak.
   let protectInflightInspect = false
+  // Private: the seq the active fast-tap protection belongs to (#294). A stale
+  // releaseInflight (the protected chain settling AFTER the wizard was reopened
+  // and a NEW inspect set a new commitHandle) must NOT clobber the new session's
+  // handle — release is only honoured while the protected seq is still current.
+  let protectedSeq: number | null = null
 
   // The core run, tracked as in-flight so a fast-tap can chain on it. A sequence
   // guard drops any poll that resolves after reset/close/re-open.
@@ -108,8 +138,15 @@ export function useInspectCommit(api: InspectApi): UseInspectCommit {
       return { kind: 'whole' }
     }
     const seq = ++inspectSeq
+    // A new run starts a NEW session: any prior fast-tap protection belongs to a
+    // run this bump just made stale, so it must not suppress THIS session's
+    // reset/stale guards (and its stale release must not clobber our handle, #294).
+    protectInflightInspect = false
+    protectedSeq = null
     inspectState.value = 'inspecting'
     inspectError.value = null
+    inspectHint.value = null
+    inspectTimedOut.value = false
     try {
       const started: InspectStarted =
         source.kind === 'file'
@@ -140,16 +177,25 @@ export function useInspectCommit(api: InspectApi): UseInspectCommit {
       const handle: CommitHandle = { listId: started.listId }
       commitHandle.value = handle // set so a Back/cancel can release this list
       let files: InspectFileView[] = []
-      for (let i = 0; i < 20 && seq === inspectSeq; i++) {
+      let sawReady = false
+      for (let i = 0; i < pollAttempts && seq === inspectSeq; i++) {
         const poll = await api.pollInspect(started.listId)
         if (seq !== inspectSeq) return { kind: 'whole' }
         if (poll.ready) {
+          sawReady = true
           files = poll.files.map((f) => ({ index: f.index, path: f.name, size: f.size }))
           break
         }
-        await new Promise((r) => setTimeout(r, 1000))
+        // After a few seconds DSM is clearly waiting on PEERS for the metadata —
+        // tell the owner what the wait is about instead of a silent spinner (#304).
+        if (i + 1 >= hintAfterAttempts) inspectHint.value = INSPECT_PEER_WAIT_HINT
+        await new Promise((r) => setTimeout(r, pollIntervalMs))
       }
       if (seq !== inspectSeq) return { kind: 'whole' }
+      inspectHint.value = null
+      // Exhausted the attempts without metadata → a TIMEOUT fallback, distinct
+      // from an inspect failure (inspectError) and from "parsed zero files".
+      if (!sawReady) inspectTimedOut.value = true
       inspectFiles.value = files
       const indices = allIndices(files as InspectFile[])
       selectedIndices.value = indices // all ticked by default
@@ -157,6 +203,7 @@ export function useInspectCommit(api: InspectApi): UseInspectCommit {
       return files.length > 0 ? { kind: 'ready', handle, indices } : { kind: 'whole' }
     } catch (e) {
       inspectError.value = e instanceof Error ? e.message : String(e)
+      inspectHint.value = null
       inspectState.value = 'whole'
       return { kind: 'whole' }
     }
@@ -177,6 +224,8 @@ export function useInspectCommit(api: InspectApi): UseInspectCommit {
     inspectFiles.value = []
     selectedIndices.value = []
     inspectError.value = null
+    inspectHint.value = null
+    inspectTimedOut.value = false
     if (!protectInflightInspect) commitHandle.value = null
   }
 
@@ -196,13 +245,23 @@ export function useInspectCommit(api: InspectApi): UseInspectCommit {
     inspectFiles,
     selectedIndices,
     inspectError,
+    inspectHint,
+    inspectTimedOut,
     runInspect,
     resetInspect,
     cancelInspectIfOpen,
     inFlight: () => inspectInFlight,
-    protectInflight: () => { protectInflightInspect = true },
+    protectInflight: () => {
+      protectInflightInspect = true
+      protectedSeq = inspectSeq // session token: release only honoured while current (#294)
+    },
     releaseInflight: () => {
+      // Session-scoped (#294): a NEWER inspect has started since this protect
+      // (re-open fast path) → this release is STALE; nulling commitHandle now
+      // would silently discard the new session's per-file selection. No-op.
+      if (protectedSeq !== inspectSeq) return
       protectInflightInspect = false
+      protectedSeq = null
       commitHandle.value = null // the run's list is now consumed (or never existed)
     },
     clearHandle: () => { commitHandle.value = null },

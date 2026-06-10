@@ -20,8 +20,10 @@ export interface UseApiOptions {
 export interface RefetchOptions {
   /**
    * When true the fetch runs silently: loading is not toggled, error is not
-   * cleared/set, and stale data is preserved on failure. Used by the poll
-   * timer so background ticks don't cause skeleton/empty-state flicker.
+   * set on failure, and stale data is preserved on failure. A SUCCESSFUL
+   * background fetch still updates data and clears any prior error. Used by
+   * the poll timer so background ticks don't cause skeleton/empty-state
+   * flicker.
    */
   background?: boolean
 }
@@ -40,9 +42,21 @@ export function useApi<T>(path: string, options: UseApiOptions = {}): UseApi<T> 
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  // Monotonic sequence guard: a background poll and a foreground refetch can be
+  // in flight at once (useTasks refetches after pause/resume/delete while the
+  // 3s poll timer ticks). Only the latest-issued request may write state on
+  // settle — a slow stale response is discarded so it can't overwrite fresher
+  // data (e.g. resurrecting a just-deleted task card).
+  let latest = 0
+  // Separate counter for loading: a newer background poll must not stop a
+  // settling foreground fetch from clearing the spinner it turned on.
+  let latestForeground = 0
+
   async function refetch(opts?: RefetchOptions): Promise<void> {
     const background = opts?.background ?? false
+    const seq = ++latest
     if (!background) {
+      latestForeground = seq
       loading.value = true
       error.value = null
     }
@@ -54,14 +68,20 @@ export function useApi<T>(path: string, options: UseApiOptions = {}): UseApi<T> 
         const body = (await res.json().catch(() => null)) as { error?: string } | null
         throw new Error(body?.error ?? `HTTP ${res.status}`)
       }
-      data.value = (await res.json()) as T
+      const parsed = (await res.json()) as T
+      if (seq !== latest) return // stale response — a newer refetch owns the state
+      data.value = parsed
+      // Any successful fetch (background included) clears a previously-set
+      // error: once fresh data arrives the error state is no longer true.
+      error.value = null
     } catch (e) {
+      if (seq !== latest) return // stale response — discard entirely
       if (!background) {
         error.value = e instanceof Error ? e.message : String(e)
       }
       // Background failure: keep stale data and prior error state intact
     } finally {
-      if (!background) {
+      if (!background && seq === latestForeground) {
         loading.value = false
       }
     }

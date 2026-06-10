@@ -148,4 +148,47 @@ describe('useApi', () => {
     expect(result.loading.value).toBe(false)
     unmount()
   })
+
+  it('successful background fetch clears an error set by a prior foreground failure', async () => {
+    // Foreground failure sets the error
+    globalThis.fetch = (() => Promise.resolve(jsonResponse({ error: 'boom' }, 500))) as typeof fetch
+    const { result, unmount } = withSetup(() => useApi<{ value: number }>('/x', { immediate: false }))
+    await result.refetch()
+    expect(result.error.value).toBe('boom')
+
+    // A later successful background poll must clear the sticky error
+    globalThis.fetch = (() => Promise.resolve(jsonResponse({ value: 7 }))) as typeof fetch
+    await result.refetch({ background: true })
+
+    expect(result.data.value).toEqual({ value: 7 })
+    expect(result.error.value).toBeNull()
+    expect(result.loading.value).toBe(false)
+    unmount()
+  })
+
+  it('discards an out-of-order stale response (slow A resolves after fast B)', async () => {
+    const resolvers: ((r: Response) => void)[] = []
+    globalThis.fetch = (() => new Promise<Response>((r) => resolvers.push(r))) as typeof fetch
+
+    const { result, unmount } = withSetup(() => useApi<{ value: number }>('/x', { immediate: false }))
+
+    // Slow request A (e.g. a background poll), then fast request B (foreground)
+    const pA = result.refetch({ background: true })
+    const pB = result.refetch()
+    expect(resolvers).toHaveLength(2)
+
+    // B settles first with fresh data
+    resolvers[1]!(jsonResponse({ value: 2 }))
+    await pB
+    expect(result.data.value).toEqual({ value: 2 })
+    expect(result.loading.value).toBe(false)
+
+    // A settles later with stale data — must be discarded entirely
+    resolvers[0]!(jsonResponse({ value: 1 }))
+    await pA
+    expect(result.data.value).toEqual({ value: 2 })
+    expect(result.error.value).toBeNull()
+    expect(result.loading.value).toBe(false)
+    unmount()
+  })
 })

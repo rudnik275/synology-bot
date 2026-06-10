@@ -33,6 +33,7 @@ function makeSettings() {
 function makeApp(settings: ReturnType<typeof makeSettings> | null = makeSettings()) {
   return createServer({
     ...(settings ? { settings } : {}),
+    clearNotifFired: () => {},
     synology: {} as unknown as SynologyClient,
     toloka: {} as unknown as TolokaClient,
     docker: {} as unknown as DockerClient,

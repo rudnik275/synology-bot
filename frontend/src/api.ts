@@ -1,5 +1,5 @@
 import { initData } from './telegram'
-import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView, CommitHandle, InspectStarted } from './types'
+import type { HealthView, TaskView, SearchResultView, SubscriptionView, FolderView, ShowSearchResultView, ShowDetailView, CommitHandle, InspectStarted, SettingsView } from './types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -86,6 +86,12 @@ export const api = {
     request<{ values: string[] }>(`/ui-state/${encodeURIComponent(key)}`).then((r) => r.values),
   setUiState: (key: string, values: string[]) =>
     request<{ ok: true }>(`/ui-state/${encodeURIComponent(key)}`, { ...jsonBody({ values }), method: 'PUT' }).then(() => undefined),
+
+  // #305 — runtime-tunable watcher thresholds + digest hour. PUT accepts a
+  // partial patch; the server validates ranges and cross-field invariants.
+  settings: () => request<{ settings: SettingsView }>('/settings').then((r) => r.settings),
+  saveSettings: (patch: Partial<SettingsView>) =>
+    request<{ settings: SettingsView }>('/settings', { ...jsonBody(patch), method: 'PUT' }).then((r) => r.settings),
 
   search: (q: string) => request<{ results: SearchResultView[] }>(`/search?q=${encodeURIComponent(q)}`).then((r) => r.results),
 

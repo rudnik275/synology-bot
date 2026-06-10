@@ -11,6 +11,14 @@ export interface DiskHealthWatcherDeps {
   setState: (event: string, resourceId: string, state: DiskHealthState) => void
   /** Send a push notification message to the owner */
   notify: (message: string) => Promise<void>
+  /**
+   * Live temperature thresholds (#305): when provided, the watcher classifies
+   * the numeric `temp` itself per tick (temp >= badC → critical, temp >= warnC
+   * → warning band, else normal) instead of trusting the upstream
+   * `temperature_status` classifier. Re-read each tick so a Settings change
+   * applies without restart.
+   */
+  getTempThresholds?: () => { warnC: number; badC: number }
 }
 
 /**
@@ -51,9 +59,21 @@ export class DiskHealthWatcher {
     }
 
     for (const disk of result.data.disks) {
-      await this.checkTemperature(disk.id, disk.model, disk.temp, disk.temperature_status)
+      await this.checkTemperature(disk.id, disk.model, disk.temp, this.classifyTemp(disk))
       await this.checkSmart(disk.id, disk.model, disk.smart_status, disk.status)
     }
+  }
+
+  /**
+   * Effective temperature status for alerting: configured thresholds (#305)
+   * when wired, the upstream classifier otherwise.
+   */
+  private classifyTemp(disk: DiskInfo['disks'][number]): string {
+    const thresholds = this.deps.getTempThresholds?.()
+    if (!thresholds) return disk.temperature_status
+    if (disk.temp >= thresholds.badC) return 'critical'
+    if (disk.temp >= thresholds.warnC) return 'warning'
+    return 'normal'
   }
 
   private async checkTemperature(diskId: string, model: string, temp: number, tempStatus: string): Promise<void> {

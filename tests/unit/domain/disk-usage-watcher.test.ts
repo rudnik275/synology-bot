@@ -285,6 +285,38 @@ describe('DiskUsageWatcher', () => {
     expect(h.notifications).toHaveLength(1)
   })
 
+  it('reads threshold getters live on each tick (#305 runtime settings)', async () => {
+    const notifications: string[] = []
+    const warned = new Set<string>()
+    let highPct = 90
+    let lowPct = 85
+
+    const watcher = new DiskUsageWatcher({
+      getStorageInfo: async () => ({
+        ok: true,
+        data: { volumes: [makeVolume('volume_1', 'Volume 1', 87)] },
+      }),
+      isVolumeWarned: async (id) => warned.has(id),
+      markWarned: async (id) => { warned.add(id) },
+      clearWarned: async (id) => { warned.delete(id) },
+      notify: async (msg) => { notifications.push(msg) },
+      highPct: () => highPct,
+      lowPct: () => lowPct,
+    })
+
+    // 87% < 90 high → no alert
+    await watcher.check()
+    expect(notifications).toHaveLength(0)
+
+    // Settings change between ticks: high drops to 85 → same 87% now alerts
+    highPct = 85
+    lowPct = 80
+    await watcher.check()
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]).toContain('⚠️')
+    expect(warned.has('volume_1')).toBe(true)
+  })
+
   it('recovery message includes volume name and percentage', async () => {
     const h = makeHarness(['volume_1'])
     h.getStorageResult = {

@@ -126,3 +126,13 @@ export interface InspectFileWire { index: number; name: string; size: number }
 export type InspectStarted =
   | { inspectToken: string; files: InspectFileWire[] }
   | { listId: string }
+
+/** Runtime-tunable settings (#305). Mirrors src/domain/settings.ts AppSettings. */
+export interface SettingsView {
+  diskUsageHighPct: number
+  diskUsageLowPct: number
+  diskTempWarnC: number
+  diskTempBadC: number
+  digestHour: number
+  autoCleanerRetentionDays: number
+}

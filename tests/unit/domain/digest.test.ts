@@ -83,4 +83,16 @@ describe('buildDigestMessage — pure digest formatting', () => {
     expect(result).toContain('S03E11')
     expect(result).toContain('S03E12')
   })
+
+  it('truncates the digest under 4000 chars with «…и ещё N» (#298)', () => {
+    const entries = Array.from({ length: 300 }, (_, i) => ({
+      title: `Very Long Running Show With A Wordy Title ${i}`,
+      episodes: [{ season: 1, episode: 1, title: 'Pilot' }],
+    }))
+    const result = buildDigestMessage(entries)
+    expect(result).not.toBeNull()
+    expect(result!.length).toBeLessThanOrEqual(4000)
+    expect(result).toMatch(/…и ещё \d+$/)
+    expect(result).toContain('📺 Сегодня:')
+  })
 })

@@ -1,4 +1,5 @@
 import type { Episode } from './subscription.ts'
+import { capLines } from '../lib/cap-lines.ts'
 
 export interface AiringEpisode {
   season: number
@@ -62,5 +63,6 @@ export function buildDigestMessage(entries: DigestEntry[]): string | null {
 
   if (lines.length === 0) return null
 
-  return `📺 Сегодня:\n${lines.join('\n')}`
+  // #298 — keep under Telegram's 4096-char limit; tail becomes «…и ещё N».
+  return capLines('📺 Сегодня:', lines)
 }

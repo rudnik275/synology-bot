@@ -195,6 +195,8 @@ export async function startApp(): Promise<void> {
     getShowById,
     getTodayEpisodes,
     searchShows,
+    // #301 — Mini App resume must also drop failure dedups so a task can re-alert.
+    clearNotifFired: (taskId, event) => store.clearNotifFired(taskId, event),
     tolokaBaseUrl: config.toloka.baseUrl,
     miniappUrl: config.miniappUrl,
     botToken: config.botToken,

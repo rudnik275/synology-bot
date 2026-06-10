@@ -23,6 +23,7 @@ function makeApp(stash?: AddIntakeStash) {
     getShowById: async () => ({ id: 1, title: 'x', episodes: [] }),
     getTodayEpisodes: async () => [],
     searchShows: async () => [],
+    clearNotifFired: () => {},
     tolokaBaseUrl: 'https://toloka.to',
     miniappUrl: 'https://nas.test',
     botToken: TEST_BOT_TOKEN,

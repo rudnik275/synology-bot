@@ -76,6 +76,7 @@ interface AppExtras {
   searchShows?: (query: string) => Promise<MyShowsSearchResult[]>
   tolokaBaseUrl?: string
   miniappUrl?: string
+  clearNotifFired?: (taskId: string, event: string) => void
 }
 
 function makeApp(
@@ -91,6 +92,7 @@ function makeApp(
     getShowById: extra.getShowById ?? (async () => makeDefaultShow()),
     getTodayEpisodes: extra.getTodayEpisodes ?? (async () => []),
     searchShows: extra.searchShows ?? (async () => []),
+    clearNotifFired: extra.clearNotifFired ?? (() => {}),
     tolokaBaseUrl: extra.tolokaBaseUrl ?? 'https://toloka.to',
     miniappUrl: extra.miniappUrl ?? 'https://nas.test',
     botToken: TEST_BOT_TOKEN,
@@ -232,6 +234,29 @@ describe('Mini App server — tasks: read & actions', () => {
     const res = await app.request('/api/tasks/t9/resume', { method: 'POST', headers: ownerHeaders() })
     expect(res.status).toBe(200)
     expect(resumedId).toBe('t9')
+  })
+
+  it('POST /api/tasks/:id/resume clears failed + stuck dedups on success (#301)', async () => {
+    const cleared: Array<[string, string]> = []
+    const app = makeApp(makeSynology(), makeToloka(), {
+      clearNotifFired: (taskId, event) => { cleared.push([taskId, event]) },
+    })
+    const res = await app.request('/api/tasks/t9/resume', { method: 'POST', headers: ownerHeaders() })
+    expect(res.status).toBe(200)
+    expect(cleared).toContainEqual(['t9', 'failed'])
+    expect(cleared).toContainEqual(['t9', 'stuck'])
+  })
+
+  it('POST /api/tasks/:id/resume does NOT clear dedups on failure (#301)', async () => {
+    const cleared: Array<[string, string]> = []
+    const app = makeApp(
+      makeSynology({ resumeTask: async () => ({ ok: false, reason: 'no such task' }) }),
+      makeToloka(),
+      { clearNotifFired: (taskId, event) => { cleared.push([taskId, event]) } }
+    )
+    const res = await app.request('/api/tasks/t9/resume', { method: 'POST', headers: ownerHeaders() })
+    expect(res.status).toBe(502)
+    expect(cleared).toHaveLength(0)
   })
 
   it('POST /api/tasks/:id/pause returns 502 on failure', async () => {

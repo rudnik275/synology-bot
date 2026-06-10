@@ -18,6 +18,7 @@ async function rpc<T>(method: string, params: Record<string, unknown>): Promise<
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
   })
   if (!res.ok) {
     throw new Error(`myshows.me API error: ${res.status} ${res.statusText}`)

@@ -134,7 +134,7 @@ describe('SynologyClient characterization (#180)', () => {
       expect(attempt).toBe(2)
     })
 
-    it('a non-119 error returns { ok: false, reason } WITHOUT re-login', async () => {
+    it('a non-session error (400) returns { ok: false, reason } WITHOUT re-login', async () => {
       let loginCount = 0
       fetchMock.mockImplementation((input: unknown) => {
         const url = String(input)
@@ -150,6 +150,80 @@ describe('SynologyClient characterization (#180)', () => {
       expect(result.ok).toBe(false)
       if (!result.ok) expect(result.reason).toContain('400')
       expect(loginCount).toBe(0)
+    })
+
+    it.each([105, 106, 107])('session-expiry code %i re-logins once and retries, like 119', async (code) => {
+      let loginCount = 0
+      let attempt = 0
+      fetchMock.mockImplementation((input: unknown) => {
+        const url = String(input)
+        if (url.includes('method=login')) {
+          loginCount++
+          return Promise.resolve(mockResponse({ success: true, data: { sid: 'fresh-sid' } }))
+        }
+        attempt++
+        if (attempt === 1) {
+          return Promise.resolve(mockResponse({ success: false, error: { code } }))
+        }
+        return Promise.resolve(mockResponse({ success: true, data: { tasks: [], total: 0, offset: 0 } }))
+      })
+
+      const result = await client.listTasks()
+
+      expect(result.ok).toBe(true)
+      expect(loginCount).toBe(1)
+      expect(attempt).toBe(2)
+    })
+
+    it('a login failure during the retry surfaces as { ok: false } (no throw)', async () => {
+      fetchMock.mockImplementation((input: unknown) => {
+        const url = String(input)
+        if (url.includes('method=login')) {
+          return Promise.resolve(mockResponse({ success: false, error: { code: 400 } }))
+        }
+        return Promise.resolve(mockResponse({ success: false, error: { code: 119 } }))
+      })
+
+      const result = await client.listTasks()
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toContain('Re-login failed')
+    })
+
+    it('a network error in send() surfaces as { ok: false } (no throw)', async () => {
+      fetchMock.mockImplementation(() => Promise.reject(new Error('connect ECONNREFUSED')))
+
+      const result = await client.listTasks()
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toContain('ECONNREFUSED')
+    })
+
+    it('concurrent session-expired requests share exactly ONE login fetch', async () => {
+      let loginCount = 0
+      let attempt = 0
+      fetchMock.mockImplementation((input: unknown) => {
+        const url = String(input)
+        if (url.includes('method=login')) {
+          loginCount++
+          // resolve on a later tick so both requests are waiting on the SAME login
+          return new Promise((resolve) =>
+            setTimeout(() => resolve(mockResponse({ success: true, data: { sid: 'fresh-sid' } })), 10),
+          )
+        }
+        attempt++
+        if (attempt <= 2) {
+          // both first attempts hit session-expired
+          return Promise.resolve(mockResponse({ success: false, error: { code: 119 } }))
+        }
+        return Promise.resolve(mockResponse({ success: true, data: { tasks: [], total: 0, offset: 0 } }))
+      })
+
+      const [a, b] = await Promise.all([client.listTasks(), client.listTasks()])
+
+      expect(a.ok).toBe(true)
+      expect(b.ok).toBe(true)
+      expect(loginCount).toBe(1)
     })
   })
 

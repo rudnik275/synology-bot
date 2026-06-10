@@ -110,6 +110,7 @@ export class TolokaClient {
       },
       body: body.toString(),
       redirect: 'manual',
+      signal: AbortSignal.timeout(30000),
     })
 
     const setCookieHeaders = this.extractSetCookieHeaders(res)
@@ -254,6 +255,7 @@ export class TolokaClient {
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       },
       redirect: 'manual',
+      signal: AbortSignal.timeout(30000),
     })
   }
 

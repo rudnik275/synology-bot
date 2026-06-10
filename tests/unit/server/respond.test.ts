@@ -51,7 +51,7 @@ describe('respondResult', () => {
     })
     const res = await app.request('/test')
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'upstream down' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 
   it('returns okStatus-suppressed 502 on failure regardless of okStatus', async () => {
@@ -62,7 +62,7 @@ describe('respondResult', () => {
     })
     const res = await app.request('/test')
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'nope' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 })
 

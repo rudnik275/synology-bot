@@ -48,10 +48,10 @@ describe('lib/result — tryResult()', () => {
 })
 
 describe('lib/result — toHttpError()', () => {
-  it('maps a failure Result to the { error }, 502 tuple shape', () => {
+  it('maps a failure Result to a generic { error }, 502 tuple — no reason leak', () => {
     const r: Result<number> = err('upstream down')
     const [body, status] = toHttpError(r)
-    expect(body).toEqual({ error: 'upstream down' })
+    expect(body).toEqual({ error: 'upstream unavailable' })
     expect(status).toBe(502)
   })
 })

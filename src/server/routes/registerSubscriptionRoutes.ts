@@ -45,8 +45,8 @@ export function registerSubscriptionRoutes(app: Hono<AppEnv>, deps: Subscription
   app.post('/api/subscriptions', async (c) => {
     const body = await c.req.json().catch(() => null)
     const showId = Number((body as Record<string, unknown> | null)?.showId)
-    if (!Number.isInteger(showId)) {
-      return c.json({ error: 'showId (integer) is required' }, 400)
+    if (!Number.isInteger(showId) || showId <= 0) {
+      return c.json({ error: 'showId must be a positive integer' }, 400)
     }
     const existing = store.getSubscription(String(showId))
     if (existing) return c.json({ subscription: serializeSubscription(existing) })

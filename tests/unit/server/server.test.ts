@@ -155,6 +155,13 @@ describe('Mini App server — auth gate', () => {
     })
     expect(res.status).toBe(401)
   })
+
+  it('GET /api/nonexistent returns a JSON 404, not the SPA fallback', async () => {
+    const res = await makeApp().request('/api/nonexistent', { headers: ownerHeaders() })
+    expect(res.status).toBe(404)
+    expect(res.headers.get('content-type') ?? '').toContain('application/json')
+    expect(await res.json()).toEqual({ error: 'not found' })
+  })
 })
 
 describe('Mini App server — tasks: read & actions', () => {
@@ -208,7 +215,7 @@ describe('Mini App server — tasks: read & actions', () => {
     const app = makeApp(makeSynology({ listTasks: async () => ({ ok: false, reason: 'offline' }) }))
     const res = await app.request('/api/tasks', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'offline' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 
   it('POST /api/tasks/:id/pause pauses the task', async () => {
@@ -231,7 +238,7 @@ describe('Mini App server — tasks: read & actions', () => {
     const app = makeApp(makeSynology({ pauseTask: async () => ({ ok: false, reason: 'no such task' }) }))
     const res = await app.request('/api/tasks/x/pause', { method: 'POST', headers: ownerHeaders() })
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'no such task' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 
   it('DELETE /api/tasks/:id?deleteFiles=true forwards the flag', async () => {
@@ -306,7 +313,7 @@ describe('Mini App server — tasks: create (unified POST /api/tasks)', () => {
       jsonReq({ uri: 'https://toloka.to/download.php?id=5', destination: '/v1' })
     )
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: '403 forbidden' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 
   it('400 when uri or destination is missing', async () => {
@@ -578,7 +585,7 @@ describe('Mini App server — per-file selection (inspect → commit)', () => {
       jsonReq({ inspectToken, selected: [0], destination: '/films' })
     )
     expect(commitRes.status).toBe(502)
-    expect(await commitRes.json()).toEqual({ error: 'DSM commit error' })
+    expect(await commitRes.json()).toEqual({ error: 'upstream unavailable' })
     // deleteInspectList must have been called exactly once with the list the server created.
     expect(deletedIds).toHaveLength(1)
     expect(deletedIds[0]).toBe('btdlORPHAN')
@@ -654,7 +661,7 @@ describe('Mini App server — folders & search', () => {
     const app = makeApp(makeSynology(), makeToloka({ search: async () => { throw new Error('login page') } }))
     const res = await app.request('/api/search?q=matrix', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'login page' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 })
 
@@ -721,6 +728,18 @@ describe('Mini App server — subscriptions', () => {
     expect(res.status).toBe(400)
   })
 
+  it('POST /api/subscriptions 400 on a non-positive showId (0 and -1)', async () => {
+    for (const showId of [0, -1]) {
+      const res = await makeApp().request('/api/subscriptions', {
+        method: 'POST',
+        headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showId }),
+      })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'showId must be a positive integer' })
+    }
+  })
+
   it('POST /api/subscriptions 502 when the show lookup fails', async () => {
     const app = makeApp(makeSynology(), makeToloka(), { getShowById: async (): Promise<MyShowsShowDetailed> => { throw new Error('myshows down') } })
     const res = await app.request('/api/subscriptions', {
@@ -729,7 +748,7 @@ describe('Mini App server — subscriptions', () => {
       body: JSON.stringify({ showId: 7 }),
     })
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'myshows down' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 
   it('DELETE /api/subscriptions/:id removes an existing subscription', async () => {
@@ -824,7 +843,7 @@ describe('Mini App server — shows search & detail (ADR 0009)', () => {
     const app = makeApp(makeSynology(), makeToloka(), { searchShows: async () => { throw new Error('rpc error') } })
     const res = await app.request('/api/shows/search?q=test', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'rpc error' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 
   it('GET /api/shows/:id returns the detail view', async () => {
@@ -866,7 +885,7 @@ describe('Mini App server — shows search & detail (ADR 0009)', () => {
     const app = makeApp(makeSynology(), makeToloka(), { getShowById: async (): Promise<MyShowsShowDetailed> => { throw new Error('offline') } })
     const res = await app.request('/api/shows/1', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'offline' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 })
 
@@ -900,6 +919,6 @@ describe('Mini App server — deploy status', () => {
     const docker = makeDocker({ getContainerByName: async () => { throw new Error('ECONNREFUSED') } })
     const res = await makeApp(makeSynology(), makeToloka(), { docker }).request('/api/deploy-status', { headers: ownerHeaders() })
     expect(res.status).toBe(502)
-    expect(await res.json()).toEqual({ error: 'ECONNREFUSED' })
+    expect(await res.json()).toEqual({ error: 'upstream unavailable' })
   })
 })

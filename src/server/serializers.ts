@@ -265,8 +265,10 @@ export interface VolumeView {
 
 export function serializeVolumes(s: StorageInfo): VolumeView[] {
   return s.volumes.map((v) => {
-    const totalBytes = Number(v.size.total)
-    const usedBytes = Number(v.size.used)
+    // DSM may omit size fields for a degraded volume — coerce missing or
+    // non-numeric values to 0 so VolumeView always carries real numbers.
+    const totalBytes = Number(v.size?.total ?? 0) || 0
+    const usedBytes = Number(v.size?.used ?? 0) || 0
     const pct = totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : 0
     return { path: v.vol_path, usedBytes, totalBytes, pct, status: v.status }
   })

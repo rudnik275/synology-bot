@@ -147,6 +147,10 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   registerTorrentStashRoute(app, { torrentStash: deps.torrentStash })
   registerUiStateRoutes(app, { uiState: deps.uiState })
 
+  // Unknown /api paths get a JSON 404 instead of falling through to the SPA
+  // index.html (which clients would choke on when parsing as JSON).
+  app.all('/api/*', (c) => c.json({ error: 'not found' }, 404))
+
   // ── Static SPA (Phase 3) ──────────────────────────────────────────────────
   // Registered last so /api and /healthz keep priority. Built assets are
   // served from `staticRoot`; every other (non-API) path falls back to

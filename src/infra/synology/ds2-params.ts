@@ -36,7 +36,7 @@ export function ds2CreateParams(
     | { uri: string; destination: string; createList: boolean }
     | { listId: string; selected: number[]; destination: string },
 ): Record<string, string> {
-  const destination = `"${normalizeDownloadDestination(args.destination)}"`
+  const destination = JSON.stringify(normalizeDownloadDestination(args.destination))
   if ('uri' in args) {
     return {
       create_list: args.createList ? 'true' : 'false',

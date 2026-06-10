@@ -45,4 +45,21 @@ describe('ds2CreateParams', () => {
     const p = ds2CreateParams({ uri, destination: 'video/TV Shows', createList: false })
     expect(p.destination).toBe('"video/TV Shows"')
   })
+
+  it('escapes double quotes in the destination (#286)', () => {
+    const p = ds2CreateParams({ uri, destination: '/volume1/video/My "Best" Movies', createList: false })
+    expect(p.destination).toBe('"video/My \\"Best\\" Movies"')
+    expect(JSON.parse(p.destination)).toBe('video/My "Best" Movies')
+  })
+
+  it('escapes backslashes in the destination (#286)', () => {
+    const p = ds2CreateParams({ listId: 'list-xyz', selected: [1], destination: '/volume1/video/back\\slash' })
+    expect(p.destination).toBe('"video/back\\\\slash"')
+    expect(JSON.parse(p.destination)).toBe('video/back\\slash')
+  })
+
+  it('keeps plain destinations in the same output shape', () => {
+    const p = ds2CreateParams({ uri, destination: '/volume1/video/Movies', createList: true })
+    expect(p.destination).toBe('"video/Movies"')
+  })
 })

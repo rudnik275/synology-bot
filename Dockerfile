@@ -18,6 +18,10 @@ RUN bun run build
 FROM oven/bun AS runtime
 WORKDIR /usr/src/app
 
+# Pin the process timezone so time-of-day scheduling (daily digest) uses
+# local Kyiv time instead of UTC (#295). Overridable via compose `TZ`.
+ENV TZ=Europe/Kyiv
+
 COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY --from=deps /usr/src/app/bun.lockb ./bun.lockb
 COPY . .

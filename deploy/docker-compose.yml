@@ -11,6 +11,9 @@ services:
     # zero-open-ports / owner-only posture from ADR 0005/0001 is preserved.
     environment:
       MINIAPP_HOST: "0.0.0.0"
+      # Pin the process timezone so the daily digest fires at local (Kyiv)
+      # time, not container-default UTC (#295).
+      TZ: "Europe/Kyiv"
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:

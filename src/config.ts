@@ -45,6 +45,8 @@ export interface Config {
   finishedGroupThreshold: number
   autoCleanerPollMs: number
   autoCleanerRetentionDays: number
+  /** Local hour-of-day (0–23) for the daily digest. */
+  digestHour: number
   miniappPort: number
   miniappHost: string
   miniappUrl: string
@@ -77,6 +79,7 @@ export function loadConfig(): Config {
     finishedGroupThreshold: parseInt(optional('FINISHED_GROUP_THRESHOLD', '3'), 10),
     autoCleanerPollMs: parseInt(optional('AUTOCLEANER_POLL_MS', '3600000'), 10),
     autoCleanerRetentionDays: parseInt(optional('AUTOCLEANER_RETENTION_DAYS', '7'), 10),
+    digestHour: parseInt(optional('DIGEST_HOUR', '9'), 10),
     miniappPort: parseInt(optional('MINIAPP_PORT', '8080'), 10),
     // Bind address for the Hono server. Defaults to loopback (safe for bare /
     // non-container runs). The container deploy sets MINIAPP_HOST=0.0.0.0 so the

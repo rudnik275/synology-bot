@@ -1,103 +1,86 @@
 import { describe, it, expect } from 'bun:test'
-import type { Subscription, Episode } from '../../../src/domain/subscription.ts'
-import { buildDigestMessage } from '../../../src/domain/digest.ts'
+import {
+  buildDigestMessage,
+  filterNewEpisodes,
+  latestEpisode,
+  type AiringEpisode,
+} from '../../../src/domain/digest.ts'
 
-// Episode fetcher type: given showId → episodes airing "today"
-type EpisodeFetcher = (showId: number) => Promise<Array<{ season: number; episode: number; title: string }>>
+describe('filterNewEpisodes — pure filtering', () => {
+  const ozymandias: AiringEpisode = { season: 5, episode: 14, title: 'Ozymandias' }
 
-describe('buildDigestMessage — pure digest logic', () => {
-  const noEpisodeFetcher: EpisodeFetcher = async () => []
-
-  it('no subscriptions → returns null (no message)', async () => {
-    const result = await buildDigestMessage([], noEpisodeFetcher)
-    expect(result).toBeNull()
+  it('no lastNotifiedEpisode → all episodes pass through', () => {
+    expect(filterNewEpisodes([ozymandias], undefined)).toEqual([ozymandias])
   })
 
-  it('one subscription, no new episodes → returns null', async () => {
-    const subs: Subscription[] = [{ id: 'show-1', showId: 1, title: 'Breaking Bad' }]
-    const result = await buildDigestMessage(subs, noEpisodeFetcher)
-    expect(result).toBeNull()
+  it('episode matches lastNotifiedEpisode exactly → dropped', () => {
+    expect(filterNewEpisodes([ozymandias], { season: 5, episode: 14 })).toEqual([])
   })
 
-  it('one subscription with new episode → returns digest message', async () => {
-    const subs: Subscription[] = [{ id: 'show-1', showId: 1, title: 'Breaking Bad' }]
-    const fetcher: EpisodeFetcher = async (showId) => {
-      if (showId === 1) return [{ season: 5, episode: 14, title: 'Ozymandias' }]
-      return []
-    }
-    const result = await buildDigestMessage(subs, fetcher)
+  it('episode older than lastNotifiedEpisode → dropped', () => {
+    expect(filterNewEpisodes([ozymandias], { season: 5, episode: 15 })).toEqual([])
+    expect(filterNewEpisodes([ozymandias], { season: 6, episode: 1 })).toEqual([])
+  })
+
+  it('episode after lastNotifiedEpisode → kept', () => {
+    expect(filterNewEpisodes([ozymandias], { season: 5, episode: 13 })).toEqual([ozymandias])
+    expect(filterNewEpisodes([ozymandias], { season: 4, episode: 16 })).toEqual([ozymandias])
+  })
+})
+
+describe('latestEpisode — pick the highest season/episode', () => {
+  it('picks the latest across seasons and episodes', () => {
+    const eps: AiringEpisode[] = [
+      { season: 2, episode: 3, title: 'b' },
+      { season: 3, episode: 1, title: 'c' },
+      { season: 2, episode: 9, title: 'a' },
+    ]
+    expect(latestEpisode(eps)).toEqual({ season: 3, episode: 1, title: 'c' })
+  })
+})
+
+describe('buildDigestMessage — pure digest formatting', () => {
+  it('no entries → returns null (no message)', () => {
+    expect(buildDigestMessage([])).toBeNull()
+  })
+
+  it('entries with no episodes → returns null', () => {
+    expect(buildDigestMessage([{ title: 'Breaking Bad', episodes: [] }])).toBeNull()
+  })
+
+  it('one entry with episode → returns digest message', () => {
+    const result = buildDigestMessage([
+      { title: 'Breaking Bad', episodes: [{ season: 5, episode: 14, title: 'Ozymandias' }] },
+    ])
     expect(result).not.toBeNull()
     expect(result).toContain('Breaking Bad')
     expect(result).toContain('S05E14')
   })
 
-  it('two subscriptions both with new episodes → grouped message', async () => {
-    const subs: Subscription[] = [
-      { id: 'show-1', showId: 1, title: 'Breaking Bad' },
-      { id: 'show-2', showId: 2, title: 'The Wire' },
-    ]
-    const fetcher: EpisodeFetcher = async (showId) => {
-      if (showId === 1) return [{ season: 5, episode: 1, title: 'Ep1' }]
-      if (showId === 2) return [{ season: 3, episode: 12, title: 'Ep2' }]
-      return []
-    }
-    const result = await buildDigestMessage(subs, fetcher)
+  it('two entries → grouped message with header', () => {
+    const result = buildDigestMessage([
+      { title: 'Breaking Bad', episodes: [{ season: 5, episode: 1, title: 'Ep1' }] },
+      { title: 'The Wire', episodes: [{ season: 3, episode: 12, title: 'Ep2' }] },
+    ])
     expect(result).not.toBeNull()
     expect(result).toContain('Breaking Bad')
     expect(result).toContain('The Wire')
     expect(result).toContain('S05E01')
     expect(result).toContain('S03E12')
-    // Should start with the header
     expect(result).toMatch(/^📺/)
   })
 
-  it('two subscriptions, only one has new episode → only that one in message', async () => {
-    const subs: Subscription[] = [
-      { id: 'show-1', showId: 1, title: 'Breaking Bad' },
-      { id: 'show-2', showId: 2, title: 'The Wire' },
-    ]
-    const fetcher: EpisodeFetcher = async (showId) => {
-      if (showId === 2) return [{ season: 3, episode: 12, title: 'Ep2' }]
-      return []
-    }
-    const result = await buildDigestMessage(subs, fetcher)
-    expect(result).not.toBeNull()
-    expect(result).not.toContain('Breaking Bad')
-    expect(result).toContain('The Wire')
-  })
-
-  it('episode already notified (lastNotifiedEpisode matches) → skipped', async () => {
-    const subs: Subscription[] = [
+  it('one entry with two episodes → one line per episode', () => {
+    const result = buildDigestMessage([
       {
-        id: 'show-1',
-        showId: 1,
-        title: 'Breaking Bad',
-        lastNotifiedEpisode: { season: 5, episode: 14 },
+        title: 'The Wire',
+        episodes: [
+          { season: 3, episode: 11, title: 'Ep11' },
+          { season: 3, episode: 12, title: 'Ep12' },
+        ],
       },
-    ]
-    const fetcher: EpisodeFetcher = async (showId) => {
-      if (showId === 1) return [{ season: 5, episode: 14, title: 'Ozymandias' }]
-      return []
-    }
-    const result = await buildDigestMessage(subs, fetcher)
-    expect(result).toBeNull()
-  })
-
-  it('episode after lastNotifiedEpisode → included in message', async () => {
-    const subs: Subscription[] = [
-      {
-        id: 'show-1',
-        showId: 1,
-        title: 'Breaking Bad',
-        lastNotifiedEpisode: { season: 5, episode: 13 },
-      },
-    ]
-    const fetcher: EpisodeFetcher = async (showId) => {
-      if (showId === 1) return [{ season: 5, episode: 14, title: 'Ozymandias' }]
-      return []
-    }
-    const result = await buildDigestMessage(subs, fetcher)
-    expect(result).not.toBeNull()
-    expect(result).toContain('S05E14')
+    ])
+    expect(result).toContain('S03E11')
+    expect(result).toContain('S03E12')
   })
 })

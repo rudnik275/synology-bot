@@ -98,23 +98,30 @@ export async function startApp(): Promise<void> {
   // boot (i.e. Watchtower just deployed us) and posts to #deploy.
   await runDeployReporter({ docker, store, ownerNotifier, miniappUrl: config.miniappUrl })
 
-  // Schedule daily 9 AM digest
-  scheduleDailyDigest(async () => {
-    const subscriptions = store.listSubscriptions()
-    const ownerChatId = store.getKv('owner_chat_id')
-    await runDigest({
-      subscriptions,
-      ownerChatId,
-      fetchTodayEpisodes: getTodayEpisodes,
-      sendMessage: async (_chatId, message) => {
-        await ownerNotifier.send('subscriptions', message, {
-          replyMarkup: openMiniAppButton(config.miniappUrl, 'shows'),
-        })
-      },
-      onSubscriptionUpdated: async (updated) => {
-        store.addSubscription(updated)
-      },
-    })
+  // Schedule daily digest (DIGEST_HOUR local time, TZ pinned in deploy).
+  // Last-run date persists in KV so a restart across the digest hour
+  // triggers a catch-up run instead of silently skipping the day (#295).
+  scheduleDailyDigest({
+    digestHour: config.digestHour,
+    getLastRunDate: () => store.getKv('digest_last_run_date'),
+    setLastRunDate: (date) => store.setKv('digest_last_run_date', date),
+    runFn: async () => {
+      const subscriptions = store.listSubscriptions()
+      const ownerChatId = store.getKv('owner_chat_id')
+      await runDigest({
+        subscriptions,
+        ownerChatId,
+        fetchTodayEpisodes: getTodayEpisodes,
+        sendMessage: async (_chatId, message) => {
+          await ownerNotifier.send('subscriptions', message, {
+            replyMarkup: openMiniAppButton(config.miniappUrl, 'shows'),
+          })
+        },
+        onSubscriptionUpdated: async (updated) => {
+          store.addSubscription(updated)
+        },
+      })
+    },
   })
 
   // TaskMonitor + Notifier + detectors — background polling loop. Finished

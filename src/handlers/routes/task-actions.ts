@@ -22,33 +22,66 @@ function buildDeleteConfirmKeyboard(taskId: string): InlineKeyboard {
     .text('❌ Отмена', `task_action:delete_cancel:${taskId}`)
 }
 
+export interface TaskActionsDeps {
+  synology: SynologyClient
+  /**
+   * Clears a notif-dedup row (event: 'failed' | 'stuck') so a resumed task can
+   * re-alert if it errors or sticks again (#301).
+   */
+  clearNotifFired: (taskId: string, event: string) => void
+}
+
+/**
+ * Show the outcome of an action on the alert message (#297).
+ *
+ * For messages older than ~48h Telegram delivers an InaccessibleMessage —
+ * `message.text` is undefined and editing would wipe the alert text. In that
+ * case reply with a fresh message instead of editing.
+ */
+async function showOutcome(
+  ctx: Context,
+  originalText: string | undefined,
+  suffix: string,
+  replyMarkup?: InlineKeyboard
+): Promise<void> {
+  if (originalText === undefined) {
+    await ctx.reply(suffix, { reply_markup: replyMarkup })
+    return
+  }
+  await ctx.editMessageText(`${originalText}\n\n${suffix}`, { reply_markup: replyMarkup })
+}
+
+const CONFIRM_SUFFIX_RE = /\n\n⚠️ Точно удалить\? \[Да\] \[Отмена\]$/
+
 /**
  * Registers callback_query handlers for task_action:* buttons.
  *
  * Actions:
- *   - resume    → calls synology.resumeTask, edits message
+ *   - resume    → calls synology.resumeTask, clears failure dedups, edits message
  *   - pause     → calls synology.pauseTask, edits message
  *   - delete    → shows confirmation prompt (two-step)
  *   - delete_confirm → actually deletes, edits message
  *   - delete_cancel  → cancels, edits message back
  */
-export function registerTaskActionsRoute(bot: Bot<Context>, synology: SynologyClient): void {
+export function registerTaskActionsRoute(bot: Bot<Context>, deps: TaskActionsDeps): void {
+  const { synology, clearNotifFired } = deps
+
   // Resume action
   bot.callbackQuery(/^task_action:resume:(.+)$/, async (ctx) => {
     const taskId = ctx.match[1]
     await ctx.answerCallbackQuery()
 
     const result = await synology.resumeTask(taskId)
-    const originalText = ctx.callbackQuery.message?.text ?? ''
+    const originalText = ctx.callbackQuery.message?.text
 
     if (result.ok) {
-      await ctx.editMessageText(`${originalText}\n\n✅ Возобновлено`, {
-        reply_markup: undefined,
-      })
+      // #301 — drop the 'failed'/'stuck' dedup rows: if the task errors or
+      // sticks again after resume, the detectors must alert again.
+      clearNotifFired(taskId, 'failed')
+      clearNotifFired(taskId, 'stuck')
+      await showOutcome(ctx, originalText, '✅ Возобновлено')
     } else {
-      await ctx.editMessageText(`${originalText}\n\n❌ Не удалось: ${result.reason}`, {
-        reply_markup: undefined,
-      })
+      await showOutcome(ctx, originalText, `❌ Не удалось: ${result.reason}`)
     }
   })
 
@@ -58,16 +91,12 @@ export function registerTaskActionsRoute(bot: Bot<Context>, synology: SynologyCl
     await ctx.answerCallbackQuery()
 
     const result = await synology.pauseTask(taskId)
-    const originalText = ctx.callbackQuery.message?.text ?? ''
+    const originalText = ctx.callbackQuery.message?.text
 
     if (result.ok) {
-      await ctx.editMessageText(`${originalText}\n\n✅ Приостановлено`, {
-        reply_markup: undefined,
-      })
+      await showOutcome(ctx, originalText, '✅ Приостановлено')
     } else {
-      await ctx.editMessageText(`${originalText}\n\n❌ Не удалось: ${result.reason}`, {
-        reply_markup: undefined,
-      })
+      await showOutcome(ctx, originalText, `❌ Не удалось: ${result.reason}`)
     }
   })
 
@@ -76,10 +105,12 @@ export function registerTaskActionsRoute(bot: Bot<Context>, synology: SynologyCl
     const taskId = ctx.match[1]
     await ctx.answerCallbackQuery()
 
-    const originalText = ctx.callbackQuery.message?.text ?? ''
-    await ctx.editMessageText(
-      `${originalText}\n\n⚠️ Точно удалить? [Да] [Отмена]`,
-      { reply_markup: buildDeleteConfirmKeyboard(taskId) }
+    const originalText = ctx.callbackQuery.message?.text
+    await showOutcome(
+      ctx,
+      originalText,
+      '⚠️ Точно удалить? [Да] [Отмена]',
+      buildDeleteConfirmKeyboard(taskId)
     )
   })
 
@@ -90,18 +121,14 @@ export function registerTaskActionsRoute(bot: Bot<Context>, synology: SynologyCl
 
     const result = await synology.deleteTask(taskId)
     // Get the text before the confirmation prompt was appended
-    const rawText = ctx.callbackQuery.message?.text ?? ''
+    const rawText = ctx.callbackQuery.message?.text
     // Remove the confirmation suffix we added
-    const originalText = rawText.replace(/\n\n⚠️ Точно удалить\? \[Да\] \[Отмена\]$/, '')
+    const originalText = rawText?.replace(CONFIRM_SUFFIX_RE, '')
 
     if (result.ok) {
-      await ctx.editMessageText(`${originalText}\n\n✅ Удалено`, {
-        reply_markup: undefined,
-      })
+      await showOutcome(ctx, originalText, '✅ Удалено')
     } else {
-      await ctx.editMessageText(`${originalText}\n\n❌ Не удалось: ${result.reason}`, {
-        reply_markup: undefined,
-      })
+      await showOutcome(ctx, originalText, `❌ Не удалось: ${result.reason}`)
     }
   })
 
@@ -110,8 +137,13 @@ export function registerTaskActionsRoute(bot: Bot<Context>, synology: SynologyCl
     const taskId = ctx.match[1]
     await ctx.answerCallbackQuery()
 
-    const rawText = ctx.callbackQuery.message?.text ?? ''
-    const originalText = rawText.replace(/\n\n⚠️ Точно удалить\? \[Да\] \[Отмена\]$/, '')
+    const rawText = ctx.callbackQuery.message?.text
+    if (rawText === undefined) {
+      // Inaccessible (>48h) message — nothing to revert, just confirm cancel.
+      await ctx.reply('Отменено')
+      return
+    }
+    const originalText = rawText.replace(CONFIRM_SUFFIX_RE, '')
 
     await ctx.editMessageText(originalText, {
       reply_markup: buildTaskActionKeyboard(taskId),

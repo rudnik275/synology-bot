@@ -16,6 +16,7 @@ function makeApp() {
     getShowById: async () => ({ id: 1, title: '', episodes: [] }),
     getTodayEpisodes: async () => [],
     searchShows: async () => [],
+    clearNotifFired: () => {},
     tolokaBaseUrl: 'https://toloka.to',
     miniappUrl: 'https://nas.test',
     botToken: 'test-token',

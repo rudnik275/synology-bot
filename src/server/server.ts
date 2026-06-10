@@ -61,6 +61,11 @@ export interface ServerDeps {
   getTodayEpisodes: (showId: number) => Promise<TodayEpisode[]>
   /** Search shows by query string; injected for testability. */
   searchShows: (query: string) => Promise<MyShowsSearchResult[]>
+  /**
+   * Clears a notif-dedup row (event: 'failed' | 'stuck') so a resumed task can
+   * re-alert if it errors or sticks again (#301).
+   */
+  clearNotifFired: (taskId: string, event: string) => void
   /** Base URL of the Toloka tracker — used to route Toloka download URLs through an authenticated fetch. */
   tolokaBaseUrl: string
   /**
@@ -102,7 +107,7 @@ export interface ServerDeps {
  * Route implementations live in src/server/routes/register*.ts.
  */
 export function createServer(deps: ServerDeps): Hono<AppEnv> {
-  const { synology, toloka, docker, store, getShowById, searchShows, tolokaBaseUrl, miniappUrl } = deps
+  const { synology, toloka, docker, store, getShowById, searchShows, tolokaBaseUrl, miniappUrl, clearNotifFired } = deps
   const app = new Hono<AppEnv>()
 
   // Short-lived in-memory stash of .torrent bytes DSM fetches by URL.
@@ -138,7 +143,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
 
   // ── Per-domain route registrars ────────────────────────────────────────────
 
-  registerTaskRoutes(app, { synology, toloka, tolokaBaseUrl, miniappUrl }, stash)
+  registerTaskRoutes(app, { synology, toloka, tolokaBaseUrl, miniappUrl, clearNotifFired }, stash)
   registerFolderRoutes(app, { synology })
   registerHealthRoute(app, { synology })
   registerSubscriptionRoutes(app, { store, getShowById })

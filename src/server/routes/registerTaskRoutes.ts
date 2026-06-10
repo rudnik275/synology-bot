@@ -16,6 +16,11 @@ export interface TaskRouteDeps {
   toloka: TolokaClient
   tolokaBaseUrl: string
   miniappUrl: string
+  /**
+   * Clears a notif-dedup row (event: 'failed' | 'stuck') so a resumed task can
+   * re-alert if it errors or sticks again (#301).
+   */
+  clearNotifFired: (taskId: string, event: string) => void
 }
 
 // ─── Internal stash helpers (shared between whole-torrent add and inspect) ────
@@ -147,7 +152,7 @@ export function registerTorrentFileRoute(app: Hono<AppEnv>, stash: TorrentStash)
  * for /api/* before this is called.
  */
 export function registerTaskRoutes(app: Hono<AppEnv>, deps: TaskRouteDeps, stash: TorrentStash): void {
-  const { synology, toloka, tolokaBaseUrl } = deps
+  const { synology, toloka, tolokaBaseUrl, clearNotifFired } = deps
 
   // --- Tasks: read ---
 
@@ -165,7 +170,14 @@ export function registerTaskRoutes(app: Hono<AppEnv>, deps: TaskRouteDeps, stash
   })
 
   app.post('/api/tasks/:id/resume', async (c) => {
-    const result = await synology.resumeTask(c.req.param('id'))
+    const taskId = c.req.param('id')
+    const result = await synology.resumeTask(taskId)
+    if (result.ok) {
+      // #301 — drop the 'failed'/'stuck' dedup rows: if the task errors or
+      // sticks again after resume, the detectors must alert again.
+      clearNotifFired(taskId, 'failed')
+      clearNotifFired(taskId, 'stuck')
+    }
     return respondResult(c, result)
   })
 

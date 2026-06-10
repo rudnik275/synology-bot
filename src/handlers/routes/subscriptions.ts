@@ -2,6 +2,7 @@ import type { Bot, Context } from 'grammy'
 import type { PersistentStore } from '../../infra/persistence/store.ts'
 import { getShowById } from '../../infra/myshows/client.ts'
 import type { Subscription } from '../../domain/subscription.ts'
+import { capLines } from '../../lib/cap-lines.ts'
 
 export function registerSubscriptionRoutes(bot: Bot<Context>, store: PersistentStore): void {
   // /subscribe <showId> — subscribe to a show by myshows.me show id
@@ -48,7 +49,8 @@ export function registerSubscriptionRoutes(bot: Bot<Context>, store: PersistentS
     }
 
     const lines = subs.map((s, i) => `${i + 1}. ${s.title} (id: ${s.id})`)
-    await ctx.reply(`📋 Ваши подписки:\n${lines.join('\n')}`)
+    // #298 — keep under Telegram's 4096-char limit; tail becomes «…и ещё N».
+    await ctx.reply(capLines('📋 Ваши подписки:', lines))
   })
 
   // /unsubscribe <id> — remove subscription by id (showId)

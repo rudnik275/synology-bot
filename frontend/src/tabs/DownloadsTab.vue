@@ -257,8 +257,10 @@ function qualityChips(task: TaskView): string[] {
       </div>
     </div>
 
-    <!-- Error state -->
-    <EmptyState v-else-if="error" title="Ошибка" :message="error">
+    <!-- Error state — only when there are no tasks to show (mirrors NasTab's
+         `error && !data` guard): an error with data already on screen must not
+         blank the whole list. -->
+    <EmptyState v-else-if="error && tasks.length === 0" title="Ошибка" :message="error">
       <template #icon>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10" />

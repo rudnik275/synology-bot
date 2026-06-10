@@ -1,6 +1,7 @@
 import type { Bot, Context } from 'grammy'
 import type { PersistentStore } from '../../infra/persistence/store.ts'
 import { openStashButton } from '../../infra/notify/miniapp-link.ts'
+import { extractMagnet } from '../../domain/magnet-extractor.ts'
 
 /** How long a forwarded add-intake (`.torrent` bytes / magnet / URL) stays fetchable by the Mini App. */
 export const STASH_TTL_MS = 15 * 60 * 1000
@@ -94,19 +95,23 @@ export function registerTorrentIntakeRoute(bot: Bot<Context>, deps: TorrentIntak
 
 /**
  * Handle a magnet / `http(s)` URL pasted into the bot chat (#120). Runs after
- * the owner-only guard. The handler fires only when the message text *is* such a
- * link (ordinary chat text is ignored — see {@link isAddIntakeUri}); it stashes
- * the URI server-side under a short-lived token and replies with a Mini App
- * deep-link that opens AddFlow at the folder step. Magnet links can exceed the
- * 512-char `start_param` limit, so the URI is stashed, not carried inline.
+ * the owner-only guard. The handler fires when the message text *is* such a
+ * link (see {@link isAddIntakeUri}) or *contains* a magnet link anywhere in the
+ * text (#299 — e.g. «Смотри: magnet:?xt=…» or a forwarded post); ordinary text
+ * without a magnet is ignored. It stashes the URI server-side under a
+ * short-lived token and replies with a Mini App deep-link that opens AddFlow
+ * at the folder step. Magnet links can exceed the 512-char `start_param`
+ * limit, so the URI is stashed, not carried inline.
  */
 export function registerUriIntakeRoute(bot: Bot<Context>, deps: UriIntakeDeps): void {
   const makeToken = deps.makeToken ?? defaultMakeToken
 
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text
-    // Ordinary text is not add-intent — stay silent so the DM isn't noisy.
-    if (!isAddIntakeUri(text)) return
+    // The whole message is a link, or a magnet is embedded in the text (#299).
+    // Ordinary text without a magnet is not add-intent — stay silent so the DM isn't noisy.
+    const uri = isAddIntakeUri(text) ? text.trim() : extractMagnet(text)
+    if (!uri) return
 
     if (!deps.miniappUrl) {
       await ctx.reply('Mini App не настроен — добавить ссылку через бота сейчас нельзя.')
@@ -114,7 +119,7 @@ export function registerUriIntakeRoute(bot: Bot<Context>, deps: UriIntakeDeps): 
     }
 
     const token = makeToken()
-    deps.store.stashUri(token, text.trim(), STASH_TTL_MS)
+    deps.store.stashUri(token, uri, STASH_TTL_MS)
 
     await ctx.reply('Ссылка получена. Откройте Mini App, чтобы выбрать папку и начать загрузку.', {
       reply_markup: openStashButton(deps.miniappUrl, token),

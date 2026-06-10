@@ -76,6 +76,38 @@ function now(): number {
   return Date.now()
 }
 
+// ── Time-driven TTL sweep (#303) ────────────────────────────────────────────
+// TTL eviction used to live only inside reconcile(), which only runs when the
+// polled task list CHANGES — when polling fails (network down, server error)
+// `tasks` never changes, reconcile never runs, and stale placeholders outlive
+// the 30 s TTL forever (frozen «Добавление…» card, stuck cancel spinner). A
+// module-level interval makes eviction time-driven: it runs while any
+// placeholder exists and splices the reactive array, so consumers (computed
+// pendingTasks → watchers) wake up even when polling is dead.
+const SWEEP_INTERVAL_MS = 5_000
+
+let sweepTimer: ReturnType<typeof setInterval> | null = null
+
+/** Evict placeholders past the TTL; stop the timer once nothing is pending. */
+export function sweepExpiredOptimisticTasks(): void {
+  const cutoff = now() - OPTIMISTIC_TTL_MS
+  for (let i = state.entries.length - 1; i >= 0; i--) {
+    if (state.entries[i].createdAt < cutoff) state.entries.splice(i, 1)
+  }
+  if (state.entries.length === 0) stopSweepTimer()
+}
+
+function ensureSweepTimer(): void {
+  if (sweepTimer === null) sweepTimer = setInterval(sweepExpiredOptimisticTasks, SWEEP_INTERVAL_MS)
+}
+
+function stopSweepTimer(): void {
+  if (sweepTimer !== null) {
+    clearInterval(sweepTimer)
+    sweepTimer = null
+  }
+}
+
 export function isPending(status: string): boolean {
   return status === PENDING_STATUS
 }
@@ -89,6 +121,7 @@ export function resetOptimisticTasks(): void {
   state.entries.splice(0)
   seenRealIds.clear()
   initialized = false
+  stopSweepTimer()
 }
 
 export function useOptimisticTasks() {
@@ -126,6 +159,8 @@ export function useOptimisticTasks() {
         languages: input.languages,
       },
     })
+    // Time-driven TTL backstop (#303): runs while any placeholder exists.
+    ensureSweepTimer()
     return id
   }
 
@@ -175,6 +210,16 @@ export function useOptimisticTasks() {
     if (!initialized) {
       initialized = true
       // newlyAppeared is discarded; entries are in insertion (time) order.
+      // EXCEPTION (#303): a placeholder whose attached realId is present in the
+      // baseline IS its real task — the add resolved before the first poll
+      // returned, so keeping the placeholder would duplicate the card. Exact-id
+      // matches are unambiguous (unlike title/dest identity, which must NOT
+      // retire on the baseline — pre-existing tasks aren't freshly arrived).
+      const baselineIds = new Set(realTasks.map((t) => t.id))
+      for (let i = state.entries.length - 1; i >= 0; i--) {
+        const rid = state.entries[i].realId
+        if (rid && baselineIds.has(rid)) state.entries.splice(i, 1)
+      }
     } else {
       // For each newly-appeared real task, find the oldest placeholder that
       // matches by normalized title OR normalized destination, then retire it.
@@ -201,11 +246,10 @@ export function useOptimisticTasks() {
         // No match → no retirement; external/unrelated adds leave placeholders alone.
       }
     }
-    // 30 s TTL backstop: evict any placeholder that outlived the window.
-    const cutoff = now() - OPTIMISTIC_TTL_MS
-    for (let i = state.entries.length - 1; i >= 0; i--) {
-      if (state.entries[i].createdAt < cutoff) state.entries.splice(i, 1)
-    }
+    // 30 s TTL backstop: evict any placeholder that outlived the window. The
+    // periodic sweep timer covers the polling-frozen case (#303); sweeping here
+    // too keeps eviction immediate on every poll.
+    sweepExpiredOptimisticTasks()
   }
 
   /** Placeholders as TaskViews (with realId once known), newest first. */

@@ -1,18 +1,20 @@
 // Composable for folder shortcuts: persists last-used folder, recents (MRU),
-// and favorites. localStorage is the instant-paint cache + dev/test store; the
-// recents list also syncs to the backend (#4) inside Telegram so it survives
-// the WebView wiping localStorage between sessions/redeploys.
+// and favorites (#306). localStorage is the instant-paint cache + dev/test
+// store; the recents and favorites lists also sync to the backend (#4) inside
+// Telegram so they survive the WebView wiping localStorage between
+// sessions/redeploys.
 import { ref } from 'vue'
-import { api } from '../api'
-import { inTelegram } from '../telegram'
+import { syncUiList } from './uiListSync'
 
 const UI_KEY_RECENTS = 'folder-recents'
+const UI_KEY_FAVORITES = 'folder-favorites'
 
 const KEY_RECENTS = 'nas-bot:folder-recents'
 const KEY_FAVORITES = 'nas-bot:folder-favorites'
 const KEY_LAST = 'nas-bot:last-folder'
 
 const RECENTS_CAP = 6
+const FAVORITES_CAP = 5
 
 function safeGetItem(key: string): string | null {
   try {
@@ -55,21 +57,18 @@ export function useFolderShortcuts() {
   const favorites = ref<string[]>(readStringArray(KEY_FAVORITES))
   const lastFolder = ref<string | null>(safeGetItem(KEY_LAST))
 
-  // Hydrate recents from the backend (cross-session source of truth, #4); seed
-  // the backend from the local cache when it has nothing yet.
-  if (inTelegram) {
-    api
-      .uiState(UI_KEY_RECENTS)
-      .then((values) => {
-        if (values.length > 0) {
-          recents.value = values
-          safeSetItem(KEY_RECENTS, JSON.stringify(values))
-        } else if (recents.value.length > 0) {
-          void api.setUiState(UI_KEY_RECENTS, recents.value).catch(() => {})
-        }
-      })
-      .catch(() => {})
-  }
+  // Backend hydration + persistence with the #303 race guard: once a local
+  // mutation happened, a still-in-flight hydration GET's payload is discarded.
+  const recentsSync = syncUiList({
+    list: recents,
+    uiKey: UI_KEY_RECENTS,
+    persistLocal: (values) => safeSetItem(KEY_RECENTS, JSON.stringify(values)),
+  })
+  const favoritesSync = syncUiList({
+    list: favorites,
+    uiKey: UI_KEY_FAVORITES,
+    persistLocal: (values) => safeSetItem(KEY_FAVORITES, JSON.stringify(values)),
+  })
 
   function recordRecent(path: string): void {
     // Dedupe: remove existing occurrence then unshift to front
@@ -80,16 +79,18 @@ export function useFolderShortcuts() {
     lastFolder.value = path
     safeSetItem(KEY_RECENTS, JSON.stringify(recents.value))
     safeSetItem(KEY_LAST, path)
-    if (inTelegram) void api.setUiState(UI_KEY_RECENTS, recents.value).catch(() => {})
+    recentsSync.push()
   }
 
   function toggleFavorite(path: string): void {
     if (favorites.value.includes(path)) {
       favorites.value = favorites.value.filter((p) => p !== path)
     } else {
-      favorites.value = [...favorites.value, path]
+      // Cap at FAVORITES_CAP, keeping the most recently pinned.
+      favorites.value = [...favorites.value, path].slice(-FAVORITES_CAP)
     }
     safeSetItem(KEY_FAVORITES, JSON.stringify(favorites.value))
+    favoritesSync.push()
   }
 
   function clearLastIfMissing(): void {

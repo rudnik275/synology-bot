@@ -203,6 +203,88 @@ describe('DiskUsageWatcher', () => {
     expect(msg).toContain('%')
   })
 
+  it('notify throws on warning → markWarned NOT persisted → next tick retries the alert', async () => {
+    const notifications: string[] = []
+    const warned = new Set<string>()
+    let failNext = true
+    let storageResult: { ok: true; data: StorageInfo } = {
+      ok: true,
+      data: { volumes: [makeVolume('volume_1', 'Volume 1', 92)] },
+    }
+
+    const watcher = new DiskUsageWatcher({
+      getStorageInfo: async () => storageResult,
+      isVolumeWarned: async (id) => warned.has(id),
+      markWarned: async (id) => { warned.add(id) },
+      clearWarned: async (id) => { warned.delete(id) },
+      notify: async (msg) => {
+        if (failNext) throw new Error('telegram down')
+        notifications.push(msg)
+      },
+      highPct: 90,
+      lowPct: 85,
+    })
+
+    // First tick: notify fails (caught per-volume) → state must NOT be persisted
+    await watcher.check()
+    expect(notifications).toHaveLength(0)
+    expect(warned.has('volume_1')).toBe(false)
+
+    // Second tick: notify succeeds → alert delivered, state committed
+    failNext = false
+    await watcher.check()
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]).toContain('⚠️')
+    expect(warned.has('volume_1')).toBe(true)
+  })
+
+  it('notify throws on recovery → clearWarned NOT persisted → next tick retries', async () => {
+    const notifications: string[] = []
+    const warned = new Set<string>(['volume_1'])
+    let failNext = true
+
+    const watcher = new DiskUsageWatcher({
+      getStorageInfo: async () => ({
+        ok: true,
+        data: { volumes: [makeVolume('volume_1', 'Volume 1', 80)] },
+      }),
+      isVolumeWarned: async (id) => warned.has(id),
+      markWarned: async (id) => { warned.add(id) },
+      clearWarned: async (id) => { warned.delete(id) },
+      notify: async (msg) => {
+        if (failNext) throw new Error('telegram down')
+        notifications.push(msg)
+      },
+      highPct: 90,
+      lowPct: 85,
+    })
+
+    await watcher.check()
+    expect(notifications).toHaveLength(0)
+    expect(warned.has('volume_1')).toBe(true)
+
+    failNext = false
+    await watcher.check()
+    expect(notifications).toHaveLength(1)
+    expect(notifications[0]).toContain('✅')
+    expect(warned.has('volume_1')).toBe(false)
+  })
+
+  it('notify succeeds → state persisted, no duplicate next tick', async () => {
+    const h = makeHarness()
+    h.getStorageResult = {
+      ok: true,
+      data: { volumes: [makeVolume('volume_1', 'Volume 1', 92)] },
+    }
+
+    await h.watcher.check()
+    expect(h.notifications).toHaveLength(1)
+    expect(h.warned.has('volume_1')).toBe(true)
+
+    await h.watcher.check()
+    expect(h.notifications).toHaveLength(1)
+  })
+
   it('recovery message includes volume name and percentage', async () => {
     const h = makeHarness(['volume_1'])
     h.getStorageResult = {

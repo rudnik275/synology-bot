@@ -62,15 +62,17 @@ export class DiskHealthWatcher {
 
     if (currentState === 'ok') {
       if (tempStatus === 'critical') {
-        this.deps.setState(event, diskId, 'hot')
+        // Send-then-commit: persist state only after the alert is delivered,
+        // so a transient send failure retries on the next tick.
         await this.deps.notify(`🌡 ${model} перегрев: ${temp}°C (статус: critical)`)
+        this.deps.setState(event, diskId, 'hot')
       }
       // 'normal' or 'warning': stay ok
     } else {
       // Currently hot
       if (tempStatus === 'normal') {
-        this.deps.setState(event, diskId, 'ok')
         await this.deps.notify(`✅ ${model} температура в норме (${temp}°C)`)
+        this.deps.setState(event, diskId, 'ok')
       }
       // 'warning' or still 'critical': stay hot (hysteresis)
     }
@@ -83,14 +85,16 @@ export class DiskHealthWatcher {
 
     if (currentState === 'ok') {
       if (!isNormal) {
-        this.deps.setState(event, diskId, 'warn')
+        // Send-then-commit: persist state only after the alert is delivered,
+        // so a transient send failure retries on the next tick.
         await this.deps.notify(`❌ ${model} SMART: ${smartStatus}, status: ${diskStatus}`)
+        this.deps.setState(event, diskId, 'warn')
       }
     } else {
       // Currently warn
       if (isNormal) {
-        this.deps.setState(event, diskId, 'ok')
         await this.deps.notify(`✅ ${model} SMART восстановлен`)
+        this.deps.setState(event, diskId, 'ok')
       }
     }
   }

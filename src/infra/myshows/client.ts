@@ -53,13 +53,10 @@ export interface MyShowsShowDetailed extends MyShowsShow {
 /**
  * Minimal shape of a single show entry returned by the `shows.Search` RPC.
  *
- * ASSUMPTION: The `shows.Search` method returns a list of shows under the
- * `result` key, each with at least `id`, `title`, `titleOriginal`, and
- * `image`. This shape is inferred from the existing `shows.GetById` pattern
- * and the public myshows.me API documentation.
- *
- * ⚠️ NEEDS LIVE-API VERIFICATION — the exact field names and response wrapper
- * must be confirmed against the live myshows.me JSON-RPC API. See PR caveat.
+ * VERIFIED (2026-06-10, live API): `shows.Search` returns an array of shows
+ * under the `result` key, each with `id: number`, `title: string`, and the
+ * optional `titleOriginal`/`image` strings, exactly as typed below.
+ * See tests/live/myshows-search.live.test.ts (`LIVE_MYSHOWS=1 bun test tests/live/`).
  */
 export interface MyShowsSearchResult {
   id: number
@@ -77,10 +74,11 @@ export async function getShowById(showId: number): Promise<MyShowsShowDetailed> 
  *
  * Uses the `shows.Search` RPC method.
  *
- * ⚠️ ASSUMPTION: The exact request/response shape of `shows.Search` has been
- * inferred from the existing `shows.GetById` pattern and is assumed to accept
- * `{ query }` and return an array of `MyShowsSearchResult` objects directly as
- * the RPC result. This MUST be verified against the live API.
+ * VERIFIED (2026-06-10, live API): `shows.Search` accepts `{ query }` and
+ * returns an array of `MyShowsSearchResult` objects directly as the RPC
+ * result. `shows.GetById` episodes also carry the `seasonNumber` /
+ * `episodeNumber` / `airDateUTC` fields that `getTodayEpisodes` relies on.
+ * See tests/live/myshows-search.live.test.ts (skipped unless LIVE_MYSHOWS=1).
  */
 export async function searchShows(query: string): Promise<MyShowsSearchResult[]> {
   const result = await rpc<MyShowsSearchResult[] | null>('shows.Search', { query })

@@ -7,7 +7,7 @@ import type { AppEnv } from '../auth.ts'
 import type { SynologyClient } from '../../infra/synology/client.ts'
 import type { TolokaClient } from '../../infra/toloka/client.ts'
 import { parseTorrentFiles } from '../../infra/torrent/bencode.ts'
-import { tryResult } from '../../lib/result.ts'
+import { toHttpError, tryResult } from '../../lib/result.ts'
 import { respondResult, requireString, requireIntArray } from '../respond.ts'
 import { serializeTask } from '../serializers.ts'
 
@@ -107,7 +107,12 @@ async function resolveSource(
 
   if (!uri.startsWith('magnet:') && isTolokaUrl(uri, tolokaBaseUrl)) {
     const downloaded = await tryResult(() => toloka.downloadTorrent(uri))
-    if (!downloaded.ok) return { ok: false, status: 502, error: downloaded.reason }
+    // Upstream failure — log the reason server-side, return a generic body
+    // (toHttpError owns the no-leak contract for 502s).
+    if (!downloaded.ok) {
+      const [body, status] = toHttpError(downloaded)
+      return { ok: false, status, error: body.error }
+    }
     const served = stash.servedUrlForBytes(downloaded.data)
     if (!served) return { ok: false, status: 502, error: 'MINIAPP_URL is not configured' }
     return { ok: true, url: served.url, destination, bytes: downloaded.data, token: served.token }

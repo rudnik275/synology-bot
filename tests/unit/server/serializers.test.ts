@@ -11,7 +11,7 @@ import {
   serializeDisks,
   serializeProcesses,
 } from '../../../src/server/serializers.ts'
-import type { Task } from '../../../src/infra/synology/types.ts'
+import type { StorageInfo, Task } from '../../../src/infra/synology/types.ts'
 import type { MyShowsSearchResult, MyShowsShowDetailed } from '../../../src/infra/myshows/client.ts'
 
 describe('serializeTask', () => {
@@ -215,6 +215,20 @@ describe('health serializers', () => {
     expect(
       serializeVolumes({ volumes: [{ id: 'v1', vol_path: '/volume1', size: { total: '1000', used: '250' }, status: 'normal' }] })
     ).toEqual([{ path: '/volume1', usedBytes: 250, totalBytes: 1000, pct: 25, status: 'normal' }])
+  })
+
+  it('serializeVolumes coerces missing size fields to 0 (no NaN)', () => {
+    expect(
+      serializeVolumes({
+        volumes: [
+          { id: 'v1', vol_path: '/volume1', size: undefined, status: 'crashed' },
+          { id: 'v2', vol_path: '/volume2', size: { total: undefined, used: 'garbage' }, status: 'degraded' },
+        ] as unknown as StorageInfo['volumes'],
+      })
+    ).toEqual([
+      { path: '/volume1', usedBytes: 0, totalBytes: 0, pct: 0, status: 'crashed' },
+      { path: '/volume2', usedBytes: 0, totalBytes: 0, pct: 0, status: 'degraded' },
+    ])
   })
 
   it('serializeDisks maps model/temp/status/smart', () => {

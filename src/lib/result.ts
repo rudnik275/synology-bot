@@ -52,5 +52,8 @@ export async function tryResult<T>(fn: () => T | Promise<T>): Promise<Result<T>>
  * branch, so `reason` is always present.
  */
 export function toHttpError(result: Result<unknown> & { ok: false }): [{ error: string }, 502] {
-  return [{ error: result.reason }, 502]
+  // Log the real reason server-side; the client gets a generic body so
+  // upstream details (LAN hostnames, socket paths) never leak over HTTP.
+  console.error('[502]', result.reason)
+  return [{ error: 'upstream unavailable' }, 502]
 }

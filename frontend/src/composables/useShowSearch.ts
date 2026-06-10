@@ -18,6 +18,9 @@ export function useShowSearch() {
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
   let destroyed = false
+  // Monotonic sequence guard: only the latest search() call may write state.
+  // Prevents a slow earlier request from overwriting a newer query's results.
+  let latest = 0
 
   // Clear timer on unmount to prevent stale re-renders after tests.
   if (getCurrentInstance()) {
@@ -36,19 +39,20 @@ export function useShowSearch() {
       return
     }
 
+    const seq = ++latest
     loading.value = true
     error.value = null
 
     try {
       const data = await api.searchShows(query)
-      if (!destroyed) results.value = data
+      if (destroyed || seq !== latest) return
+      results.value = data
     } catch (e) {
-      if (!destroyed) {
-        error.value = e instanceof Error ? e.message : String(e)
-        results.value = []
-      }
+      if (destroyed || seq !== latest) return
+      error.value = e instanceof Error ? e.message : String(e)
+      results.value = []
     } finally {
-      if (!destroyed) loading.value = false
+      if (!destroyed && seq === latest) loading.value = false
     }
   }
 

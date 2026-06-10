@@ -78,7 +78,7 @@ export class DockerClient {
   private fetch(url: string): Promise<Response> {
     // Bun supports UNIX socket via { unix: path } in RequestInit
     // (documented at https://bun.sh/docs/api/fetch#unix-domain-sockets)
-    return fetch(url, { unix: this.socketPath } as RequestInit)
+    return fetch(url, { unix: this.socketPath, signal: AbortSignal.timeout(30000) } as RequestInit)
   }
 }
 

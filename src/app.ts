@@ -128,6 +128,8 @@ export async function startApp(): Promise<void> {
     threshold: config.finishedGroupThreshold,
     flushIndividual: (task) => notifier.notify(task),
     flushGrouped: (tasks) => notifier.notifyFinishedGrouped(tasks),
+    // Persist dedup + completion only after a confirmed Telegram send (#291).
+    onDelivered: (task) => taskMonitor.markDelivered(task.id),
   })
 
   const getTasks = async () => {
@@ -205,10 +207,31 @@ export async function startApp(): Promise<void> {
   const botPromise = bot.start()
 
   console.log(`[TaskMonitor] Starting polling every ${config.pollIntervalMs}ms`)
-  taskMonitor.start(config.pollIntervalMs)
+  // runPollingLoop awaits each tick before sleeping again — ticks can never
+  // overlap even when a tick takes longer than the interval (#284).
+  const taskMonitorLoop = runPollingLoop({
+    intervalMs: config.pollIntervalMs,
+    tick: () => taskMonitor.tick(),
+    name: 'TaskMonitor',
+  })
 
   // Start AutoCleaner background loop
   startAutoCleaner({ config, store, synology, ownerNotifier })
+
+  // Graceful shutdown: stop polling, flush any pending finished
+  // notifications, then exit (#291).
+  const shutdown = async (signal: string): Promise<void> => {
+    console.log(`[shutdown] ${signal} received — stopping loops, flushing pending notifications`)
+    taskMonitorLoop.stop()
+    try {
+      await debouncer.dispose()
+    } catch (err) {
+      console.error('[shutdown] debouncer.dispose failed:', err)
+    }
+    process.exit(0)
+  }
+  process.once('SIGTERM', () => { void shutdown('SIGTERM') })
+  process.once('SIGINT', () => { void shutdown('SIGINT') })
 
   await botPromise
 }

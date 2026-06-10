@@ -148,6 +148,47 @@ describe('runPollingLoop', () => {
     expect(calls).toHaveLength(1)
   })
 
+  it('slow tick never overlaps the next one (#284)', async () => {
+    let concurrent = 0
+    let maxConcurrent = 0
+    let finishTick: (() => void) | null = null
+
+    runPollingLoop({
+      intervalMs: 1_000,
+      name: 'SlowLoop',
+      tick: () => {
+        concurrent++
+        maxConcurrent = Math.max(maxConcurrent, concurrent)
+        return new Promise<void>((resolve) => {
+          finishTick = () => { concurrent--; resolve() }
+        })
+      },
+      _sleep: fake.sleep,
+    })
+
+    // First interval elapses → tick starts and stays in flight
+    fake.advance()
+    await drainMicrotasks()
+    expect(concurrent).toBe(1)
+
+    // While the tick is in flight, the loop has NOT queued another sleep —
+    // so no further interval can start a second tick.
+    expect(fake.pendingCount).toBe(0)
+
+    // Finish the slow tick → loop sleeps again → next tick can fire
+    finishTick!()
+    await drainMicrotasks()
+    expect(fake.pendingCount).toBe(1)
+
+    fake.advance()
+    await drainMicrotasks()
+    expect(concurrent).toBe(1) // second tick now in flight, alone
+    expect(maxConcurrent).toBe(1) // never two ticks at once
+
+    finishTick!()
+    await drainMicrotasks()
+  })
+
   it('stop() before first tick prevents any tick from firing', async () => {
     const calls: number[] = []
 

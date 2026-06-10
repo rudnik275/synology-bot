@@ -32,7 +32,14 @@ class FakeClock {
       t.cb()
     }
   }
+
+  pendingTimerCount(): number {
+    return this.timers.length
+  }
 }
+
+/** Flush is async — let the in-flight flush settle after advancing the clock. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
 function makeTask(id: string, title = `Task ${id}`): Task {
   return { id, title, status: 'finished', size: 1000 }
@@ -43,12 +50,14 @@ describe('FinishedDebouncer', () => {
   let clock: FakeClock
   let individual: Task[]
   let grouped: Task[][]
+  let delivered: string[]
   let debouncer: FinishedDebouncer
 
   beforeEach(() => {
     clock = new FakeClock()
     individual = []
     grouped = []
+    delivered = []
 
     debouncer = new FinishedDebouncer(
       {
@@ -60,6 +69,9 @@ describe('FinishedDebouncer', () => {
         flushGrouped: async (tasks) => {
           grouped.push([...tasks])
         },
+        onDelivered: (task) => {
+          delivered.push(task.id)
+        },
       },
       {
         now: () => clock.now(),
@@ -69,14 +81,15 @@ describe('FinishedDebouncer', () => {
     )
   })
 
-  afterEach(() => {
-    debouncer.dispose()
+  afterEach(async () => {
+    await debouncer.dispose()
   })
 
   // 1 task in window → flushIndividual called once
   it('enqueue 1 task, window expires → flushIndividual called once', async () => {
     debouncer.enqueue(makeTask('t1'))
     clock.advance(60_000)
+    await settle()
     expect(individual).toHaveLength(1)
     expect(individual[0].id).toBe('t1')
     expect(grouped).toHaveLength(0)
@@ -87,6 +100,7 @@ describe('FinishedDebouncer', () => {
     debouncer.enqueue(makeTask('t1'))
     debouncer.enqueue(makeTask('t2'))
     clock.advance(60_000)
+    await settle()
     expect(individual).toHaveLength(2)
     expect(grouped).toHaveLength(0)
   })
@@ -97,6 +111,7 @@ describe('FinishedDebouncer', () => {
     debouncer.enqueue(makeTask('t2'))
     debouncer.enqueue(makeTask('t3'))
     clock.advance(60_000)
+    await settle()
     expect(individual).toHaveLength(0)
     expect(grouped).toHaveLength(1)
     expect(grouped[0].map((t) => t.id)).toEqual(['t1', 't2', 't3'])
@@ -108,6 +123,7 @@ describe('FinishedDebouncer', () => {
       debouncer.enqueue(makeTask(`t${i}`))
     }
     clock.advance(60_000)
+    await settle()
     expect(individual).toHaveLength(0)
     expect(grouped).toHaveLength(1)
     expect(grouped[0]).toHaveLength(5)
@@ -119,6 +135,7 @@ describe('FinishedDebouncer', () => {
       debouncer.enqueue(makeTask(`t${i}`))
     }
     clock.advance(60_000)
+    await settle()
     expect(individual).toHaveLength(0)
     expect(grouped).toHaveLength(1)
     expect(grouped[0]).toHaveLength(12)
@@ -131,6 +148,7 @@ describe('FinishedDebouncer', () => {
     debouncer.enqueue(makeTask('t2'))
     debouncer.enqueue(makeTask('t3'))
     clock.advance(60_000) // first window expires
+    await settle()
     expect(grouped).toHaveLength(1)
     expect(grouped[0]).toHaveLength(3)
 
@@ -140,6 +158,7 @@ describe('FinishedDebouncer', () => {
     debouncer.enqueue(makeTask('t6'))
     debouncer.enqueue(makeTask('t7'))
     clock.advance(60_000) // second window expires
+    await settle()
     expect(grouped).toHaveLength(2)
     expect(grouped[1]).toHaveLength(4)
     expect(individual).toHaveLength(0)
@@ -152,39 +171,41 @@ describe('FinishedDebouncer', () => {
     debouncer.enqueue(makeTask('t2'))
     debouncer.enqueue(makeTask('t3'))
     clock.advance(30_000) // window expires
+    await settle()
     expect(grouped).toHaveLength(1)
     expect(grouped[0]).toHaveLength(3)
   })
 
   // dispose() flushes pending immediately
-  it('dispose() flushes pending tasks immediately without waiting for window', () => {
+  it('dispose() flushes pending tasks immediately without waiting for window', async () => {
     debouncer.enqueue(makeTask('t1'))
     debouncer.enqueue(makeTask('t2'))
     debouncer.enqueue(makeTask('t3'))
-    // Don't advance clock — call dispose() directly
-    debouncer.dispose()
+    // Don't advance clock — await dispose() directly
+    await debouncer.dispose()
     expect(grouped).toHaveLength(1)
     expect(grouped[0]).toHaveLength(3)
   })
 
-  it('dispose() with 1 pending task flushes individually', () => {
+  it('dispose() with 1 pending task flushes individually', async () => {
     debouncer.enqueue(makeTask('t1'))
-    debouncer.dispose()
+    await debouncer.dispose()
     expect(individual).toHaveLength(1)
     expect(grouped).toHaveLength(0)
   })
 
-  it('dispose() with empty queue is a no-op', () => {
-    debouncer.dispose()
+  it('dispose() with empty queue is a no-op', async () => {
+    await debouncer.dispose()
     expect(individual).toHaveLength(0)
     expect(grouped).toHaveLength(0)
   })
 
-  it('second window starts after first flush', () => {
+  it('second window starts after first flush', async () => {
     // First batch (below threshold) → individual
     debouncer.enqueue(makeTask('t1'))
     debouncer.enqueue(makeTask('t2'))
     clock.advance(60_000)
+    await settle()
     expect(individual).toHaveLength(2)
     expect(grouped).toHaveLength(0)
 
@@ -193,9 +214,139 @@ describe('FinishedDebouncer', () => {
     debouncer.enqueue(makeTask('t4'))
     debouncer.enqueue(makeTask('t5'))
     clock.advance(60_000)
+    await settle()
     expect(individual).toHaveLength(2) // unchanged
     expect(grouped).toHaveLength(1)
     expect(grouped[0]).toHaveLength(3)
+  })
+
+  // --- At-least-once delivery (#291) ---
+
+  it('onDelivered fires per task only after a successful send', async () => {
+    debouncer.enqueue(makeTask('t1'))
+    debouncer.enqueue(makeTask('t2'))
+    expect(delivered).toHaveLength(0) // nothing delivered at enqueue time
+    clock.advance(60_000)
+    await settle()
+    expect(delivered).toEqual(['t1', 't2'])
+  })
+
+  it('onDelivered fires for every task of a grouped flush', async () => {
+    debouncer.enqueue(makeTask('t1'))
+    debouncer.enqueue(makeTask('t2'))
+    debouncer.enqueue(makeTask('t3'))
+    clock.advance(60_000)
+    await settle()
+    expect(grouped).toHaveLength(1)
+    expect(delivered.sort()).toEqual(['t1', 't2', 't3'])
+  })
+
+  it('grouped flush failure → tasks re-queued and retried on next window, not lost', async () => {
+    let groupedCalls = 0
+    const sent: Task[][] = []
+    const localDelivered: string[] = []
+    const d = new FinishedDebouncer(
+      {
+        windowMs: 60_000,
+        threshold: 3,
+        flushIndividual: async () => {},
+        flushGrouped: async (tasks) => {
+          groupedCalls++
+          if (groupedCalls === 1) throw new Error('telegram 502')
+          sent.push([...tasks])
+        },
+        onDelivered: (task) => localDelivered.push(task.id),
+      },
+      {
+        now: () => clock.now(),
+        setTimeout: (cb, ms) => clock.setTimeout(cb, ms),
+        clearTimeout: (id) => clock.clearTimeout(id),
+      }
+    )
+
+    d.enqueue(makeTask('t1'))
+    d.enqueue(makeTask('t2'))
+    d.enqueue(makeTask('t3'))
+    clock.advance(60_000) // first flush — fails
+    await settle()
+    expect(groupedCalls).toBe(1)
+    expect(localDelivered).toHaveLength(0) // not marked delivered
+    expect(clock.pendingTimerCount()).toBe(1) // retry window opened
+
+    clock.advance(60_000) // retry flush — succeeds
+    await settle()
+    expect(groupedCalls).toBe(2)
+    expect(sent).toHaveLength(1)
+    expect(sent[0].map((t) => t.id)).toEqual(['t1', 't2', 't3'])
+    expect(localDelivered.sort()).toEqual(['t1', 't2', 't3'])
+  })
+
+  it('individual flush partial failure → only the failed task is retried', async () => {
+    const attempts: string[] = []
+    const localDelivered: string[] = []
+    let failOnce = true
+    const d = new FinishedDebouncer(
+      {
+        windowMs: 60_000,
+        threshold: 3,
+        flushIndividual: async (task) => {
+          attempts.push(task.id)
+          if (task.id === 't2' && failOnce) {
+            failOnce = false
+            throw new Error('telegram 502')
+          }
+        },
+        flushGrouped: async () => {},
+        onDelivered: (task) => localDelivered.push(task.id),
+      },
+      {
+        now: () => clock.now(),
+        setTimeout: (cb, ms) => clock.setTimeout(cb, ms),
+        clearTimeout: (id) => clock.clearTimeout(id),
+      }
+    )
+
+    d.enqueue(makeTask('t1'))
+    d.enqueue(makeTask('t2'))
+    clock.advance(60_000) // t1 ok, t2 fails
+    await settle()
+    expect(attempts).toEqual(['t1', 't2'])
+    expect(localDelivered).toEqual(['t1'])
+
+    clock.advance(60_000) // retry window — only t2
+    await settle()
+    expect(attempts).toEqual(['t1', 't2', 't2'])
+    expect(localDelivered).toEqual(['t1', 't2'])
+  })
+
+  it('flush failure at dispose() does not throw — tasks stay undelivered for restart re-notify', async () => {
+    const d = new FinishedDebouncer(
+      {
+        windowMs: 60_000,
+        threshold: 3,
+        flushIndividual: async () => { throw new Error('telegram down') },
+        flushGrouped: async () => { throw new Error('telegram down') },
+        onDelivered: (task) => delivered.push(task.id),
+      },
+      {
+        now: () => clock.now(),
+        setTimeout: (cb, ms) => clock.setTimeout(cb, ms),
+        clearTimeout: (id) => clock.clearTimeout(id),
+      }
+    )
+
+    d.enqueue(makeTask('t1'))
+    await d.dispose() // must not throw
+    expect(delivered).toHaveLength(0) // dedup never persisted → re-notified on restart
+  })
+
+  it('enqueue after dispose() is ignored', async () => {
+    await debouncer.dispose()
+    debouncer.enqueue(makeTask('t1'))
+    clock.advance(60_000)
+    await settle()
+    expect(individual).toHaveLength(0)
+    expect(grouped).toHaveLength(0)
   })
 })
 

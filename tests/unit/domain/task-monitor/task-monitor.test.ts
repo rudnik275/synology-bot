@@ -46,7 +46,7 @@ describe('TaskMonitor', () => {
     notified = []
   })
 
-  it('finished task → notify called, marked as fired', async () => {
+  it('finished task → notify called, NOT yet marked as fired (waits for delivery)', async () => {
     const monitor = new TaskMonitor(
       async () => [makeTask({ id: 'task-1', status: 'finished' })],
       async (task) => { notified.push(task) },
@@ -57,7 +57,24 @@ describe('TaskMonitor', () => {
 
     expect(notified).toHaveLength(1)
     expect(notified[0].id).toBe('task-1')
+    // Dedup is persisted only after a confirmed Telegram send (#291)
+    expect(store.wasNotifFired('task-1', 'finished')).toBe(false)
+    expect(store.completions).toHaveLength(0)
+  })
+
+  it('markDelivered → dedup marker + completion persisted', async () => {
+    const monitor = new TaskMonitor(
+      async () => [makeTask({ id: 'task-1', status: 'finished' })],
+      async (task) => { notified.push(task) },
+      store
+    )
+
+    await monitor.tick()
+    monitor.markDelivered('task-1')
+
     expect(store.wasNotifFired('task-1', 'finished')).toBe(true)
+    expect(store.completions).toHaveLength(1)
+    expect(store.completions[0].taskId).toBe('task-1')
   })
 
   it('same finished task in next tick → no duplicate notify (dedup)', async () => {
@@ -107,7 +124,7 @@ describe('TaskMonitor', () => {
     await expect(monitor.tick()).resolves.toBeUndefined()
   })
 
-  it('insertCompletion called on first finish notification', async () => {
+  it('insertCompletion NOT called at enqueue time — only after markDelivered', async () => {
     const monitor = new TaskMonitor(
       async () => [makeTask({ id: 'task-1', status: 'finished' })],
       async (task) => { notified.push(task) },
@@ -115,9 +132,44 @@ describe('TaskMonitor', () => {
     )
 
     await monitor.tick()
+    expect(store.completions).toHaveLength(0)
 
+    monitor.markDelivered('task-1')
     expect(store.completions).toHaveLength(1)
     expect(store.completions[0].taskId).toBe('task-1')
+  })
+
+  it('notify throws → not marked pending, retried next tick', async () => {
+    let calls = 0
+    const monitor = new TaskMonitor(
+      async () => [makeTask({ id: 'task-1', status: 'finished' })],
+      async () => {
+        calls++
+        if (calls === 1) throw new Error('telegram down')
+      },
+      store
+    )
+
+    await monitor.tick() // fails
+    await monitor.tick() // retried
+    expect(calls).toBe(2)
+
+    await monitor.tick() // now pending — no third call
+    expect(calls).toBe(2)
+  })
+
+  it('after markDelivered the persisted dedup (not the in-memory set) prevents re-notify', async () => {
+    const monitor = new TaskMonitor(
+      async () => [makeTask({ id: 'task-1', status: 'finished' })],
+      async (task) => { notified.push(task) },
+      store
+    )
+
+    await monitor.tick()
+    monitor.markDelivered('task-1')
+    await monitor.tick()
+
+    expect(notified).toHaveLength(1)
   })
 
   it('detector.evaluate is called on each tick', async () => {

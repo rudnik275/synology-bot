@@ -41,6 +41,10 @@ export interface Config {
   diskFullLowPct: number
   pollIntervalMs: number
   diskHealthPollMs: number
+  /** Disk temperature warning band start, °C (matches the DSM-style classifier default). */
+  diskTempWarnC: number
+  /** Disk temperature alert threshold, °C. */
+  diskTempBadC: number
   finishedDebounceMs: number
   finishedGroupThreshold: number
   autoCleanerPollMs: number
@@ -75,6 +79,8 @@ export function loadConfig(): Config {
     diskFullLowPct: parseInt(optional('DISK_FULL_LOW_PCT', '85'), 10),
     pollIntervalMs: parseInt(optional('POLL_INTERVAL_MS', '30000'), 10),
     diskHealthPollMs: parseInt(optional('DISK_HEALTH_POLL_MS', '600000'), 10),
+    diskTempWarnC: parseInt(optional('DISK_TEMP_WARN_C', '50'), 10),
+    diskTempBadC: parseInt(optional('DISK_TEMP_BAD_C', '56'), 10),
     finishedDebounceMs: parseInt(optional('FINISHED_DEBOUNCE_MS', '60000'), 10),
     finishedGroupThreshold: parseInt(optional('FINISHED_GROUP_THRESHOLD', '3'), 10),
     autoCleanerPollMs: parseInt(optional('AUTOCLEANER_POLL_MS', '3600000'), 10),

@@ -140,6 +140,70 @@ describe('DiskHealthWatcher – temperature (Synology status-based)', () => {
   })
 })
 
+describe('DiskHealthWatcher – configurable temp thresholds (#305)', () => {
+  function makeThresholdHarness(thresholds: { warnC: number; badC: number }) {
+    const store = makeFakeStore()
+    const pushes: string[] = []
+    let disks: DiskEntry[] = []
+    const watcher = new DiskHealthWatcher({
+      getDiskInfo: async () => ({ ok: true as const, data: { disks } }),
+      getState: (event, resourceId) => store.getState(event, resourceId),
+      setState: (event, resourceId, state) => store.setState(event, resourceId, state),
+      notify: async (message: string) => { pushes.push(message) },
+      getTempThresholds: () => ({ ...thresholds }),
+    })
+    return { watcher, store, pushes, thresholds, setDisks(d: DiskEntry[]) { disks = d } }
+  }
+
+  it('classifies numerically from temp, ignoring the upstream temperature_status', async () => {
+    const h = makeThresholdHarness({ warnC: 50, badC: 56 })
+    // Upstream says 'normal' but 58°C >= badC → alert fires
+    h.setDisks([makeDisk('disk1', 'WD Red', 58, 'normal')])
+
+    await h.watcher.check()
+
+    expect(h.pushes).toHaveLength(1)
+    expect(h.pushes[0]).toBe('🌡 WD Red перегрев: 58°C (статус: critical)')
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
+  })
+
+  it('warn band [warnC, badC) keeps the current state (hysteresis)', async () => {
+    const h = makeThresholdHarness({ warnC: 50, badC: 56 })
+    h.setDisks([makeDisk('disk1', 'WD Red', 52, 'critical')])
+
+    await h.watcher.check()
+
+    expect(h.pushes).toHaveLength(0)
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('ok')
+  })
+
+  it('reads the thresholds getter live on each tick', async () => {
+    const h = makeThresholdHarness({ warnC: 50, badC: 56 })
+    h.setDisks([makeDisk('disk1', 'WD Red', 48, 'normal')])
+
+    // 48 < 56 → no alert
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(0)
+
+    // Settings change between ticks: badC drops to 45 → same 48°C now alerts
+    h.thresholds.warnC = 40
+    h.thresholds.badC = 45
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(1)
+    expect(h.pushes[0]).toContain('перегрев')
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('hot')
+
+    // Raise thresholds back → recovery on next tick
+    h.thresholds.warnC = 50
+    h.thresholds.badC = 56
+    h.pushes.length = 0
+    await h.watcher.check()
+    expect(h.pushes).toHaveLength(1)
+    expect(h.pushes[0]).toContain('температура в норме')
+    expect(h.store.getState('disk_temp', 'disk1')).toBe('ok')
+  })
+})
+
 describe('DiskHealthWatcher – SMART', () => {
   it('disk with smart_status=normal, status=normal → no push', async () => {
     const h = makeHarness()

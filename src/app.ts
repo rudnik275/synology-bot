@@ -16,6 +16,7 @@ import { getTodayEpisodes, getShowById, searchShows } from './infra/myshows/clie
 import { DiskUsageWatcher } from './domain/disk-usage-watcher.ts'
 import { DiskHealthWatcher } from './domain/disk-health-watcher.ts'
 import { AutoCleaner } from './domain/auto-cleaner.ts'
+import { createSettingsProvider, type SettingsProvider } from './domain/settings.ts'
 import { buildTaskActionKeyboard } from './handlers/routes/task-actions.ts'
 import { OwnerNotifier } from './infra/notify/owner-notifier.ts'
 import { openMiniAppButton, miniAppTabUrl } from './infra/notify/miniapp-link.ts'
@@ -40,6 +41,18 @@ export async function startApp(): Promise<void> {
   if (!store.getKv('owner_chat_id')) {
     store.setKv('owner_chat_id', String(config.ownerChatId))
   }
+
+  // Runtime-tunable settings (#305): KV-persisted overrides with env/config
+  // defaults as fallback. Watchers read these through getters per tick, so a
+  // change from the Mini App applies without restart.
+  const settings = createSettingsProvider(store, {
+    diskUsageHighPct: config.diskFullHighPct,
+    diskUsageLowPct: config.diskFullLowPct,
+    diskTempWarnC: config.diskTempWarnC,
+    diskTempBadC: config.diskTempBadC,
+    digestHour: config.digestHour,
+    autoCleanerRetentionDays: config.autoCleanerRetentionDays,
+  })
 
   // Pre-login so the first /ping_nas is fast
   try {
@@ -90,9 +103,9 @@ export async function startApp(): Promise<void> {
   })
 
   // Background watchers
-  startReachabilityWatcher({ config, store, synology, ownerNotifier })
-  startDiskUsageWatcher({ config, store, synology, ownerNotifier })
-  startDiskHealthWatcher({ config, store, synology, ownerNotifier })
+  startReachabilityWatcher({ config, store, synology, ownerNotifier, settings })
+  startDiskUsageWatcher({ config, store, synology, ownerNotifier, settings })
+  startDiskHealthWatcher({ config, store, synology, ownerNotifier, settings })
 
   // One-shot deploy reporter: detects if our image SHA changed since last
   // boot (i.e. Watchtower just deployed us) and posts to #deploy.
@@ -102,7 +115,7 @@ export async function startApp(): Promise<void> {
   // Last-run date persists in KV so a restart across the digest hour
   // triggers a catch-up run instead of silently skipping the day (#295).
   scheduleDailyDigest({
-    digestHour: config.digestHour,
+    digestHour: () => settings.get().digestHour,
     getLastRunDate: () => store.getKv('digest_last_run_date'),
     setLastRunDate: (date) => store.setKv('digest_last_run_date', date),
     runFn: async () => {
@@ -201,6 +214,7 @@ export async function startApp(): Promise<void> {
     ownerId: config.ownerChatId,
     torrentStash: store,
     uiState: store,
+    settings,
   })
   // createServer also serves the built Vue SPA from ./frontend/dist (the
   // default staticRoot) with an index.html fallback — see server.ts.
@@ -223,7 +237,7 @@ export async function startApp(): Promise<void> {
   })
 
   // Start AutoCleaner background loop
-  startAutoCleaner({ config, store, synology, ownerNotifier })
+  startAutoCleaner({ config, store, synology, ownerNotifier, settings })
 
   // Graceful shutdown: stop polling, flush any pending finished
   // notifications, then exit (#291).
@@ -248,6 +262,7 @@ interface WatcherDeps {
   store: PersistentStore
   synology: SynologyClient
   ownerNotifier: OwnerNotifier
+  settings: SettingsProvider
 }
 
 function startReachabilityWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
@@ -273,7 +288,7 @@ function startReachabilityWatcher({ config, store, synology, ownerNotifier }: Wa
   runPollingLoop({ intervalMs: config.nasReachabilityPollMs, tick: () => monitor.poll(), name: 'ReachabilityWatcher' })
 }
 
-function startDiskUsageWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
+function startDiskUsageWatcher({ config, store, synology, ownerNotifier, settings }: WatcherDeps): void {
   const watcher = new DiskUsageWatcher({
     getStorageInfo: () => synology.getStorageInfo(),
     isVolumeWarned: async (volumeId) => store.wasHealthFired('disk_full', volumeId),
@@ -282,14 +297,14 @@ function startDiskUsageWatcher({ config, store, synology, ownerNotifier }: Watch
     notify: (message) => ownerNotifier.send('health', message, {
       replyMarkup: openMiniAppButton(config.miniappUrl, 'nas'),
     }),
-    highPct: config.diskFullHighPct,
-    lowPct: config.diskFullLowPct,
+    highPct: () => settings.get().diskUsageHighPct,
+    lowPct: () => settings.get().diskUsageLowPct,
   })
 
   runPollingLoop({ intervalMs: config.diskUsagePollMs, tick: () => watcher.check(), name: 'DiskUsageWatcher' })
 }
 
-function startDiskHealthWatcher({ config, store, synology, ownerNotifier }: WatcherDeps): void {
+function startDiskHealthWatcher({ config, store, synology, ownerNotifier, settings }: WatcherDeps): void {
   const watcher = new DiskHealthWatcher({
     getDiskInfo: () => synology.getDiskInfo(),
     getState: (event, resourceId) => {
@@ -306,12 +321,16 @@ function startDiskHealthWatcher({ config, store, synology, ownerNotifier }: Watc
     notify: (message) => ownerNotifier.send('health', message, {
       replyMarkup: openMiniAppButton(config.miniappUrl, 'nas'),
     }),
+    getTempThresholds: () => {
+      const s = settings.get()
+      return { warnC: s.diskTempWarnC, badC: s.diskTempBadC }
+    },
   })
 
   runPollingLoop({ intervalMs: config.diskHealthPollMs, tick: () => watcher.check(), name: 'DiskHealthWatcher' })
 }
 
-function startAutoCleaner({ config, store, synology, ownerNotifier }: WatcherDeps): void {
+function startAutoCleaner({ config, store, synology, ownerNotifier, settings }: WatcherDeps): void {
   const cleaner = new AutoCleaner({
     getCompleted: (cutoffMs) => Promise.resolve(store.getCompletedBefore(cutoffMs)),
     deleteTask: (taskId) => synology.deleteTask(taskId),
@@ -322,11 +341,11 @@ function startAutoCleaner({ config, store, synology, ownerNotifier }: WatcherDep
     notify: (message) => ownerNotifier.send('torrents', message, {
       replyMarkup: openMiniAppButton(config.miniappUrl, 'downloads'),
     }),
-    retentionDays: config.autoCleanerRetentionDays,
+    retentionDays: () => settings.get().autoCleanerRetentionDays,
     now: () => Date.now(),
   })
 
-  console.log(`[AutoCleaner] Starting cleanup loop every ${config.autoCleanerPollMs}ms (retention: ${config.autoCleanerRetentionDays} days)`)
+  console.log(`[AutoCleaner] Starting cleanup loop every ${config.autoCleanerPollMs}ms (retention: ${settings.get().autoCleanerRetentionDays} days)`)
   runPollingLoop({ intervalMs: config.autoCleanerPollMs, tick: () => cleaner.cleanup(), name: 'AutoCleaner' })
 }
 

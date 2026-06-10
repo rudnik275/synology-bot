@@ -12,10 +12,21 @@ export interface DiskUsageWatcherDeps {
   clearWarned: (volumeId: string) => Promise<void>
   /** Send a notification message to the owner. */
   notify: (message: string) => Promise<void>
-  /** Upper threshold (inclusive): usedPct >= highPct triggers a warning. Default 90. */
-  highPct: number
-  /** Lower threshold (exclusive): usedPct < lowPct clears a warning. Default 85. */
-  lowPct: number
+  /**
+   * Upper threshold (inclusive): usedPct >= highPct triggers a warning. Default 90.
+   * A getter is re-read on every tick so a Settings change applies live (#305).
+   */
+  highPct: number | (() => number)
+  /**
+   * Lower threshold (exclusive): usedPct < lowPct clears a warning. Default 85.
+   * A getter is re-read on every tick so a Settings change applies live (#305).
+   */
+  lowPct: number | (() => number)
+}
+
+/** Resolve a fixed value or a live getter (#305 runtime-tunable settings). */
+function resolve(value: number | (() => number)): number {
+  return typeof value === 'function' ? value() : value
 }
 
 /**
@@ -63,8 +74,10 @@ export class DiskUsageWatcher {
 
     const usedPct = (used / total) * 100
     const isWarned = await this.deps.isVolumeWarned(volume.id)
+    const highPct = resolve(this.deps.highPct)
+    const lowPct = resolve(this.deps.lowPct)
 
-    if (!isWarned && usedPct >= this.deps.highPct) {
+    if (!isWarned && usedPct >= highPct) {
       // ok → warn: crossed high threshold.
       // Send-then-commit: persist only after the notification is delivered,
       // so a transient send failure retries on the next tick.
@@ -73,7 +86,7 @@ export class DiskUsageWatcher {
         `⚠️ ${volume.vol_path} заполнен на ${pctDisplay}% (${formatBytesPair(used, total)})`
       )
       await this.deps.markWarned(volume.id)
-    } else if (isWarned && usedPct < this.deps.lowPct) {
+    } else if (isWarned && usedPct < lowPct) {
       // warn → ok: dropped below low threshold
       const pctDisplay = Math.round(usedPct)
       await this.deps.notify(

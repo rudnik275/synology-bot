@@ -286,6 +286,38 @@ describe('AutoCleaner', () => {
     })
   })
 
+  describe('retention as a live getter (#305 runtime settings)', () => {
+    it('re-reads retentionDays on every tick', async () => {
+      const deleted: string[] = []
+      const notifications: string[] = []
+      let retentionDays = 7
+      const completions = [{ taskId: 'task-old', completedAt: NOW - 5 * DAY_MS }]
+
+      const cleaner = new AutoCleaner({
+        getCompleted: async (cutoffMs) =>
+          completions.filter((c) => c.completedAt < cutoffMs).map((c) => c.taskId),
+        deleteTask: async (taskId) => { deleted.push(taskId); return { ok: true } },
+        removeCompletion: async () => {},
+        clearNotifDedup: async () => {},
+        sweepOrphanNotifDedup: async () => {},
+        pruneExpiredStashes: async () => {},
+        notify: async (msg) => { notifications.push(msg) },
+        retentionDays: () => retentionDays,
+        now: () => NOW,
+      })
+
+      // 5-day-old completion is within the 7-day retention → kept
+      await cleaner.cleanup()
+      expect(deleted).toHaveLength(0)
+
+      // Settings change between ticks: retention drops to 3 days → deleted now
+      retentionDays = 3
+      await cleaner.cleanup()
+      expect(deleted).toEqual(['task-old'])
+      expect(notifications[0]).toContain('3 дней')
+    })
+  })
+
   // --- Persistence GC (#300) ---
 
   describe('notif_dedup cleanup on task deletion (#300)', () => {

@@ -6,8 +6,9 @@
 // a CPU+RAM bento, then disks and top-processes. Severity (ok/warn/bad) is
 // mapped to the green/amber/red triad — yellow stays reserved for actions, so
 // a "warn" never reads as a button (#101 accent split).
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import Card from '../components/ui/Card.vue'
+import SettingsSheet from '../components/SettingsSheet.vue'
 import ProgressBar from '../components/ui/ProgressBar.vue'
 import StickerBadge from '../components/ui/StickerBadge.vue'
 import ScreenHeader from '../components/ui/ScreenHeader.vue'
@@ -25,6 +26,9 @@ import type { Tone } from '../components/ui/tones'
 import { formatBytes, formatPct } from '../format'
 
 const { data, loading, error } = useHealth()
+
+// Settings sheet (#305): runtime-tunable thresholds, opened from the gear.
+const settingsOpen = ref(false)
 
 /** Severity → accent tone. The traffic-light triad; warn is amber, not yellow. */
 const TONE: Record<Severity, Tone> = { ok: 'green', warn: 'orange', bad: 'red' }
@@ -156,7 +160,23 @@ const ramDonut = computed(() => {
 
   <!-- Data present (possibly partial) -->
   <div v-else-if="data" class="nas-tab">
-    <ScreenHeader title="NAS" subtitle="Состояние" />
+    <div class="nas-head">
+      <ScreenHeader title="NAS" subtitle="Состояние" />
+      <button
+        type="button"
+        class="settings-btn nb-pressable"
+        data-testid="open-settings"
+        aria-label="Настройки"
+        @click="settingsOpen = true"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+    </div>
+
+    <SettingsSheet v-model:open="settingsOpen" />
 
     <!-- ── Storage hero (busiest volume) ── -->
     <!-- "ok" reads as a plain paper card — only the badge carries the colour.
@@ -294,6 +314,32 @@ const ramDonut = computed(() => {
    margin so the only gap is the 4px base (#270 task 11). */
 .nas-tab :deep(.screen-header) {
   margin-bottom: 0;
+}
+
+/* ── Header row: title + settings gear (#305) ── */
+.nas-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  color: var(--ink);
+  background: var(--paper);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.settings-btn svg {
+  width: 22px;
+  height: 22px;
 }
 
 /* ── NAS loading skeleton (#208) ── */

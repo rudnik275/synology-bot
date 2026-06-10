@@ -15,8 +15,11 @@ export interface AutoCleanerDeps {
   pruneExpiredStashes: () => Promise<void>
   /** Send a notification message to the owner. */
   notify: (message: string) => Promise<void>
-  /** Number of days to retain completed task entries. Default 7. */
-  retentionDays: number
+  /**
+   * Number of days to retain completed task entries. Default 7.
+   * A getter is re-read on every tick so a Settings change applies live (#305).
+   */
+  retentionDays: number | (() => number)
   /** Inject current time for deterministic testing. Defaults to Date.now. */
   now: () => number
 }
@@ -41,7 +44,9 @@ export class AutoCleaner {
   }
 
   async cleanup(): Promise<void> {
-    const cutoffMs = this.deps.now() - this.deps.retentionDays * DAY_MS
+    const retentionDays =
+      typeof this.deps.retentionDays === 'function' ? this.deps.retentionDays() : this.deps.retentionDays
+    const cutoffMs = this.deps.now() - retentionDays * DAY_MS
     const taskIds = await this.deps.getCompleted(cutoffMs)
 
     let deletedCount = 0
@@ -70,7 +75,6 @@ export class AutoCleaner {
     }
 
     if (deletedCount > 0) {
-      const retentionDays = this.deps.retentionDays
       await this.deps.notify(
         `🧹 Автоматически удалено ${deletedCount} завершённых задач старше ${retentionDays} дней (файлы сохранены)`
       )

@@ -63,8 +63,12 @@ export async function runDigest(opts: DigestRunOptions): Promise<void> {
 
 export interface ScheduleDailyDigestOptions {
   runFn: () => Promise<void>
-  /** Local hour-of-day (0–23) to fire the digest at. */
-  digestHour: number
+  /**
+   * Local hour-of-day (0–23) to fire the digest at. A getter is re-read every
+   * time the next run is scheduled (#305), so a Settings change applies on the
+   * next schedule cycle (after the currently-armed timer fires) or restart.
+   */
+  digestHour: number | (() => number)
   /** Last successful run date as YYYY-MM-DD (local time), or undefined if never ran. */
   getLastRunDate: () => string | undefined
   setLastRunDate: (date: string) => void
@@ -108,6 +112,8 @@ export function scheduleDailyDigest(opts: ScheduleDailyDigestOptions): () => voi
   let timer: unknown = null
   let cancelled = false
 
+  const resolveHour = (): number => (typeof digestHour === 'function' ? digestHour() : digestHour)
+
   async function runIfDue(): Promise<void> {
     const today = toLocalDateString(_now())
     if (getLastRunDate() === today) return // already ran today
@@ -119,7 +125,7 @@ export function scheduleDailyDigest(opts: ScheduleDailyDigestOptions): () => voi
     if (cancelled) return
     const now = _now()
     const next = new Date(now)
-    next.setHours(digestHour, 0, 0, 0)
+    next.setHours(resolveHour(), 0, 0, 0)
     if (next <= now) {
       // Already past the digest hour today → schedule for tomorrow
       next.setDate(next.getDate() + 1)
@@ -140,7 +146,7 @@ export function scheduleDailyDigest(opts: ScheduleDailyDigestOptions): () => voi
 
   // Startup catch-up: process was down (or restarting) across the digest hour.
   const now = _now()
-  if (now.getHours() >= digestHour && getLastRunDate() !== toLocalDateString(now)) {
+  if (now.getHours() >= resolveHour() && getLastRunDate() !== toLocalDateString(now)) {
     console.log('[digest] missed today\'s run — catching up now')
     runIfDue().catch((err) => console.error('[digest] Error during catch-up digest run:', err))
   }

@@ -22,6 +22,8 @@ import { registerShowRoutes } from './routes/registerShowRoutes.ts'
 import { registerDeployStatusRoute } from './routes/registerDeployStatusRoute.ts'
 import { registerTorrentStashRoute } from './routes/registerTorrentStashRoute.ts'
 import { registerUiStateRoutes } from './routes/registerUiStateRoutes.ts'
+import { registerSettingsRoutes } from './routes/registerSettingsRoutes.ts'
+import type { SettingsProvider } from '../domain/settings.ts'
 
 /** Narrow slice of PersistentStore the subscriptions endpoints need. */
 export interface SubscriptionStore {
@@ -80,6 +82,8 @@ export interface ServerDeps {
   torrentStash?: TorrentStashReader
   /** Server-side store for Mini App UI lists — search history, folder recents (#4). */
   uiState?: UiStateStore
+  /** Runtime-tunable settings provider (#305); absent in tests that don't exercise it. */
+  settings?: SettingsProvider
   /**
    * Filesystem root of the built Vue SPA (Vite `dist`), resolved relative to
    * the process CWD. The API and /healthz are registered first and win; any
@@ -146,6 +150,7 @@ export function createServer(deps: ServerDeps): Hono<AppEnv> {
   registerDeployStatusRoute(app, { docker })
   registerTorrentStashRoute(app, { torrentStash: deps.torrentStash })
   registerUiStateRoutes(app, { uiState: deps.uiState })
+  registerSettingsRoutes(app, { settings: deps.settings })
 
   // Unknown /api paths get a JSON 404 instead of falling through to the SPA
   // index.html (which clients would choke on when parsing as JSON).

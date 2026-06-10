@@ -68,6 +68,18 @@ describe('GET/PUT /api/ui-state/:key', () => {
     expect(await get.json()).toEqual({ values: ['from', 'severance'] })
   })
 
+  it('persists and reads back folder favorites (#306)', async () => {
+    const app = makeApp()
+    const put = await app.request('/api/ui-state/folder-favorites', {
+      method: 'PUT',
+      headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: ['/video/сериалы'] }),
+    })
+    expect(put.status).toBe(200)
+    const get = await app.request('/api/ui-state/folder-favorites', { headers: ownerHeaders() })
+    expect(await get.json()).toEqual({ values: ['/video/сериалы'] })
+  })
+
   it('rejects unknown keys with 404', async () => {
     const res = await makeApp().request('/api/ui-state/evil-key', { headers: ownerHeaders() })
     expect(res.status).toBe(404)

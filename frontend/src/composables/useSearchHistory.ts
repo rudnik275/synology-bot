@@ -5,8 +5,7 @@
 // vanishing. localStorage stays as an instant-paint cache and the sole store in
 // a bare browser / tests; backend sync only runs inside Telegram.
 import { ref } from 'vue'
-import { api } from '../api'
-import { inTelegram } from '../telegram'
+import { syncUiList } from './uiListSync'
 
 const UI_KEY = 'search-history'
 
@@ -53,25 +52,17 @@ function readStringArray(key: string): string[] {
 export function useSearchHistory() {
   const history = ref<string[]>(readStringArray(KEY_HISTORY))
 
-  // Hydrate from the backend (the cross-session source of truth). If the backend
-  // has nothing yet but the local cache does, seed the backend from the cache.
-  if (inTelegram) {
-    api
-      .uiState(UI_KEY)
-      .then((values) => {
-        if (values.length > 0) {
-          history.value = values
-          safeSetItem(KEY_HISTORY, JSON.stringify(values))
-        } else if (history.value.length > 0) {
-          void api.setUiState(UI_KEY, history.value).catch(() => {})
-        }
-      })
-      .catch(() => {})
-  }
+  // Backend hydration + persistence with the #303 race guard: once a local
+  // mutation happened, a still-in-flight hydration GET's payload is discarded.
+  const sync = syncUiList({
+    list: history,
+    uiKey: UI_KEY,
+    persistLocal: (values) => safeSetItem(KEY_HISTORY, JSON.stringify(values)),
+  })
 
   function persist(): void {
     safeSetItem(KEY_HISTORY, JSON.stringify(history.value))
-    if (inTelegram) void api.setUiState(UI_KEY, history.value).catch(() => {})
+    sync.push()
   }
 
   function recordQuery(q: string): void {
@@ -89,7 +80,7 @@ export function useSearchHistory() {
   function clearHistory(): void {
     history.value = []
     safeRemoveItem(KEY_HISTORY)
-    if (inTelegram) void api.setUiState(UI_KEY, []).catch(() => {})
+    sync.push()
   }
 
   return { history, recordQuery, clearHistory }

@@ -64,6 +64,21 @@ describe('useFolderShortcuts', () => {
     expect(localStorage.getItem(KEY_FAVORITES)).toBe(JSON.stringify(['/volume1/downloads']))
   })
 
+  it('toggleFavorite caps favorites at 5, keeping the most recently pinned (#306)', () => {
+    const { favorites, toggleFavorite } = useFolderShortcuts()
+    for (let i = 1; i <= 6; i++) {
+      toggleFavorite(`/volume1/fav${i}`)
+    }
+    expect(favorites.value).toHaveLength(5)
+    expect(favorites.value).toEqual([
+      '/volume1/fav2',
+      '/volume1/fav3',
+      '/volume1/fav4',
+      '/volume1/fav5',
+      '/volume1/fav6',
+    ])
+  })
+
   it('toggleFavorite removes an already-favorited path', () => {
     const { favorites, toggleFavorite } = useFolderShortcuts()
     toggleFavorite('/volume1/downloads')

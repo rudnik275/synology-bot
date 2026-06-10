@@ -181,6 +181,51 @@ describe('useOptimisticTasks — reconcile by identity', () => {
   })
 })
 
+describe('useOptimisticTasks — time-driven TTL sweep (#303)', () => {
+  it('evicts a stale placeholder via the periodic sweep when reconcile never runs (frozen polling)', () => {
+    // Polling failure means `tasks` never changes → reconcile never runs. The
+    // module-level interval must evict TTL-expired placeholders on its own.
+    const origSetInterval = globalThis.setInterval
+    const origClearInterval = globalThis.clearInterval
+    const origDateNow = Date.now
+    let fakeNow = origDateNow()
+    let tick: (() => void) | null = null
+    let cleared = false
+    globalThis.setInterval = ((fn: () => void) => {
+      tick = fn
+      return 0 as unknown as ReturnType<typeof setInterval>
+    }) as typeof setInterval
+    globalThis.clearInterval = (() => {
+      cleared = true
+    }) as typeof clearInterval
+    Date.now = () => fakeNow
+
+    try {
+      const { add, pendingTasks } = useOptimisticTasks()
+      add({ title: 'Frozen Poll Orphan', destination: '/video' })
+      expect(pendingTasks()).toHaveLength(1)
+      // add() must have scheduled the sweep interval.
+      expect(tick).not.toBeNull()
+
+      // Inside the TTL window — the sweep keeps the placeholder.
+      fakeNow += 10_000
+      tick!()
+      expect(pendingTasks()).toHaveLength(1)
+
+      // Past the 30 s TTL — the sweep evicts it WITHOUT any reconcile call.
+      fakeNow += 20_001
+      tick!()
+      expect(pendingTasks()).toHaveLength(0)
+      // And the timer stops once nothing is pending.
+      expect(cleared).toBe(true)
+    } finally {
+      globalThis.setInterval = origSetInterval
+      globalThis.clearInterval = origClearInterval
+      Date.now = origDateNow
+    }
+  })
+})
+
 describe('useOptimisticTasks — real-id (attachRealId + reconcile by id)', () => {
   it('attachRealId surfaces the real id on the pending task', () => {
     const { add, attachRealId, pendingTasks } = useOptimisticTasks()
@@ -195,6 +240,32 @@ describe('useOptimisticTasks — real-id (attachRealId + reconcile by id)', () =
     const { attachRealId, pendingTasks } = useOptimisticTasks()
     attachRealId('optimistic-gone', 'dbid_x')
     expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('baseline reconcile retires a placeholder whose attached realId is in the baseline (#303)', () => {
+    const { add, attachRealId, reconcile, pendingTasks } = useOptimisticTasks()
+
+    // The add resolved (realId attached) BEFORE the first poll returned — the
+    // baseline list already contains the real task, so keeping the placeholder
+    // would duplicate the card forever (the id is "seen", never "new" again).
+    const id = add({ title: 'Movie', destination: '/video' })
+    attachRealId(id, 'dbid_7')
+    expect(pendingTasks()).toHaveLength(1)
+
+    // First reconcile (baseline). Title/dest drifted — only the exact id ties them.
+    reconcile([realTask({ id: 'dbid_7', title: 'Renamed.mkv', destination: '/elsewhere' })])
+    expect(pendingTasks()).toHaveLength(0)
+  })
+
+  it('baseline reconcile does NOT retire a placeholder with a realId absent from the baseline', () => {
+    const { add, attachRealId, reconcile, pendingTasks } = useOptimisticTasks()
+
+    const id = add({ title: 'Movie', destination: '/video' })
+    attachRealId(id, 'dbid_404')
+    reconcile([realTask({ id: 'other', title: 'Movie', destination: '/video' })])
+    // Title/dest match a pre-existing task, but baseline identity matches must
+    // not retire; the attached id isn't present either → placeholder stays.
+    expect(pendingTasks()).toHaveLength(1)
   })
 
   it('reconcile retires by EXACT real-id match even when title AND dest drift', () => {

@@ -1,7 +1,8 @@
 /**
  * UI state routes: server-side persistence for Mini App UI lists (#4).
- * Search history and folder recents persisted server-side because Telegram
- * WebView localStorage is wiped between sessions/redeploys (esp. iOS).
+ * Search history, folder recents and folder favorites (#306) persisted
+ * server-side because Telegram WebView localStorage is wiped between
+ * sessions/redeploys (esp. iOS).
  */
 import type { Hono } from 'hono'
 import type { AppEnv } from '../auth.ts'
@@ -11,7 +12,7 @@ export interface UiStateRouteDeps {
   uiState?: UiStateStore
 }
 
-const UI_STATE_KEYS = new Set(['search-history', 'folder-recents'])
+const UI_STATE_KEYS = new Set(['search-history', 'folder-recents', 'folder-favorites'])
 const UI_STATE_CAP = 50
 
 export function registerUiStateRoutes(app: Hono<AppEnv>, deps: UiStateRouteDeps): void {

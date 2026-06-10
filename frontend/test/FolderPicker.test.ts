@@ -105,6 +105,92 @@ describe('FolderPicker — quick list (#2)', () => {
   })
 })
 
+describe('FolderPicker — favorites (#306)', () => {
+  it('renders pinned folders in an «Избранное» group above the quick rows', async () => {
+    localStorage.setItem(LS_FAVORITES, JSON.stringify(['/volume1/fav']))
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Избранное')
+    const favs = wrapper.findAll('[data-testid="favorite-tile"]')
+    expect(favs).toHaveLength(1)
+    expect(favs[0]!.text()).toContain('fav')
+    // The favorites group sits ABOVE the quick rows.
+    const html = wrapper.html()
+    expect(html.indexOf('favorite-tiles')).toBeGreaterThanOrEqual(0)
+    expect(html.indexOf('favorite-tiles')).toBeLessThan(html.indexOf('folder-tiles'))
+  })
+
+  it('excludes favorited paths from the quick list (no duplicate rows, cap untouched)', async () => {
+    localStorage.setItem(LS_FAVORITES, JSON.stringify(['/video/сериалы']))
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    // /video/сериалы lives in the favorites group only; the quick list keeps /video/новое.
+    expect(wrapper.findAll('[data-testid="favorite-tile"]')).toHaveLength(1)
+    const quick = wrapper.findAll('[data-testid="folder-tile"]')
+    expect(quick).toHaveLength(1)
+    expect(quick[0]!.text()).toContain('новое')
+  })
+
+  it('tapping a favorite row emits update:modelValue', async () => {
+    localStorage.setItem(LS_FAVORITES, JSON.stringify(['/volume1/fav']))
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    await wrapper.find('[data-testid="favorite-tile"]').trigger('click')
+    const emitted = wrapper.emitted('update:modelValue')
+    expect(emitted![0]![0]).toBe('/volume1/fav')
+  })
+
+  it('the pin button on a quick row pins it into the favorites group + localStorage', async () => {
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="favorite-tiles"]').exists()).toBe(false)
+    // First quick row is /video/сериалы — pin it.
+    await wrapper.find('[data-testid="pin-btn"]').trigger('click')
+    expect(localStorage.getItem(LS_FAVORITES)).toBe(JSON.stringify(['/video/сериалы']))
+    expect(wrapper.find('[data-testid="favorite-tiles"]').text()).toContain('сериалы')
+    // The pinned path left the quick list (no duplicate).
+    const quick = wrapper.findAll('[data-testid="folder-tile"]')
+    expect(quick.map((t) => t.text()).join(' ')).not.toContain('сериалы')
+  })
+
+  it('pinning a row must NOT select it (pin click does not emit update:modelValue)', async () => {
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    await wrapper.find('[data-testid="pin-btn"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeFalsy()
+  })
+
+  it('the pin button in the favorites group unpins (row returns to the quick list)', async () => {
+    localStorage.setItem(LS_FAVORITES, JSON.stringify(['/video/сериалы']))
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    // The favorites group's pin button comes first in DOM order.
+    await wrapper.find('[data-testid="favorite-tiles"] [data-testid="pin-btn"]').trigger('click')
+    expect(localStorage.getItem(LS_FAVORITES)).toBe(JSON.stringify([]))
+    expect(wrapper.find('[data-testid="favorite-tiles"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="folder-tile"]')).toHaveLength(2)
+  })
+
+  it('tree rows carry a pin button that toggles favorites', async () => {
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    await wrapper.find('[data-testid="open-tree-btn"]').trigger('click')
+    await flushPromises()
+    // Pin the first share (/volume1/downloads) from the tree.
+    await wrapper.find('[data-testid="folder-item"] ~ [data-testid="pin-btn"]').trigger('click')
+    expect(localStorage.getItem(LS_FAVORITES)).toBe(JSON.stringify(['/volume1/downloads']))
+  })
+
+  it('stays on the quick view when the default share is empty but favorites exist', async () => {
+    localStorage.setItem(LS_FAVORITES, JSON.stringify(['/volume1/fav']))
+    globalThis.fetch = (() => Promise.resolve(jsonResponse({ folders: [] }))) as typeof fetch
+    const wrapper = mount(FolderPicker, { props: { modelValue: '' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="favorite-tiles"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="folder-item"]').exists()).toBe(false)
+  })
+})
+
 describe('FolderPicker — browse tree (#2)', () => {
   async function openTree() {
     const wrapper = mount(FolderPicker, { props: { modelValue: '' } })

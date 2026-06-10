@@ -20,7 +20,12 @@ const emit = defineEmits<{
   'update:modelValue': [string]
 }>()
 
-const { recents } = useFolderShortcuts()
+const { recents, favorites, toggleFavorite } = useFolderShortcuts()
+
+// Pin state helper for the pin/unpin affordance on rows (#306).
+function isFavorite(path: string): boolean {
+  return favorites.value.includes(path)
+}
 
 // The share whose subfolders seed the quick list when there's no history yet.
 // Single-user app (ADR 0001) → a constant suffices; centralised here if it ever
@@ -44,9 +49,10 @@ const SKELETON_COUNT = 4
 
 // Quick list = recents first, then default-share subfolders, deduped + capped.
 // Recents float to the top as they're used; the default-share children keep it
-// from ever being empty.
+// from ever being empty. Favorited paths live in their own group above (#306),
+// so they're excluded here and don't eat into the cap.
 const quickFolders = computed<string[]>(() => {
-  const seen = new Set<string>()
+  const seen = new Set<string>(favorites.value)
   const out: string[] = []
   for (const p of [...recents.value, ...defaultChildren.value]) {
     if (p && !seen.has(p)) {
@@ -88,9 +94,9 @@ onMounted(async () => {
     // Release the skeleton once we have the full merged list.
     quickLoading.value = false
   }
-  // If there is genuinely nothing to quick-pick (default share empty/unreachable
-  // and no recents), drop straight into the tree so the step is never blank.
-  if (quickFolders.value.length === 0) {
+  // If there is genuinely nothing to quick-pick (default share empty/unreachable,
+  // no recents, no favorites), drop straight into the tree so the step is never blank.
+  if (quickFolders.value.length === 0 && favorites.value.length === 0) {
     view.value = 'tree'
     await loadFolders()
   }
@@ -171,21 +177,79 @@ defineExpose({ canStepBack, stepBack })
            final action row, visually subordinate to the destinations above it. -->
       <div class="folder-panel nb-framed">
 
+        <!-- ── Favorites group (#306): pinned destinations, always on top ──
+             Known instantly from the local cache, so it renders even while the
+             merged quick-list below is still loading. The pin button unpins. -->
+        <template v-if="favorites.length > 0">
+          <span class="group-label">Избранное</span>
+          <ul class="folder-rows" role="radiogroup" aria-label="Избранное" data-testid="favorite-tiles">
+            <li v-for="path in favorites" :key="path" class="row-li" :class="{ 'row-li--selected': modelValue === path }">
+              <button
+                type="button"
+                class="folder-row"
+                role="radio"
+                :aria-checked="modelValue === path"
+                data-testid="favorite-tile"
+                :title="path"
+                @click="pickQuick(path)"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  :fill="modelValue === path ? 'currentColor' : 'none'"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  class="row-icon"
+                >
+                  <path d="M3 7h6l2 2h10v9a2 2 0 01-2 2H3z" />
+                </svg>
+                <span class="row-name">{{ shortName(path) }}</span>
+                <svg
+                  v-if="modelValue === path"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  class="row-check"
+                >
+                  <path d="M5 12.5l4.5 4.5L19 7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="pin-btn pin-btn--active"
+                :aria-label="`Открепить: ${shortName(path)}`"
+                aria-pressed="true"
+                data-testid="pin-btn"
+                @click.stop="toggleFavorite(path)"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 17v5" />
+                  <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 2 2 0 000-4H8a2 2 0 000 4 1 1 0 011 1z" />
+                </svg>
+              </button>
+            </li>
+          </ul>
+        </template>
+
         <!-- Skeleton rows while the merged quick-list loads. Shown instead of the
              partial (recents-only) list to avoid a 2→2 pop-in; keeps panel height
              stable. -->
         <ul v-if="quickLoading" class="folder-rows" role="list" aria-busy="true" aria-label="Загрузка папок">
-          <li v-for="n in SKELETON_COUNT" :key="n" class="folder-row folder-row--skeleton">
+          <li v-for="n in SKELETON_COUNT" :key="n" class="row-li folder-row--skeleton">
             <Skeleton class="row-skeleton" />
           </li>
         </ul>
 
         <ul v-else class="folder-rows" role="radiogroup" aria-label="Куда сохранить" data-testid="folder-tiles">
-          <li v-for="path in quickFolders" :key="path">
+          <li v-for="path in quickFolders" :key="path" class="row-li" :class="{ 'row-li--selected': modelValue === path }">
             <button
               type="button"
               class="folder-row"
-              :class="{ 'folder-row--selected': modelValue === path }"
               role="radio"
               :aria-checked="modelValue === path"
               data-testid="folder-tile"
@@ -218,6 +282,20 @@ defineExpose({ canStepBack, stepBack })
                 class="row-check"
               >
                 <path d="M5 12.5l4.5 4.5L19 7" />
+              </svg>
+            </button>
+            <!-- Pin a quick row into the favorites group above (#306). -->
+            <button
+              type="button"
+              class="pin-btn"
+              :aria-label="`Закрепить: ${shortName(path)}`"
+              aria-pressed="false"
+              data-testid="pin-btn"
+              @click.stop="toggleFavorite(path)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 17v5" />
+                <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 2 2 0 000-4H8a2 2 0 000 4 1 1 0 011 1z" />
               </svg>
             </button>
           </li>
@@ -281,7 +359,7 @@ defineExpose({ canStepBack, stepBack })
       <!-- Folder list — same grouped-panel language as the quick view. -->
       <div v-else class="folder-panel nb-framed">
         <ul class="folder-rows" role="list">
-          <li v-for="folder in folders" :key="folder.path">
+          <li v-for="folder in folders" :key="folder.path" class="row-li">
             <button
               type="button"
               class="folder-row folder-row--drill"
@@ -294,6 +372,22 @@ defineExpose({ canStepBack, stepBack })
               <span class="row-name">{{ folder.name }}</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="row-drill">
                 <path d="M9 6l6 6-6 6" />
+              </svg>
+            </button>
+            <!-- Pin/unpin from anywhere in the tree (#306) — the favorites group
+                 on the quick screen picks it up. -->
+            <button
+              type="button"
+              class="pin-btn"
+              :class="{ 'pin-btn--active': isFavorite(folder.path) }"
+              :aria-label="isFavorite(folder.path) ? `Открепить: ${folder.name}` : `Закрепить: ${folder.name}`"
+              :aria-pressed="isFavorite(folder.path)"
+              data-testid="pin-btn"
+              @click.stop="toggleFavorite(folder.path)"
+            >
+              <svg viewBox="0 0 24 24" :fill="isFavorite(folder.path) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 17v5" />
+                <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 2 2 0 000-4H8a2 2 0 000 4 1 1 0 011 1z" />
               </svg>
             </button>
           </li>
@@ -348,18 +442,47 @@ defineExpose({ canStepBack, stepBack })
   padding: 0;
 }
 
+/* Group caption inside the panel («Избранное», #306) — same quiet uppercase
+ * voice as .quick-label, indented to the row gutter. */
+.group-label {
+  display: block;
+  padding: var(--space-3) var(--space-4) var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink);
+  opacity: 0.45;
+}
+
+/* Row container: the row button plus an optional pin button on the right (#306).
+ * The hairline divider lives HERE so it spans the full row incl. the pin. */
+.row-li {
+  display: flex;
+  align-items: stretch;
+  border-top: var(--hairline);
+}
+
+/* The first row of the panel butts against the frame's top edge — no divider;
+ * ditto the first row under a group caption (the label owns that boundary). */
+.folder-panel > .folder-rows:first-child > li:first-child,
+.group-label + .folder-rows > li:first-child {
+  border-top: none;
+}
+
 /* A quiet row. Full-bleed (no own border/radius); the panel frame owns the
- * outline, and a hairline divides each row from the one above it. */
+ * outline; backgrounds (selected fill, press tint) live on .row-li so they
+ * cover the pin segment too. */
 .folder-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 52px;
   padding: var(--space-3) var(--space-4);
-  background: var(--paper);
+  background: transparent;
   border: none;
-  border-top: var(--hairline);
   cursor: pointer;
   text-align: left;
   font-family: var(--font);
@@ -373,19 +496,45 @@ defineExpose({ canStepBack, stepBack })
   transition: background var(--dur-fast) var(--ease-out);
 }
 
-/* The first row of a panel butts against the frame's top edge — no divider. */
-.folder-rows > li:first-child .folder-row {
-  border-top: none;
-}
-
 /* Press tint for tappable rows (skip the selected one — it's already filled). */
-.folder-row:not(.folder-row--selected):active {
+.row-li:not(.row-li--selected) .folder-row:active {
   background: var(--ink-active);
 }
 
 /* Selected destination: the whole row fills yellow, edge-to-edge. */
-.folder-row--selected {
+.row-li--selected {
   background: var(--yellow);
+}
+
+/* ── Pin/unpin affordance (#306) ──
+ * A quiet square segment at the row's right edge, separated by the same
+ * hairline. Outline pin = pinnable; solid pin at full strength = pinned. */
+.pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-left: var(--hairline);
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--ink);
+  opacity: 0.35;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.pin-btn:active {
+  background: var(--ink-active);
+}
+.pin-btn--active {
+  opacity: 1;
+}
+.pin-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .row-icon {
@@ -397,7 +546,7 @@ defineExpose({ canStepBack, stepBack })
 }
 /* Selected → solid ink folder at full strength (outline → filled is the
  * non-colour selection cue, alongside the check). */
-.folder-row--selected .row-icon {
+.row-li--selected .row-icon {
   opacity: 1;
 }
 
@@ -429,6 +578,9 @@ defineExpose({ canStepBack, stepBack })
 
 /* Skeleton row — same height as a real row so the panel doesn't jump. */
 .folder-row--skeleton {
+  align-items: center;
+  min-height: 52px;
+  padding: var(--space-3) var(--space-4);
   pointer-events: none;
 }
 .row-skeleton {

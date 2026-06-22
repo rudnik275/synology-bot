@@ -5,3 +5,4 @@ data/
 *.log
 frontend/dist/
 .playwright-mcp/
+.op-sa-item
